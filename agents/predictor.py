@@ -135,47 +135,61 @@ def train_and_diagnose(data_path: Path):
     return model, stats, (X_test, y_test)
 
 
-def evaluate_test_performance(model, test_data):
+def evaluate_test_performance(model, test_data, output_dir: Path | str) -> NDArray:
+    output_dir = Path(output_dir)
     X_test, y_test = test_data
     model.eval()
+
     with torch.no_grad():
         preds = model(X_test)
-
-        # Point-wise Error Analysis
         mse = nn.functional.mse_loss(preds, y_test).item()
         mae = nn.functional.l1_loss(preds, y_test).item()
 
-        print("\n" + "=" * 30)
-        print("STAGE 1: TEST DATA ASSESSMENT")
-        print(f"Direct MSE: {mse:.6f}")
-        print(f"Direct MAE: {mae:.6f}")
-        print("=" * 30)
+    lines = [
+        "=" * 30,
+        "STAGE 1: TEST DATA ASSESSMENT",
+        f"Direct MSE: {mse:.6f}",
+        f"Direct MAE: {mae:.6f}",
+        "=" * 30,
+    ]
 
-        return preds.numpy()
+    output = "\n".join(lines)
+    print("\n" + output)
+
+    log_path = output_dir / "test_assessment.log"
+    with open(log_path, "w") as f:
+        f.write(output + "\n")
+    print(f"Test assessment log saved to '{log_path}'.")
+
+    return preds.numpy()
 
 
-def plot_training_diagnostics(stats):
+def plot_training_diagnostics(output_dir: str | Path, stats) -> None:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     epochs = range(len(stats["train_mae"]))
 
-    plt.figure(figsize=(12, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Subplot 1: MSE Loss (Convergence)
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, stats["train_mse"], label="Train MSE", color="orange")
-    plt.title("Training Convergence (MSE)")
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
-    plt.yscale("log")  # Log scale helps see convergence at small values
-    plt.legend()
+    axes[0].plot(epochs, stats["train_mse"], label="Train MSE", color="orange")
+    axes[0].set_title("Training Convergence (MSE)")
+    axes[0].set_xlabel("Epochs")
+    axes[0].set_ylabel("Loss")
+    axes[0].set_yscale("log")
+    axes[0].legend()
 
-    # Subplot 2: MAE (Generalization Diagnostic)
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, stats["train_mae"], label="Train MAE", color="blue")
-    plt.plot(epochs, stats["val_mae"], label="Val MAE", color="green", linestyle="--")
-    plt.title("Generalization Diagnostic (MAE)")
-    plt.xlabel("Epochs")
-    plt.ylabel("Error")
-    plt.legend()
+    axes[1].plot(epochs, stats["train_mae"], label="Train MAE", color="blue")
+    axes[1].plot(epochs, stats["val_mae"], label="Val MAE", color="green", linestyle="--")
+    axes[1].set_title("Generalization Diagnostic (MAE)")
+    axes[1].set_xlabel("Epochs")
+    axes[1].set_ylabel("Error")
+    axes[1].legend()
 
     plt.tight_layout()
+
+    save_path = output_dir / "training_diagnostics.png"
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    print(f"Saved training diagnostics plot to '{save_path}'.")
     plt.show()
+    plt.close(fig)

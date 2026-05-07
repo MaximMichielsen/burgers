@@ -54,6 +54,7 @@ EPOCHS: int = 150
 # PATH NAMING
 RUNS_FOLDER: str = "runs"
 SOLVER_DATA_FOLDER: str = "solver_data"
+TRAINING_DATA_FOLDER: str = "training_data"
 PREDICTOR_FOLDER: str = "predictor"
 PRE_SPLIT_FOLDER: str = "pre_split"
 POST_SPLIT_FOLDER: str = "post_split"

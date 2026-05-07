@@ -18,7 +18,7 @@ from constants import (
     POST_SPLIT_FOLDER,
     AGENTS_FOLDER,
     INPUT_STENCIL,
-    OUTPUT_STENCIL,
+    OUTPUT_STENCIL, TRAINING_DATA_FOLDER,
 )
 from data_generation.configurations import create_code_test_config, create_dns_config
 from functions import run_config
@@ -58,9 +58,9 @@ if __name__ == "__main__":
         solver_data_path = CURRENT_DIR / RUNS_FOLDER / run_folder / SOLVER_DATA_FOLDER
 
     # ── Derived paths ─────────────────────────────────────────────────────────
-    predictor_root = CURRENT_DIR / RUNS_FOLDER / run_folder / PREDICTOR_FOLDER
-    pre_split_path = predictor_root / PRE_SPLIT_FOLDER
-    post_split_path = predictor_root / POST_SPLIT_FOLDER
+    training_data_path = CURRENT_DIR / RUNS_FOLDER / run_folder / TRAINING_DATA_FOLDER
+    pre_split_path = training_data_path / PRE_SPLIT_FOLDER
+    post_split_path = training_data_path / POST_SPLIT_FOLDER
 
     # ── Projection / stencils ─────────────────────────────────────────────────
     if create_projection or test_pipeline:
@@ -89,10 +89,10 @@ if __name__ == "__main__":
         model_save_path.mkdir(parents=True, exist_ok=True)
 
         model, train_stats, test_data = train_and_diagnose(post_split_path)
-        test_preds = evaluate_test_performance(model, test_data)
+        test_preds = evaluate_test_performance(model, test_data, output_dir=model_save_path)
 
         torch.save(model.state_dict(), model_save_path / "sgs_mlp_model.pth")
         np.save(model_save_path / "training_history.npy", train_stats)
         print(f"Model saved to: {model_save_path / 'sgs_mlp_model.pth'}")
 
-        plot_training_diagnostics(train_stats)
+        plot_training_diagnostics(model_save_path, train_stats)

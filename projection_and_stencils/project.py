@@ -205,32 +205,33 @@ def apply_normalization(
 
 
 def verify_global_projection(
-    mesh_dns: NDArray, u_dns: NDArray, mesh_les: NDArray, u_projected: NDArray
+    output_dir: str | Path,
+    mesh_dns: NDArray,
+    u_dns: NDArray,
+    mesh_les: NDArray,
+    u_projected: NDArray,
 ) -> None:
-    """Verify projection_and_stencils using markers to visualize the actual LES grid nodes."""
-    plt.figure(figsize=(10, 4))
+    """Verify projection using markers to visualize the actual LES grid nodes."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # DNS as a smooth reference
-    plt.plot(mesh_dns, u_dns, label="DNS", color="black", alpha=0.5)
+    fig, ax = plt.subplots(figsize=(10, 4))
 
-    # LES as the actual data points being fed into the stencil builder
-    plt.plot(
-        mesh_les,
-        u_projected,
-        "x",
-        label="LES (Projected)",
-        color="orange",
-        markersize=8,
-    )
-    # Optional: dashed line to see the 'filtered' profile shape
-    plt.plot(mesh_les, u_projected, "--", color="orange", alpha=0.7)
+    ax.plot(mesh_dns, u_dns, label="DNS", color="black", alpha=0.5)
+    ax.plot(mesh_les, u_projected, "x", label="LES (Projected)", color="orange", markersize=8)
+    ax.plot(mesh_les, u_projected, "--", color="orange", alpha=0.7)
 
-    plt.title("DNS vs. Coarse LES Projection (last t)")
-    plt.xlabel("Coordinate (x)")
-    plt.ylabel("Velocity (u)")
-    plt.legend()
-    plt.grid(True, alpha=0.2)
+    ax.set_title("DNS vs. Coarse LES Projection (last t)")
+    ax.set_xlabel("Coordinate (x)")
+    ax.set_ylabel("Velocity (u)")
+    ax.legend()
+    ax.grid(True, alpha=0.2)
+
+    save_path = output_dir / "projection_verification.png"
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    print(f"Saved projection verification plot to '{save_path}'.")
     plt.show()
+    plt.close(fig)
 
 
 def run_projection(
@@ -309,6 +310,7 @@ def run_projection(
 
     if verify:
         verify_global_projection(
+            output_dir=output_dir,
             u_dns=solutions_dns[-1],
             u_projected=solutions_les[-1],
             mesh_dns=mesh_dns,
