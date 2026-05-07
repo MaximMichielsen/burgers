@@ -6,7 +6,11 @@ from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
 from fem.burgers import Burgers
-from manufactured import set_manufactured_solution, set_manufactured_solution_initial, manufactured_residual
+from manufactured import (
+    set_manufactured_solution,
+    set_manufactured_solution_initial,
+    manufactured_residual,
+)
 
 
 # --- Simulation ---
@@ -50,7 +54,8 @@ def compute_l2_error(
 ) -> float:
     """Compute the L2 norm of the error averaged over all extraction times."""
     errors = [
-        np.sqrt(element_size * np.sum((u_h - u_ex) ** 2)) for u_h, u_ex in zip(solver_solutions, exact_solutions)
+        np.sqrt(element_size * np.sum((u_h - u_ex) ** 2))
+        for u_h, u_ex in zip(solver_solutions, exact_solutions)
     ]
     return float(np.mean(errors))
 
@@ -77,7 +82,9 @@ def run_convergence_study(
         u0 = set_manufactured_solution_initial(coords)
         exact = [set_manufactured_solution(coords, t) for t in snapped_times]
 
-        solver_solutions, _ = run_simulation(coords, u0, viscosity, dt, length, snapped_times)
+        solver_solutions, _ = run_simulation(
+            coords, u0, viscosity, dt, length, snapped_times
+        )
         error = compute_l2_error(solver_solutions, exact, h)
 
         print(f"  n_nodes={n_nodes:4d}  h={h:.4f}  dt={dt:.5f}  L2_error={error:.4e}")
@@ -105,7 +112,9 @@ def plot_solution_comparison(
         label_exact = "Exact" if i == 0 else None
         label_solver = "Solver" if i == 0 else None
         ax.plot(mesh, u_ex, color="royalblue", alpha=0.6, label=label_exact)
-        ax.plot(mesh, u_h, color="tab:orange", linestyle="--", alpha=0.8, label=label_solver)
+        ax.plot(
+            mesh, u_h, color="tab:orange", linestyle="--", alpha=0.8, label=label_solver
+        )
         ax.text(mesh[-1] * 0.82, u_ex[len(u_ex) // 2], f"t={t:.2f}", fontsize=7)
 
     ax.set_xlabel("x")
@@ -153,12 +162,16 @@ if __name__ == "__main__":
     u0 = set_manufactured_solution_initial(coords)
     exact_solutions = [set_manufactured_solution(coords, t) for t in TIMES]
 
-    solver_solutions, mesh = run_simulation(coords, u0, VISCOSITY, TIME_STEP, LENGTH, TIMES)
+    solver_solutions, mesh = run_simulation(
+        coords, u0, VISCOSITY, TIME_STEP, LENGTH, TIMES
+    )
 
     plot_solution_comparison(mesh, u0, exact_solutions, solver_solutions, TIMES)
 
     # --- Convergence study ---
     print("\nConvergence study:")
     NODE_COUNTS = [11, 21, 41, 81]
-    mesh_sizes, errors = run_convergence_study(NODE_COUNTS, LENGTH, VISCOSITY, TIMES, dt_factor=0.5)
+    mesh_sizes, errors = run_convergence_study(
+        NODE_COUNTS, LENGTH, VISCOSITY, TIMES, dt_factor=0.5
+    )
     plot_convergence(mesh_sizes, errors)

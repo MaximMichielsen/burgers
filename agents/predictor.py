@@ -6,7 +6,14 @@ from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from pathlib import Path
-from fem.constants import HIDDEN_UNITS, INPUT_UNITS, OUTPUT_UNITS, EPOCHS, BATCH_SIZE, LEARNING_RATE
+from constants import (
+    HIDDEN_UNITS,
+    INPUT_UNITS,
+    OUTPUT_UNITS,
+    EPOCHS,
+    BATCH_SIZE,
+    LEARNING_RATE,
+)
 
 
 def load_split_data(path: Path) -> tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -64,11 +71,15 @@ def train_and_diagnose(data_path: Path):
     X_test = torch.tensor(np.load(data_path / "X_test.npy"), dtype=torch.float32)
     y_test = torch.tensor(np.load(data_path / "y_test.npy"), dtype=torch.float32)
 
-    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=BATCH_SIZE, shuffle=True)
+    train_loader = DataLoader(
+        TensorDataset(X_train, y_train), batch_size=BATCH_SIZE, shuffle=True
+    )
 
     model = SGSPredictor()
     optimizer = optim.RMSprop(model.parameters(), lr=LEARNING_RATE)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=10)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=10
+    )
     early_stopper = EarlyStopping(patience=15)
     mse_loss_fn = nn.MSELoss()
     mae_loss_fn = nn.L1Loss()
@@ -103,7 +114,9 @@ def train_and_diagnose(data_path: Path):
             early_stopper(v_mae, model)
 
             if early_stopper.early_stop:
-                print(f"Early stopping triggered at epoch {epoch}. Restoring best weights.")
+                print(
+                    f"Early stopping triggered at epoch {epoch}. Restoring best weights."
+                )
                 model.load_state_dict(early_stopper.best_state)
                 break
 

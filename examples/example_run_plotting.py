@@ -1,4 +1,4 @@
-from fem.functions import plot_solutions_from_directory_animated
+from functions import plot_solutions_from_directory_animated
 from pathlib import Path
 
 # __file__ is always the script's own path

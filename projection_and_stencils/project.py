@@ -7,11 +7,13 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import uniform_filter
 
-from fem.constants import DNS_TO_LES_RATIO
-from fem.functions import implicit_euler_first_order
+from constants import DNS_TO_LES_RATIO
+from functions import implicit_euler_first_order
 
 
-def read_dns_data(directory: str | Path) -> tuple[NDArray, list[float], list[NDArray], list[NDArray]]:
+def read_dns_data(
+    directory: str | Path,
+) -> tuple[NDArray, list[float], list[NDArray], list[NDArray]]:
     """Read chronologically sorted DNS snapshots from *directory*.
 
     Returns:
@@ -72,7 +74,9 @@ def compute_tau(u_bar: NDArray, uu_bar: NDArray, snapshot_index: int) -> NDArray
     """Compute the SGS stress τ_sgs = uu_bar - u_bar²."""
     tau = uu_bar - u_bar**2
     if np.any(tau < 0):
-        raise ValueError(f"Negative τ_sgs at snapshot {snapshot_index}. Check the box-filter implementation.")
+        raise ValueError(
+            f"Negative τ_sgs at snapshot {snapshot_index}. Check the box-filter implementation."
+        )
     return tau
 
 
@@ -161,7 +165,9 @@ def build_features(
     return np.vstack(X_rows), np.vstack(y_rows)
 
 
-def compute_normalization_stats(input_array: NDArray, target_array: NDArray) -> dict[str, float]:
+def compute_normalization_stats(
+    input_array: NDArray, target_array: NDArray
+) -> dict[str, float]:
     """Compute per-feature mean and standard deviation for z-score normalization.
 
     Statistics are derived from the full training set and must be saved
@@ -192,7 +198,9 @@ def apply_normalization(
     return X_norm, y_norm
 
 
-def verify_global_projection(mesh_dns: NDArray, u_dns: NDArray, mesh_les: NDArray, u_projected: NDArray) -> None:
+def verify_global_projection(
+    mesh_dns: NDArray, u_dns: NDArray, mesh_les: NDArray, u_projected: NDArray
+) -> None:
     """Verify projection_and_stencils using markers to visualize the actual LES grid nodes."""
     plt.figure(figsize=(10, 4))
 
@@ -200,7 +208,14 @@ def verify_global_projection(mesh_dns: NDArray, u_dns: NDArray, mesh_les: NDArra
     plt.plot(mesh_dns, u_dns, label="DNS", color="black", alpha=0.5)
 
     # LES as the actual data points being fed into the stencil builder
-    plt.plot(mesh_les, u_projected, "x", label="LES (Projected)", color="orange", markersize=8)
+    plt.plot(
+        mesh_les,
+        u_projected,
+        "x",
+        label="LES (Projected)",
+        color="orange",
+        markersize=8,
+    )
     # Optional: dashed line to see the 'filtered' profile shape
     plt.plot(mesh_les, u_projected, "--", color="orange", alpha=0.7)
 
@@ -231,7 +246,7 @@ def run_projection(
     """
     directory = Path(directory)
     run_id = directory.name  # e.g. "run_DNS_0423_174914"
-    output_dir = (Path(output_dir) if output_dir else Path("training_data/predictor")) / run_id / "pre_split"
+    output_dir = Path(output_dir)
 
     # --- read DNS snapshots ---------------------------------------------------
     mesh_dns, times, solutions_dns, forcings_dns = read_dns_data(directory)
@@ -266,7 +281,9 @@ def run_projection(
         else:
             du_dt_bar = np.zeros_like(u_bar)
 
-        current_du_bar_dt = compute_du_bar_dt(u_bar, u_bar_prev=solutions_les[-1] if solutions_les else None, dt=dt)
+        current_du_bar_dt = compute_du_bar_dt(
+            u_bar, u_bar_prev=solutions_les[-1] if solutions_les else None, dt=dt
+        )
 
         u_prime_t = du_dt_bar - current_du_bar_dt
         u_prime_t_list.append(u_prime_t)
@@ -286,7 +303,10 @@ def run_projection(
 
     if verify:
         verify_global_projection(
-            u_dns=solutions_dns[-1], u_projected=solutions_les[-1], mesh_dns=mesh_dns, mesh_les=mesh_les
+            u_dns=solutions_dns[-1],
+            u_projected=solutions_les[-1],
+            mesh_dns=mesh_dns,
+            mesh_les=mesh_les,
         )
 
     if save:
@@ -315,6 +335,8 @@ def run_projection(
         np.save(output_dir / "X.npy", X)
         np.save(output_dir / "y.npy", y)
         np.savez(output_dir / "norm_stats.npz", **stats)
-        print(f"[{run_id}] Saved training data and normalisation stats to '{output_dir}'.")
+        print(
+            f"[{run_id}] Saved training data and normalisation stats to '{output_dir}'."
+        )
 
     return X, y, stats

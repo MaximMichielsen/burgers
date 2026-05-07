@@ -7,7 +7,10 @@ from numpy.typing import NDArray
 
 
 def split_data(
-    x_input: NDArray, y_target: NDArray, train_ratio: float = 0.7, val_ratio: float = 0.15
+    x_input: NDArray,
+    y_target: NDArray,
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.15,
 ) -> tuple[
     tuple[NDArray, NDArray],
     tuple[NDArray, NDArray],
@@ -27,7 +30,10 @@ def split_data(
 
 
 def split_data_shuffled(
-    x_input: NDArray, y_target: NDArray, train_ratio: float = 0.7, val_ratio: float = 0.15
+    x_input: NDArray,
+    y_target: NDArray,
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.15,
 ) -> tuple[
     tuple[NDArray, NDArray],
     tuple[NDArray, NDArray],

@@ -116,14 +116,18 @@ class TestRegression:
         if self.EXPECTED_DNS_FINAL_L2 is None:
             pytest.skip("Expected value not yet pinned — run once and record.")
         solver = run_solver(make_config("dns"))
-        assert self._l2_norm(solver.solution) == pytest.approx(self.EXPECTED_DNS_FINAL_L2, rel=1e-4)
+        assert self._l2_norm(solver.solution) == pytest.approx(
+            self.EXPECTED_DNS_FINAL_L2, rel=1e-4
+        )
 
     def test_les_l2_norm_unchanged(self) -> None:
         """LES final solution L2 norm matches pinned value."""
         if self.EXPECTED_LES_FINAL_L2 is None:
             pytest.skip("Expected value not yet pinned — run once and record.")
         solver = run_solver(make_config("les"))
-        assert self._l2_norm(solver.solution) == pytest.approx(self.EXPECTED_LES_FINAL_L2, rel=1e-4)
+        assert self._l2_norm(solver.solution) == pytest.approx(
+            self.EXPECTED_LES_FINAL_L2, rel=1e-4
+        )
 
     def test_dns_vs_les_dissipation(self) -> None:
         """LES solution should be more dissipative than DNS at same resolution."""

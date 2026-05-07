@@ -3,10 +3,10 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from fem.burgers import Burgers
+from burgers import Burgers
 
 
-from fem.functions import set_extractions
+from functions import set_extractions
 
 
 def initial_condition(x: NDArray) -> NDArray:

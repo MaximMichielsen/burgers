@@ -1,12 +1,15 @@
 """LES data generation for obtaining training data."""
 
-from fem.burgers import Burgers
-from fem.constants import NODES_LIST, SIMULATION_DURATION, SIMULATION_LENGTH, VISCOSITY_UNIT
-from fem.functions import create_config_variables
-from fem.validation.mms.manufactured import set_manufactured_solution_initial
+from burgers import Burgers
+from constants import NODES_LIST, SIMULATION_DURATION, SIMULATION_LENGTH, VISCOSITY_UNIT
+from functions import create_config_variables
+from validation.mms.manufactured import set_manufactured_solution_initial
 
 meshes, delta_xs, initial_solutions, time_steps = create_config_variables(
-    NODES_LIST, SIMULATION_LENGTH, VISCOSITY_UNIT, initial_condition=set_manufactured_solution_initial
+    NODES_LIST,
+    SIMULATION_LENGTH,
+    VISCOSITY_UNIT,
+    initial_condition=set_manufactured_solution_initial,
 )
 
 configs = []

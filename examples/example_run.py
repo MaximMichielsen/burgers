@@ -3,7 +3,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from fem.burgers import Burgers
+from burgers import Burgers
 
 
 def initial_condition(x: NDArray) -> NDArray:
@@ -48,7 +48,6 @@ def _main() -> None:
         time=TIME,
         boundary_conditions="fixed_one",
         forcing="uniform",
-
     )
 
     solver = Burgers(config_les)

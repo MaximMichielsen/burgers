@@ -1,0 +1,20 @@
+{
+  "simulation_type": "dns",
+  "objective": "code test",
+  "boundary_conditions": "fixed",
+  "time_extractions": [
+    0.2,
+    0.4
+  ],
+  "node_amount": 64,
+  "time": 0.5,
+  "time_step": 0.05,
+  "length": 1,
+  "convergence_tol_residual": 1e-06,
+  "convergence_tol_update": 1e-06,
+  "forcing": null,
+  "max_iterations": 20,
+  "relax": null,
+  "viscosity": 1,
+  "run_id": "0507_152747"
+}
