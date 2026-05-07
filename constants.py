@@ -50,3 +50,14 @@ OUTPUT_UNITS: int = 4
 BATCH_SIZE: int = 128
 LEARNING_RATE: float = 0.001
 EPOCHS: int = 150
+
+# PATH NAMING
+RUNS_FOLDER: str = "runs"
+SOLVER_DATA_FOLDER: str = "solver_data"
+PREDICTOR_FOLDER: str = "predictor"
+PRE_SPLIT_FOLDER: str = "pre_split"
+POST_SPLIT_FOLDER: str = "post_split"
+AGENTS_FOLDER: str = "agents"
+INPUT_STENCIL: str = "X.npy"
+OUTPUT_STENCIL: str = "y.npy"
+NORM_STATS: str = "norm_stats.npz"

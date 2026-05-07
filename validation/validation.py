@@ -39,12 +39,12 @@ def run_simulation(
         node_amount=len(coordinates),
         simulation_type="les",
         run_objective="validation",
-        solution_initial=initial_solution,
+        initial_condition=initial_solution,
         viscosity=viscosity,
         time_step=time_step,
-        length=length,
-        time=times[-1] + time_step,
-        extract_at_times=times,
+        domain_length=length,
+        domain_timespan=times[-1] + time_step,
+        time_extractions=times,
     )
     solver = Burgers(configuration=config)
     solver.run_simulation()

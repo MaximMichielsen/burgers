@@ -18,8 +18,6 @@ from tqdm import tqdm
 
 from constants import (
     MAXIMUM_ITERATIONS,
-    SIMULATION_DURATION,
-    SIMULATION_LENGTH,
     TOLERANCE_RESIDUAL,
     TOLERANCE_UPDATE,
 )
@@ -37,9 +35,9 @@ class Burgers:
         # ========================================================================== #
         # -------------------------- solver configuration -------------------------- #
         self.configuration: dict = configuration
-        self.simulation_time_end: float = self.configuration["time"]
+        self.domain_timespan: float = self.configuration["domain_timespan"]
         self.simulation_time_elapsed: float = 0
-        self.domain_length: float = self.configuration["length"]
+        self.domain_length: float = self.configuration["domain_length"]
         self.dt: float = self.configuration["time_step"]
         self.relaxation_factor: float | None = self.configuration["relax"]
         self.viscosity: float = self.configuration["viscosity"]
@@ -47,7 +45,7 @@ class Burgers:
         self.max_iterations: int = self.configuration["max_iterations"]
         # --------------------------     benchmarking     -------------------------- #
         self.run_id: str = datetime.now().strftime("%m%d_%H%M%S")
-        self.timings: dict = {}
+        self.timings_performance: dict = {}
         self.time_steps: list = []
         self.residual_history: list | None = []
         self.update_history: list | None = []
@@ -69,9 +67,9 @@ class Burgers:
         self.mesh: tuple[NDArray, NDArray] = (self.node_cords, self.elements)
         # --------------------------        output        -------------------------- #
         self.write_solutions: bool = True
-        self.solution: NDArray = self.configuration["solution_initial"].copy()
-        self.solution_initial: NDArray | None = self.configuration[
-            "solution_initial"
+        self.solution: NDArray = self.configuration["initial_condition"].copy()
+        self.initial_condition: NDArray | None = self.configuration[
+            "initial_condition"
         ].copy()  #  for plotting
         self.forcing: NDArray | Callable[[NDArray, float], NDArray] | None = (
             self.configuration["forcing"]
@@ -80,10 +78,10 @@ class Burgers:
         )
         self.forcing_current: NDArray | None = None
         self.boundary_conditions: str = self.configuration["boundary_conditions"]
-        self.extract_at_times: list | None = configuration["time_extractions"]
+        self.time_extractions: list | None = configuration["time_extractions"]
         self.is_extracted_at_times: list | bool | None = (
-            [False for _ in self.extract_at_times]
-            if self.extract_at_times is not None
+            [False for _ in self.time_extractions]
+            if self.time_extractions is not None
             else None
         )
         self.extracted_solutions: list[NDArray] | None = None
@@ -100,35 +98,35 @@ class Burgers:
 
     @staticmethod
     def create_config(
-        solution_initial: NDArray,
+        initial_condition: NDArray,
         simulation_type: str,
         node_amount: int,
         viscosity: float,
         time_step: float,
+        domain_timespan: float,
+        domain_length: float,
         forcing: NDArray | str | None = None,
         run_objective: str = "standard",
         boundary_conditions: str = "fixed",
-        time: float = SIMULATION_DURATION,
-        length: float = SIMULATION_LENGTH,
         convergence_tol_residual: float = TOLERANCE_RESIDUAL,
         convergence_tol_update: float = TOLERANCE_UPDATE,
         max_iterations: int = MAXIMUM_ITERATIONS,
         relaxation: float | None = None,
-        extract_at_times: list | NDArray | None = None,
+        time_extractions: list | NDArray | None = None,
     ) -> dict:
         """Create configuration dictionary."""
         return {
             "simulation_type": str(simulation_type),
             "objective": str(run_objective),
             "boundary_conditions": boundary_conditions,
-            "time_extractions": extract_at_times,
+            "time_extractions": time_extractions,
             "node_amount": node_amount,
-            "time": time,
+            "domain_timespan": domain_timespan,
             "time_step": time_step,
-            "length": length,
+            "domain_length": domain_length,
             "convergence_tol_residual": convergence_tol_residual,
             "convergence_tol_update": convergence_tol_update,
-            "solution_initial": solution_initial,
+            "initial_condition": initial_condition,
             "forcing": forcing,
             "max_iterations": max_iterations,
             "relax": relaxation,
@@ -148,7 +146,9 @@ class Burgers:
         start = perf_counter()
         yield
         elapsed = perf_counter() - start
-        self.timings[name] = self.timings.get(name, 0.0) + elapsed
+        self.timings_performance[name] = (
+            self.timings_performance.get(name, 0.0) + elapsed
+        )
 
     @staticmethod
     def gauss_legendre(number_of_points: int) -> tuple[Any, Any]:
@@ -184,7 +184,7 @@ class Burgers:
 
     def run_simulation(self) -> None:
         """Runs the simulation."""
-        total_steps = int(self.simulation_time_end / self.dt)
+        total_steps = int(self.domain_timespan / self.dt)
 
         throbber = cycle(["nom..        ", "nom nom..    ", "nom nom nom.."])
         throbber_every = 2
@@ -223,19 +223,17 @@ class Burgers:
                         }
                     )
             # flush any checkpoints not yet triggered (e.g. final time landing just short)
-            if self.extract_at_times is not None:
-                while idx_extract < len(self.extract_at_times):
+            if self.time_extractions is not None:
+                while idx_extract < len(self.time_extractions):
                     self.extracted_solutions.append(self.solution.copy())
 
-                    append_forcing = (
-                        self.forcing_current.copy()
-                    )
+                    append_forcing = self.forcing_current.copy()
                     print(f"forcing {append_forcing}")
                     self.extracted_forcings.append(append_forcing)
 
                     logger.info(
                         "Extracted solution at t=%.4f (end-of-simulation flush)",
-                        self.extract_at_times[idx_extract],
+                        self.time_extractions[idx_extract],
                     )
                     idx_extract += 1
 
@@ -255,7 +253,6 @@ class Burgers:
 
         elif self.forcing is None:
             self.forcing_current = np.zeros_like(self.solution)  # static array or None
-
 
         else:
             self.forcing_current = np.zeros_like(self.solution)  # static array or None
@@ -624,16 +621,18 @@ class Burgers:
 
     def _maybe_extract_solution(self, idx_extract: int) -> int:
         """Snapshot the solution at each extraction checkpoint."""
-        if self.extract_at_times is None:
+        if self.time_extractions is None:
             return idx_extract
 
         if (
-            idx_extract < len(self.extract_at_times)
-            and self.simulation_time_elapsed >= self.extract_at_times[idx_extract]
+            idx_extract < len(self.time_extractions)
+            and self.simulation_time_elapsed >= self.time_extractions[idx_extract]
         ):
             self.extracted_solutions.append(self.solution.copy())
             self.extracted_forcings.append(
-                self.forcing_current.copy() if self.forcing_current is not None else np.zeros_like(self.solution)
+                self.forcing_current.copy()
+                if self.forcing_current is not None
+                else np.zeros_like(self.solution)
             )
             idx_extract += 1
 
@@ -645,7 +644,7 @@ class Burgers:
         coordinates = self.node_cords
         run_dir = self.run_dir
 
-        if self.extract_at_times is None:
+        if self.time_extractions is None:
             solutions = [self.solution]
             forcings = [self.forcing_current]
             times = [self.simulation_time_elapsed]
@@ -653,7 +652,7 @@ class Burgers:
         else:
             solutions = self.extracted_solutions
             forcings = self.extracted_forcings
-            times = self.extract_at_times[: len(solutions)]
+            times = self.time_extractions[: len(solutions)]
 
         write_count = 0
 
@@ -670,6 +669,7 @@ class Burgers:
             write_count += 1
 
         print(f"wrote {write_count} snapshots at {run_dir}")
+
     def write_config_to_json(self) -> None:
         """Write run configuration to a JSON file in the run directory."""
         config_serializable = {}
@@ -726,10 +726,10 @@ class Burgers:
         self.logger.info("  " + "-" * 40)
         self.logger.info("-" * 60)
         # --- Timings ---
-        if self.timings:
+        if self.timings_performance:
             self.logger.info("Timings:")
-            total = self.timings["total_simulation"]
-            for phase, t in sorted(self.timings.items()):
+            total = self.timings_performance["total_simulation"]
+            for phase, t in sorted(self.timings_performance.items()):
                 if phase != "total_simulation":
                     self.logger.info(
                         "  %-25s %.4fs (%5.1f%%)", phase, t, 100 * t / total
@@ -847,7 +847,7 @@ class Burgers:
         )
         ax0.plot(
             self.node_cords,
-            self.solution_initial,
+            self.initial_condition,
             color="grey",
             linestyle="--",
             label="Initial solution",

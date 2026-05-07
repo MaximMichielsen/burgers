@@ -46,12 +46,12 @@ def _main() -> None:
     config_les = Burgers.create_config(
         node_amount=n_nodes_les,
         simulation_type="les",
-        solution_initial=ic_les,
+        initial_condition=ic_les,
         viscosity=VISCOSITY,
         time_step=dt_les,
-        time=TIME,
+        domain_timespan=TIME,
         boundary_conditions="periodic",
-        extract_at_times=TIMES,
+        time_extractions=TIMES,
         forcing="uniform",
     )
 

@@ -1,9 +1,6 @@
 from typing import Callable
 
-import numpy as np
-from numpy._typing import NDArray
-
-from constants import N_NODES_DNS
+from problems.initial_conditions import uniform_steady_forcing
 
 
 def create_problem_definition(
@@ -25,16 +22,6 @@ def create_problem_definition(
         "boundary_conditions": boundary_conditions,
         "initial_condition": initial_condition,
     }
-
-
-def uniform_steady_forcing() -> Callable:
-    """Return uniform steady forcing function to be used by x: mesh."""
-    return np.ones_like
-
-
-def none_forcing() -> Callable:
-    """Return a zero array, used when forcing is set to 0."""
-    return np.zeros_like
 
 
 problem_robijns_one = create_problem_definition(

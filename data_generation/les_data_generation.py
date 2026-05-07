@@ -15,19 +15,19 @@ meshes, delta_xs, initial_solutions, time_steps = create_config_variables(
 configs = []
 for idx, initial_sol in enumerate(initial_solutions):
     config = Burgers.create_config(
-        solution_initial=initial_sol,
+        initial_condition=initial_sol,
         simulation_type="les",
         run_objective="data generation",
         node_amount=NODES_LIST[idx],
         boundary_conditions="periodic",
-        time=SIMULATION_DURATION,
+        domain_timespan=SIMULATION_DURATION,
         time_step=time_steps[idx],
-        length=SIMULATION_LENGTH,
+        domain_length=SIMULATION_LENGTH,
         convergence_tol_residual=1e-6,
         convergence_tol_update=1e-6,
         max_iterations=100,
         relaxation=None,
         viscosity=VISCOSITY_UNIT,
-        extract_at_times=None,
+        time_extractions=None,
     )
     configs.append(config)

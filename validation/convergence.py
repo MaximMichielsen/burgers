@@ -54,20 +54,20 @@ def build_configs(
         )
         configs.append(
             Burgers.create_config(
-                solution_initial=ic,
+                initial_condition=ic,
                 simulation_type=simulation_type,
                 run_objective="data generation",
                 node_amount=n_nodes,
                 boundary_conditions="fixed",
-                time=time,
+                domain_timespan=time,
                 time_step=dt,
-                length=length,
+                domain_length=length,
                 convergence_tol_residual=1e-6,
                 convergence_tol_update=1e-6,
                 max_iterations=max_iterations,
                 relaxation=None,
                 viscosity=viscosity,
-                extract_at_times=extract_at_times,
+                time_extractions=extract_at_times,
             )
         )
     return configs

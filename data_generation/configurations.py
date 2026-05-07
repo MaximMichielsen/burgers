@@ -53,21 +53,21 @@ def create_dns_config(problem_definition: dict) -> dict:
     )
 
     config_dns = Burgers.create_config(
-        solution_initial=initial_solution,
+        initial_condition=initial_solution,
         simulation_type="dns",
         run_objective="data generation",
         node_amount=required_grid_points_dns,
         boundary_conditions=boundary_conditions,
         forcing=forcing,
-        time=simulation_duration,
+        domain_timespan=simulation_duration,
         time_step=time_step_dns,
-        length=simulation_length,
+        domain_length=simulation_length,
         convergence_tol_residual=1e-6,
         convergence_tol_update=1e-6,
         max_iterations=100,
         relaxation=None,
         viscosity=viscosity,
-        extract_at_times=dns_extractions,
+        time_extractions=dns_extractions,
     )
 
     return config_dns
@@ -79,18 +79,18 @@ def create_code_test_config() -> dict:
     initial_solution = np.zeros(n_nodes)
 
     config_test = Burgers.create_config(
-        solution_initial=initial_solution,
+        initial_condition=initial_solution,
         simulation_type="dns",
         run_objective="code test",
         node_amount=n_nodes,
         boundary_conditions="fixed",
         forcing=None,
-        time=0.5,
+        domain_timespan=0.5,
         time_step=0.05,
-        length=1,
+        domain_length=1,
         max_iterations=20,
         relaxation=None,
         viscosity=1,
-        extract_at_times=[0.2, 0.4],
+        time_extractions=[0.1, 0.2, 0.3, 0.4, 0.5],
     )
     return config_test

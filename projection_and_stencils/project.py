@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import uniform_filter
 
-from constants import DNS_TO_LES_RATIO
+from constants import DNS_TO_LES_RATIO, INPUT_STENCIL, OUTPUT_STENCIL, NORM_STATS
 from functions import implicit_euler_first_order
 
 
@@ -129,6 +129,12 @@ def build_features(
     y_raw:
         Array of shape ((T-2)*N_les, 4).
     """
+    if len(solutions_les) < 4:
+        raise ValueError(
+            f"build_features requires at least 4 snapshots (got {len(solutions_les)}). "
+            f"Increase 'extract_at_times' or extend the simulation duration."
+        )
+
     X_rows, y_rows = [], []
 
     for n in range(2, len(solutions_les)):
@@ -311,8 +317,8 @@ def run_projection(
 
     if save:
         output_dir.mkdir(parents=True, exist_ok=True)
-        np.save(output_dir / "solutions_les.npy", np.array(solutions_les))
-        print("Saved global LES snapshots for verification.")
+        np.save(output_dir / "solutions_projection.npy", np.array(solutions_les))
+        print("Saved global LES projection snapshots for verification.")
 
     # --- assemble & normalise ------------------------------------------------
     X_raw, y_raw = build_features(
@@ -332,9 +338,9 @@ def run_projection(
     # --- persist to disk -----------------------------------------------------
     if save:
         output_dir.mkdir(parents=True, exist_ok=True)
-        np.save(output_dir / "X.npy", X)
-        np.save(output_dir / "y.npy", y)
-        np.savez(output_dir / "norm_stats.npz", **stats)
+        np.save(output_dir / INPUT_STENCIL, X)
+        np.save(output_dir / OUTPUT_STENCIL, y)
+        np.savez(output_dir / NORM_STATS, **stats)
         print(
             f"[{run_id}] Saved training data and normalisation stats to '{output_dir}'."
         )

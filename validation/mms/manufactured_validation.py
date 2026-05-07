@@ -31,13 +31,13 @@ def run_simulation(
         node_amount=len(coordinates),
         simulation_type="dns",
         run_objective="manufactured validation",
-        solution_initial=initial_solution,
+        initial_condition=initial_solution,
         boundary_conditions="fixed",
         viscosity=viscosity,
         time_step=time_step,
-        length=length,
-        time=times[-1] + time_step,
-        extract_at_times=list(times),
+        domain_length=length,
+        domain_timespan=times[-1] + time_step,
+        time_extractions=list(times),
         forcing=forcing,
     )
     solver = Burgers(configuration=config)
