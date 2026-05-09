@@ -210,6 +210,8 @@ def verify_global_projection(
     u_dns: NDArray,
     mesh_les: NDArray,
     u_projected: NDArray,
+    n_dns: int | None = None,
+    n_les: int | None = None,
 ) -> None:
     """Verify projection using markers to visualize the actual LES grid nodes."""
     output_dir = Path(output_dir)
@@ -217,8 +219,11 @@ def verify_global_projection(
 
     fig, ax = plt.subplots(figsize=(10, 4))
 
-    ax.plot(mesh_dns, u_dns, label="DNS", color="black", alpha=0.5)
-    ax.plot(mesh_les, u_projected, "x", label="LES (Projected)", color="orange", markersize=8)
+    label_dns = f"DNS (N: {n_dns})" if n_dns is not None else "DNS"
+    label_les = f"LES (N: {n_les})" if n_les is not None else "LES"
+
+    ax.plot(mesh_dns, u_dns, label=label_dns, color="black", alpha=0.5)
+    ax.plot(mesh_les, u_projected, "x", label=label_les, color="orange", markersize=8)
     ax.plot(mesh_les, u_projected, "--", color="orange", alpha=0.7)
 
     ax.set_title("DNS vs. Coarse LES Projection (last t)")
@@ -315,6 +320,8 @@ def run_projection(
             u_projected=solutions_les[-1],
             mesh_dns=mesh_dns,
             mesh_les=mesh_les,
+            n_dns =len(mesh_dns),
+            n_les = N_les
         )
 
     if save:
