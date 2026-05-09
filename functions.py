@@ -14,17 +14,23 @@ from burgers import Burgers
 
 
 def set_extractions(
-    duration: float, extraction_amount: int, time_step: float, mode: str = "linear"
+    duration: float, extraction_amount: int, time_step: float, mode: str = "linear", strict:bool = False
 ) -> NDArray | None:
     """Set step size for extracting instances."""
     extraction_interval = (
         duration / (extraction_amount - 1) if extraction_amount > 1 else duration
     )
-    if time_step > extraction_interval:
+    if time_step > extraction_interval and strict:
         raise ValueError(
             f"Time step ({time_step}) is larger than the requested extraction "
             f"interval ({extraction_interval:.4f}). Reduce extraction_amount."
         )
+
+    elif time_step > extraction_interval and not strict:
+        extraction_amount_ = int(duration / (time_step))
+        print(f"Time step ({time_step}) is larger than requested extraction. "
+              f"Setting extractions to maximum possible value.")
+        return np.linspace(start=0, stop=duration, num=extraction_amount_ + 1)
 
     if mode == "linear":
         return np.linspace(start=0, stop=duration, num=extraction_amount)
