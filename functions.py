@@ -10,17 +10,27 @@ from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from numpy.typing import NDArray
 
+from burgers import Burgers
+
 
 def set_extractions(
-    duration: float, extraction_amount: int, time_step: float, mode: str = "linear"
+    duration: float, extraction_amount: int, time_step: float, mode: str = "linear", strict:bool = False
 ) -> NDArray | None:
     """Set step size for extracting instances."""
-    extraction_interval = duration / (extraction_amount - 1) if extraction_amount > 1 else duration
-    if time_step > extraction_interval:
+    extraction_interval = (
+        duration / (extraction_amount - 1) if extraction_amount > 1 else duration
+    )
+    if time_step > extraction_interval and strict:
         raise ValueError(
             f"Time step ({time_step}) is larger than the requested extraction "
             f"interval ({extraction_interval:.4f}). Reduce extraction_amount."
         )
+
+    elif time_step > extraction_interval and not strict:
+        extraction_amount_ = int(duration / (time_step))
+        print(f"Time step ({time_step}) is larger than requested extraction. "
+              f"Setting extractions to maximum possible value.")
+        return np.linspace(start=0, stop=duration, num=extraction_amount_ + 1)
 
     if mode == "linear":
         return np.linspace(start=0, stop=duration, num=extraction_amount)
@@ -96,7 +106,9 @@ def plot_solutions_from_directory_animated(
     # ---- set up figure ----
     fig, ax = plt.subplots(figsize=(10, 6))
     (line,) = ax.plot(x, solutions[0], lw=2, color="royalblue")
-    time_text = ax.text(0.02, 0.95, "", transform=ax.transAxes, fontsize=12, verticalalignment="top")
+    time_text = ax.text(
+        0.02, 0.95, "", transform=ax.transAxes, fontsize=12, verticalalignment="top"
+    )
 
     ax.set_xlim(x[0], x[-1])
     ax.set_ylim(u_min - pad, u_max + pad)
@@ -148,7 +160,11 @@ def create_config_variables(
 
 
 def calc_required_grid_points(
-    length: float, reynolds: float, factor_spatial: float, factor_points: float, round_to_power_of_2: bool = True
+    length: float,
+    reynolds: float,
+    factor_spatial: float,
+    factor_points: float,
+    round_to_power_of_2: bool = True,
 ) -> int:
     """Calculate the smallest characteristic length scale associated with the DNS run."""
     spatial_step = factor_spatial * length / reynolds
@@ -167,7 +183,9 @@ def round_down(value: float, decimals: int) -> float:
     return floor(value * factor) / factor
 
 
-def compute_time_step(mesh: np.ndarray, max_velocity: float, viscosity: float, do_round_down: bool = True) -> float:
+def compute_time_step(
+    mesh: np.ndarray, max_velocity: float, viscosity: float, do_round_down: bool = True
+) -> float:
     """CFL-based time step: minimum of convective and diffusive limits."""
     dx = abs(mesh[1] - mesh[0])
     dt = min(dx / max_velocity, dx**2 / viscosity)
@@ -177,3 +195,17 @@ def compute_time_step(mesh: np.ndarray, max_velocity: float, viscosity: float, d
 def implicit_euler_first_order(field: NDArray | float, h: float) -> NDArray:
     """Approximate the derivative of a field with step-size h."""
     return (np.roll(field, -1) - np.roll(field, 1)) / (2 * h)
+
+
+def run_config(
+    configuration: dict, return_directory: bool = True
+) -> tuple[Path, str] | None:
+    """Run a config and return (absolute solver_data path, relative run folder name)."""
+    solver = Burgers(configuration=configuration)
+    solver.print_configuration()
+    solver.run_simulation()
+    solver.post_logging()
+    return (
+        solver.run_dir,
+        solver.run_dir.parent.name if return_directory else None,
+    )  # absolute, relative run folder

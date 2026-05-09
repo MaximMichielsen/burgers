@@ -39,12 +39,12 @@ def run_simulation(
         node_amount=len(coordinates),
         simulation_type="les",
         run_objective="validation",
-        solution_initial=initial_solution,
+        initial_condition=initial_solution,
         viscosity=viscosity,
         time_step=time_step,
-        length=length,
-        time=times[-1] + time_step,
-        extract_at_times=times,
+        domain_length=length,
+        domain_timespan=times[-1] + time_step,
+        time_extractions=times,
     )
     solver = Burgers(configuration=config)
     solver.run_simulation()
@@ -71,8 +71,16 @@ def plot_results(
     # Exact solutions
     exact_labels: list[str] = [f"t = {t}" for t in times]
     exact_styles: list[str] = ["-", "-", "-."]
-    for i, (ec, label, style) in enumerate(zip(exact_solutions, exact_labels, exact_styles)):
-        ax.plot(mesh, ec, linestyle=style, color="royalblue", label="Exact solution" if i == 0 else None)
+    for i, (ec, label, style) in enumerate(
+        zip(exact_solutions, exact_labels, exact_styles)
+    ):
+        ax.plot(
+            mesh,
+            ec,
+            linestyle=style,
+            color="royalblue",
+            label="Exact solution" if i == 0 else None,
+        )
         ax.text(0.8 - i * 0.1, ec[len(ec) // 2], label)
 
     # Solver solutions
@@ -103,6 +111,8 @@ if __name__ == "__main__":
 
     mesh: np.ndarray
     solver_solutions: list[np.ndarray]
-    mesh, solver_solutions = run_simulation(cords, ic, VISCOSITY, TIME_STEP, LENGTH, TIMES)
+    mesh, solver_solutions = run_simulation(
+        cords, ic, VISCOSITY, TIME_STEP, LENGTH, TIMES
+    )
 
     plot_results(mesh, ic, exact_solutions, solver_solutions, TIMES)

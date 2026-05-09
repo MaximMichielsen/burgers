@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 
-from validation import initial_condition, exact_solution, evaluate_on_mesh
-from fem.burgers import Burgers
+from validation.validation import initial_condition, exact_solution, evaluate_on_mesh
+from burgers import Burgers
 
 # ── Domain & physics ─────────────────────────────────────────────────────────────
 LENGTH: float = 1.0
@@ -49,23 +49,25 @@ def build_configs(
     for n_nodes in node_counts:
         mesh = np.linspace(0, length, n_nodes)
         ic = evaluate_on_mesh(initial_condition, mesh, viscosity=viscosity)
-        dt = compute_time_step(mesh, max_velocity=float(np.max(np.abs(ic))), viscosity=viscosity)
+        dt = compute_time_step(
+            mesh, max_velocity=float(np.max(np.abs(ic))), viscosity=viscosity
+        )
         configs.append(
             Burgers.create_config(
-                solution_initial=ic,
+                initial_condition=ic,
                 simulation_type=simulation_type,
                 run_objective="data generation",
                 node_amount=n_nodes,
                 boundary_conditions="fixed",
-                time=time,
+                domain_timespan=time,
                 time_step=dt,
-                length=length,
+                domain_length=length,
                 convergence_tol_residual=1e-6,
                 convergence_tol_update=1e-6,
                 max_iterations=max_iterations,
                 relaxation=None,
                 viscosity=viscosity,
-                extract_at_times=extract_at_times,
+                time_extractions=extract_at_times,
             )
         )
     return configs
@@ -114,9 +116,15 @@ def read_snapshot(filepath: Path) -> tuple[np.ndarray, np.ndarray]:
     return data[:, 0], data[:, 1]
 
 
-def snapshots_exist(node_counts: list[int], times: list[float], simulation_type: str, output_dir: Path) -> bool:
+def snapshots_exist(
+    node_counts: list[int], times: list[float], simulation_type: str, output_dir: Path
+) -> bool:
     """Return True only if every expected CSV is already on disk."""
-    return all((output_dir / f"{simulation_type}_N{n}_t{t:.3f}.csv").exists() for n in node_counts for t in times)
+    return all(
+        (output_dir / f"{simulation_type}_N{n}_t{t:.3f}.csv").exists()
+        for n in node_counts
+        for t in times
+    )
 
 
 # ── Build, run & write (skipped if data already exists) ──────────────────────────
@@ -147,7 +155,14 @@ print(exact_solutions[1])
 
 
 for ax, t, t_idx in zip(axes, TIMES, range(len(TIMES))):
-    ax.plot(ref_cords, exact_solutions[t_idx], color=exact_color, linestyle="--", label="Exact", zorder=3)
+    ax.plot(
+        ref_cords,
+        exact_solutions[t_idx],
+        color=exact_color,
+        linestyle="--",
+        label="Exact",
+        zorder=3,
+    )
 
     for n_nodes in LES_NODE_COUNTS:
         filepath = OUTPUT_DIR / f"les_N{n_nodes}_t{t:.3f}.csv"

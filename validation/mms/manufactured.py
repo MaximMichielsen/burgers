@@ -10,7 +10,11 @@ KAPPA: float = 1
 
 
 def set_manufactured_solution(
-    x: float | NDArray, t: float, omega: float = OMEGA, alpha: float = ALPHA, k: float = KAPPA
+    x: float | NDArray,
+    t: float,
+    omega: float = OMEGA,
+    alpha: float = ALPHA,
+    k: float = KAPPA,
 ) -> float | NDArray:
     """Manufactured solution: u(x,t) = Asin(kπx) * cos(ωt)."""
     return alpha * np.sin(k * np.pi * x) * np.cos(omega * t)
@@ -29,29 +33,47 @@ def manufactured_solution_boundary_conditions() -> tuple[float, float]:
 
 
 def man_sol_dt(
-    x: float | NDArray, t: float, omega: float = OMEGA, alpha: float = ALPHA, k: float = KAPPA
+    x: float | NDArray,
+    t: float,
+    omega: float = OMEGA,
+    alpha: float = ALPHA,
+    k: float = KAPPA,
 ) -> float | NDArray:
     """u_t."""
     return -1 * omega * alpha * np.sin(k * np.pi * x) * np.sin(omega * t)
 
 
 def man_sol_dx(
-    x: float | NDArray, t: float, omega: float = OMEGA, alpha: float = ALPHA, k: float = KAPPA
+    x: float | NDArray,
+    t: float,
+    omega: float = OMEGA,
+    alpha: float = ALPHA,
+    k: float = KAPPA,
 ) -> float | NDArray:
     """u_x."""
     return alpha * np.pi * np.cos(k * np.pi * x) * np.cos(omega * t)
 
 
 def man_sol_dxx(
-    x: float | NDArray, t: float, omega: float = OMEGA, alpha: float = ALPHA, k: float = KAPPA
+    x: float | NDArray,
+    t: float,
+    omega: float = OMEGA,
+    alpha: float = ALPHA,
+    k: float = KAPPA,
 ) -> float | NDArray:
     """u_xx."""
     return alpha * -1 * np.pi**2 * np.sin(k * np.pi * x) * np.cos(omega * t)
 
 
-def manufactured_residual(x: float | NDArray, t: float, viscosity: float) -> float | NDArray:
+def manufactured_residual(
+    x: float | NDArray, t: float, viscosity: float
+) -> float | NDArray:
     """R(u)."""
-    return man_sol_dt(x, t) + set_manufactured_solution(x, t) * man_sol_dx(x, t) - viscosity * man_sol_dxx(x, t)
+    return (
+        man_sol_dt(x, t)
+        + set_manufactured_solution(x, t) * man_sol_dx(x, t)
+        - viscosity * man_sol_dxx(x, t)
+    )
 
 
 if __name__ == "__main__":
@@ -70,9 +92,23 @@ if __name__ == "__main__":
 
     print(residuals)
 
-    for index, (solution, residual) in enumerate(zip(manufactured_solutions, residuals)):
-        plt.plot(mesh_exact, solution, linestyle="-.", color="royalblue", label="solution" if index == 0 else None)
-        plt.plot(mesh_exact, residual, linestyle=":", color="tab:orange", label="residual" if index == 0 else None)
+    for index, (solution, residual) in enumerate(
+        zip(manufactured_solutions, residuals)
+    ):
+        plt.plot(
+            mesh_exact,
+            solution,
+            linestyle="-.",
+            color="royalblue",
+            label="solution" if index == 0 else None,
+        )
+        plt.plot(
+            mesh_exact,
+            residual,
+            linestyle=":",
+            color="tab:orange",
+            label="residual" if index == 0 else None,
+        )
 
     plt.legend()
     plt.grid(True)

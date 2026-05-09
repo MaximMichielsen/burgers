@@ -3,7 +3,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from fem.burgers import Burgers
+from burgers import Burgers
 
 
 def initial_condition(x: NDArray) -> NDArray:
@@ -42,13 +42,12 @@ def _main() -> None:
     config_les = Burgers.create_config(
         node_amount=n_nodes_les,
         simulation_type="les",
-        solution_initial=ic_les,
+        initial_condition=ic_les,
         viscosity=VISCOSITY,
         time_step=dt_les,
-        time=TIME,
+        domain_timespan=TIME,
         boundary_conditions="fixed_one",
         forcing="uniform",
-
     )
 
     solver = Burgers(config_les)

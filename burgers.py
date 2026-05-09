@@ -16,10 +16,8 @@ import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
 
-from fem.constants import (
+from constants import (
     MAXIMUM_ITERATIONS,
-    SIMULATION_DURATION,
-    SIMULATION_LENGTH,
     TOLERANCE_RESIDUAL,
     TOLERANCE_UPDATE,
 )
@@ -37,9 +35,9 @@ class Burgers:
         # ========================================================================== #
         # -------------------------- solver configuration -------------------------- #
         self.configuration: dict = configuration
-        self.simulation_time_end: float = self.configuration["time"]
+        self.domain_timespan: float = self.configuration["domain_timespan"]
         self.simulation_time_elapsed: float = 0
-        self.domain_length: float = self.configuration["length"]
+        self.domain_length: float = self.configuration["domain_length"]
         self.dt: float = self.configuration["time_step"]
         self.relaxation_factor: float | None = self.configuration["relax"]
         self.viscosity: float = self.configuration["viscosity"]
@@ -47,7 +45,7 @@ class Burgers:
         self.max_iterations: int = self.configuration["max_iterations"]
         # --------------------------     benchmarking     -------------------------- #
         self.run_id: str = datetime.now().strftime("%m%d_%H%M%S")
-        self.timings: dict = {}
+        self.timings_performance: dict = {}
         self.time_steps: list = []
         self.residual_history: list | None = []
         self.update_history: list | None = []
@@ -58,30 +56,41 @@ class Burgers:
         self.n_elements: int = self.n_nodes - 1
         self.nodes: NDArray = np.arange(0, self.n_nodes)
         self.boundary_nodes: set[int] = {int(self.nodes[0]), int(self.nodes[-1])}
-        self.node_cords: NDArray = np.linspace(start=0, stop=self.domain_length, num=self.n_nodes)
+        self.node_cords: NDArray = np.linspace(
+            start=0, stop=self.domain_length, num=self.n_nodes
+        )
 
         self.elements: NDArray = self.initialize_elements()
-        self.element_size: float = self.domain_length / (self.n_nodes - 1)  #  Assuming linear mesh
+        self.element_size: float = self.domain_length / (
+            self.n_nodes - 1
+        )  #  Assuming linear mesh
         self.mesh: tuple[NDArray, NDArray] = (self.node_cords, self.elements)
         # --------------------------        output        -------------------------- #
         self.write_solutions: bool = True
-        self.solution: NDArray = self.configuration["solution_initial"].copy()
-        self.solution_initial: NDArray | None = self.configuration["solution_initial"].copy()  #  for plotting
+        self.solution: NDArray = self.configuration["initial_condition"].copy()
+        self.initial_condition: NDArray | None = self.configuration[
+            "initial_condition"
+        ].copy()  #  for plotting
         self.forcing: NDArray | Callable[[NDArray, float], NDArray] | None = (
-            self.configuration["forcing"] if self.configuration["forcing"] is not None else None
+            self.configuration["forcing"]
+            if self.configuration["forcing"] is not None
+            else None
         )
         self.forcing_current: NDArray | None = None
         self.boundary_conditions: str = self.configuration["boundary_conditions"]
-        self.extract_at_times: list | None = configuration["time_extractions"]
+        self.time_extractions: list | None = configuration["time_extractions"]
         self.is_extracted_at_times: list | bool | None = (
-            [False for _ in self.extract_at_times] if self.extract_at_times is not None else None
+            [False for _ in self.time_extractions]
+            if self.time_extractions is not None
+            else None
         )
         self.extracted_solutions: list[NDArray] | None = None
         self.extracted_forcings: list[NDArray] | None = None
         self.run_dir: Path | str = (
-            Path(__file__).parent
-            / "data/runs"
+            Path(__file__).resolve().parent
+            / "runs"
             / f"run_{str(self.configuration['simulation_type'])}_n{self.n_nodes}_{self.run_id}"
+            / "solver_data"
         )
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.logger = self._setup_logger()
@@ -89,35 +98,35 @@ class Burgers:
 
     @staticmethod
     def create_config(
-        solution_initial: NDArray,
+        initial_condition: NDArray,
         simulation_type: str,
         node_amount: int,
         viscosity: float,
         time_step: float,
+        domain_timespan: float,
+        domain_length: float,
         forcing: NDArray | str | None = None,
         run_objective: str = "standard",
         boundary_conditions: str = "fixed",
-        time: float = SIMULATION_DURATION,
-        length: float = SIMULATION_LENGTH,
         convergence_tol_residual: float = TOLERANCE_RESIDUAL,
         convergence_tol_update: float = TOLERANCE_UPDATE,
         max_iterations: int = MAXIMUM_ITERATIONS,
         relaxation: float | None = None,
-        extract_at_times: list | NDArray | None = None,
+        time_extractions: list | NDArray | None = None,
     ) -> dict:
         """Create configuration dictionary."""
         return {
             "simulation_type": str(simulation_type),
             "objective": str(run_objective),
             "boundary_conditions": boundary_conditions,
-            "time_extractions": extract_at_times,
+            "time_extractions": time_extractions,
             "node_amount": node_amount,
-            "time": time,
+            "domain_timespan": domain_timespan,
             "time_step": time_step,
-            "length": length,
+            "domain_length": domain_length,
             "convergence_tol_residual": convergence_tol_residual,
             "convergence_tol_update": convergence_tol_update,
-            "solution_initial": solution_initial,
+            "initial_condition": initial_condition,
             "forcing": forcing,
             "max_iterations": max_iterations,
             "relax": relaxation,
@@ -137,7 +146,9 @@ class Burgers:
         start = perf_counter()
         yield
         elapsed = perf_counter() - start
-        self.timings[name] = self.timings.get(name, 0.0) + elapsed
+        self.timings_performance[name] = (
+            self.timings_performance.get(name, 0.0) + elapsed
+        )
 
     @staticmethod
     def gauss_legendre(number_of_points: int) -> tuple[Any, Any]:
@@ -173,7 +184,7 @@ class Burgers:
 
     def run_simulation(self) -> None:
         """Runs the simulation."""
-        total_steps = int(self.simulation_time_end / self.dt)
+        total_steps = int(self.domain_timespan / self.dt)
 
         throbber = cycle(["nom..        ", "nom nom..    ", "nom nom nom.."])
         throbber_every = 2
@@ -185,7 +196,11 @@ class Burgers:
         throbber_state = next(throbber)
 
         with self.timer("total_simulation"):
-            with tqdm(total=total_steps, desc=f"Eating Burgers | {throbber_state}", file=sys.stdout) as pbar:
+            with tqdm(
+                total=total_steps,
+                desc=f"Eating Burgers | {throbber_state}",
+                file=sys.stdout,
+            ) as pbar:
                 for time_step in range(total_steps):
                     step_start = perf_counter()
                     self.time_steps.append(time_step)
@@ -208,17 +223,17 @@ class Burgers:
                         }
                     )
             # flush any checkpoints not yet triggered (e.g. final time landing just short)
-            if self.extract_at_times is not None:
-                while idx_extract < len(self.extract_at_times):
-
+            if self.time_extractions is not None:
+                while idx_extract < len(self.time_extractions):
                     self.extracted_solutions.append(self.solution.copy())
 
-                    append_forcing = self.forcing_current.copy() if self.forcing_current is not None else np.zeros_like(self.solution)
+                    append_forcing = self.forcing_current.copy()
+                    print(f"forcing {append_forcing}")
                     self.extracted_forcings.append(append_forcing)
 
                     logger.info(
                         "Extracted solution at t=%.4f (end-of-simulation flush)",
-                        self.extract_at_times[idx_extract],
+                        self.time_extractions[idx_extract],
                     )
                     idx_extract += 1
 
@@ -229,13 +244,18 @@ class Burgers:
     def advance_time_step(self) -> None:
         """Advances the solution by one time-step, U^n+1 <- U^n."""
         if callable(self.forcing):
-            self.forcing_current = self.forcing(self.node_cords, self.simulation_time_elapsed)
+            self.forcing_current = self.forcing(
+                self.node_cords, self.simulation_time_elapsed
+            )
 
         elif self.forcing == "uniform":
             self.forcing_current = np.ones_like(self.solution)
 
+        elif self.forcing is None:
+            self.forcing_current = np.zeros_like(self.solution)  # static array or None
+
         else:
-            self.forcing_current = self.forcing  # static array or None
+            self.forcing_current = np.zeros_like(self.solution)  # static array or None
 
         self.solution = self.nr_iteration(solution=self.solution)
         self.energy_history.append(self.compute_energy(self.solution))
@@ -257,14 +277,18 @@ class Burgers:
                             element=element,
                             u_k=solution_k[element],
                             u_n=solution_n[element],
-                            f_e=self.forcing_current[element] if self.forcing_current is not None else None,
+                            f_e=self.forcing_current[element]
+                            if self.forcing_current is not None
+                            else None,
                         )
                         for element in self.elements
                     )
                 )
 
             with self.timer("global_assembly"):
-                global_residual, global_jacobian = self.global_assembly(elemental_residuals, elemental_jacobians)
+                global_residual, global_jacobian = self.global_assembly(
+                    elemental_residuals, elemental_jacobians
+                )
 
             with self.timer("boundary_conditions"):
                 global_residual, global_jacobian = self._apply_boundary_conditions(
@@ -286,7 +310,9 @@ class Burgers:
 
             with self.timer("solution_update"):
                 solution_k += (
-                    delta_u * (1 - self.relaxation_factor) if self.relaxation_factor is not None else delta_u
+                    delta_u * (1 - self.relaxation_factor)
+                    if self.relaxation_factor is not None
+                    else delta_u
                 )
 
             with self.timer("convergence_checking"):
@@ -302,7 +328,11 @@ class Burgers:
         return solution_k
 
     def calculate_elemental_residual_jacobian(
-        self, element: tuple[int, int], u_k: NDArray, u_n: NDArray, f_e: NDArray | None = None
+        self,
+        element: tuple[int, int],
+        u_k: NDArray,
+        u_n: NDArray,
+        f_e: NDArray | None = None,
     ) -> tuple[NDArray, NDArray]:
         """Calculate the residual R_e ∈ ℝ² and Jacobian J_e ∈ ℝ²ˣ² for one element."""
         residual_element = np.zeros(2)
@@ -327,7 +357,9 @@ class Burgers:
                 )
 
                 if is_les:
-                    residual_element[i] += scale * self._vms_residual_integrand(i, gradient_basis, interp_fields)
+                    residual_element[i] += scale * self._vms_residual_integrand(
+                        i, gradient_basis, interp_fields
+                    )
 
                 for j in range(len(element)):
                     jacobian_element[i, j] += scale * self._jacobian_integrand(
@@ -377,13 +409,19 @@ class Burgers:
         """Dispatch to the correct BC method based on configuration."""
         bc_type = self.boundary_conditions
         if bc_type == "fixed":
-            return self._apply_fixed_bcs(global_residual, global_jacobian, solution_k, target_value=0)
+            return self._apply_fixed_bcs(
+                global_residual, global_jacobian, solution_k, target_value=0
+            )
         elif bc_type == "fixed_one":
-            return self._apply_fixed_bcs(global_residual, global_jacobian, solution_k, target_value=1)
+            return self._apply_fixed_bcs(
+                global_residual, global_jacobian, solution_k, target_value=1
+            )
         elif bc_type == "periodic":
             return self._apply_periodic_bcs(global_residual, global_jacobian)
         else:
-            raise ValueError(f"Unknown boundary condition type: '{bc_type!r}'. Expected 'fixed' or 'periodic'.")
+            raise ValueError(
+                f"Unknown boundary condition type: '{bc_type!r}'. Expected 'fixed' or 'periodic'."
+            )
 
     def _apply_fixed_bcs(
         self,
@@ -412,7 +450,9 @@ class Burgers:
         return global_residual[:-1], global_jacobian[:-1, :-1]
 
     @staticmethod
-    def is_residual_converged(residual: float | NDArray, tolerance: float = 1e-6) -> bool:
+    def is_residual_converged(
+        residual: float | NDArray, tolerance: float = 1e-6
+    ) -> bool:
         """Checks if the residual R is small enough to ensure convergence."""
         norm = np.linalg.norm(residual)
         return norm < tolerance * (1 + np.linalg.norm(residual))
@@ -448,7 +488,9 @@ class Burgers:
         return wavenumbers, spectrum
 
     @staticmethod
-    def get_positive_spectrum(wavenumbers: NDArray, spectrum: NDArray) -> tuple[NDArray, NDArray]:
+    def get_positive_spectrum(
+        wavenumbers: NDArray, spectrum: NDArray
+    ) -> tuple[NDArray, NDArray]:
         """Keep only positive parts."""
         mask = wavenumbers >= 0
         return wavenumbers[mask], spectrum[mask]
@@ -579,14 +621,19 @@ class Burgers:
 
     def _maybe_extract_solution(self, idx_extract: int) -> int:
         """Snapshot the solution at each extraction checkpoint."""
-        if self.extract_at_times is None:
+        if self.time_extractions is None:
             return idx_extract
 
         if (
-            idx_extract < len(self.extract_at_times)
-            and self.simulation_time_elapsed >= self.extract_at_times[idx_extract]
+            idx_extract < len(self.time_extractions)
+            and self.simulation_time_elapsed >= self.time_extractions[idx_extract]
         ):
             self.extracted_solutions.append(self.solution.copy())
+            self.extracted_forcings.append(
+                self.forcing_current.copy()
+                if self.forcing_current is not None
+                else np.zeros_like(self.solution)
+            )
             idx_extract += 1
 
         return idx_extract
@@ -597,7 +644,7 @@ class Burgers:
         coordinates = self.node_cords
         run_dir = self.run_dir
 
-        if self.extract_at_times is None:
+        if self.time_extractions is None:
             solutions = [self.solution]
             forcings = [self.forcing_current]
             times = [self.simulation_time_elapsed]
@@ -605,7 +652,9 @@ class Burgers:
         else:
             solutions = self.extracted_solutions
             forcings = self.extracted_forcings
-            times = self.extract_at_times[: len(solutions)]
+            times = self.time_extractions[: len(solutions)]
+
+        write_count = 0
 
         for solution, time, forcing in zip(solutions, times, forcings):
             filepath = run_dir / f"sol_t{time:.3f}.csv"
@@ -617,6 +666,10 @@ class Burgers:
                 for i in range(len(nodes)):
                     writer.writerow([nodes[i], coordinates[i], solution[i], forcing[i]])
 
+            write_count += 1
+
+        print(f"wrote {write_count} snapshots at {run_dir}")
+
     def write_config_to_json(self) -> None:
         """Write run configuration to a JSON file in the run directory."""
         config_serializable = {}
@@ -626,7 +679,9 @@ class Burgers:
             elif isinstance(v, np.ndarray):
                 config_serializable[k] = v.tolist()
             elif callable(v):
-                config_serializable[k] = f"<callable: {getattr(v, '__name__', repr(v))}>"
+                config_serializable[k] = (
+                    f"<callable: {getattr(v, '__name__', repr(v))}>"
+                )
             else:
                 config_serializable[k] = v
 
@@ -645,7 +700,9 @@ class Burgers:
         self.logger.info("=" * 60)
         self.logger.info("START OUTPUT")
         self.logger.info("-" * 60)
-        self.logger.info("Run started at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        self.logger.info(
+            "Run started at %s", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
         self.logger.info("-" * 60)
         self.logger.info("RUN COMPLETE — id: %s", self.run_id)
         self.logger.info("=" * 60)
@@ -669,12 +726,14 @@ class Burgers:
         self.logger.info("  " + "-" * 40)
         self.logger.info("-" * 60)
         # --- Timings ---
-        if self.timings:
+        if self.timings_performance:
             self.logger.info("Timings:")
-            total = self.timings["total_simulation"]
-            for phase, t in sorted(self.timings.items()):
+            total = self.timings_performance["total_simulation"]
+            for phase, t in sorted(self.timings_performance.items()):
                 if phase != "total_simulation":
-                    self.logger.info("  %-25s %.4fs (%5.1f%%)", phase, t, 100 * t / total)
+                    self.logger.info(
+                        "  %-25s %.4fs (%5.1f%%)", phase, t, 100 * t / total
+                    )
             self.logger.info("  %-25s %.4fs", "TOTAL", total)
         else:
             self.logger.warning("No timing data recorded.")
@@ -683,16 +742,26 @@ class Burgers:
         if self.residual_history:
             res, upd = self.total_convergence_history
             self.logger.info("Convergence summary:")
-            self.logger.info("  Residual  — initial: %.4e  final: %.4e  max: %.4e", res[0], res[-1], np.max(res))
+            self.logger.info(
+                "  Residual  — initial: %.4e  final: %.4e  max: %.4e",
+                res[0],
+                res[-1],
+                np.max(res),
+            )
             if len(upd) > 0:
                 self.logger.info(
-                    "  Update    — initial: %.4e  final: %.4e  max: %.4e", upd[0], upd[-1], np.max(upd)
+                    "  Update    — initial: %.4e  final: %.4e  max: %.4e",
+                    upd[0],
+                    upd[-1],
+                    np.max(upd),
                 )
             tol = self.configuration.get("convergence_tol_residual", 1e-6)
             if res[-1] < tol:
                 self.logger.info("  Status    — CONVERGED")
             else:
-                self.logger.warning("  Status    — NOT CONVERGED (final %.4e > tol %.4e)", res[-1], tol)
+                self.logger.warning(
+                    "  Status    — NOT CONVERGED (final %.4e > tol %.4e)", res[-1], tol
+                )
             self.logger.info("  Total NR iterations: %d", len(res))
         else:
             self.logger.warning("No convergence history recorded.")
@@ -714,7 +783,9 @@ class Burgers:
         stream_handler.setFormatter(formatter)
         stream_handler.setLevel(logging.INFO)
 
-        file_handler = logging.FileHandler(self.run_dir / f"{self.run_id}.log", encoding="utf-8")
+        file_handler = logging.FileHandler(
+            self.run_dir / f"{self.run_id}.log", encoding="utf-8"
+        )
         file_handler.setFormatter(formatter)
         file_handler.setLevel(logging.INFO)
 
@@ -733,10 +804,18 @@ class Burgers:
         if arr.size == 0:
             return np.array([]), np.array([])
         effective_window = min(window, len(arr))
-        means = np.convolve(arr, np.ones(effective_window) / effective_window, mode="same")
+        means = np.convolve(
+            arr, np.ones(effective_window) / effective_window, mode="same"
+        )
         stds = np.array(
             [
-                np.std(arr[max(0, i - effective_window // 2) : min(len(arr), i + effective_window // 2 + 1)])
+                np.std(
+                    arr[
+                        max(0, i - effective_window // 2) : min(
+                            len(arr), i + effective_window // 2 + 1
+                        )
+                    ]
+                )
                 for i in range(len(arr))
             ]
         )
@@ -768,7 +847,7 @@ class Burgers:
         )
         ax0.plot(
             self.node_cords,
-            self.solution_initial,
+            self.initial_condition,
             color="grey",
             linestyle="--",
             label="Initial solution",
@@ -784,31 +863,46 @@ class Burgers:
         t = np.arange(len(fr_mean))
         # --- Residual (first) ---
         ax1.plot(t, fr_mean, color="royalblue", label="Residual (first)")
-        ax1.fill_between(t, fr_mean - fr_std, fr_mean + fr_std, color="royalblue", alpha=0.15)
+        ax1.fill_between(
+            t, fr_mean - fr_std, fr_mean + fr_std, color="royalblue", alpha=0.15
+        )
         # --- Residual (last) ---
         ax1.plot(t, lr_mean, color="navy", linestyle="--", label="Residual (last)")
-        ax1.fill_between(t, lr_mean - lr_std, lr_mean + lr_std, color="navy", alpha=0.15)
+        ax1.fill_between(
+            t, lr_mean - lr_std, lr_mean + lr_std, color="navy", alpha=0.15
+        )
         # --- Update (first) ---
         ax1.plot(t, fu_mean, color="tab:orange", label="Update (first)")
-        ax1.fill_between(t, fu_mean - fu_std, fu_mean + fu_std, color="tab:orange", alpha=0.15)
+        ax1.fill_between(
+            t, fu_mean - fu_std, fu_mean + fu_std, color="tab:orange", alpha=0.15
+        )
         # --- Update (last) ---
         ax1.plot(t, lu_mean, color="darkorange", linestyle="--", label="Update (last)")
-        ax1.fill_between(t, lu_mean - lu_std, lu_mean + lu_std, color="darkorange", alpha=0.15)
+        ax1.fill_between(
+            t, lu_mean - lu_std, lu_mean + lu_std, color="darkorange", alpha=0.15
+        )
 
         tolerance_linestyle = "--"
 
-        if self.configuration["convergence_tol_residual"] != self.configuration["convergence_tol_update"]:
+        if (
+            self.configuration["convergence_tol_residual"]
+            != self.configuration["convergence_tol_update"]
+        ):
             ax1.axhline(
                 y=self.configuration["convergence_tol_residual"],
                 color="lightskyblue",
                 linestyle=tolerance_linestyle,
             )
             ax1.axhline(
-                y=self.configuration["convergence_tol_update"], color="lightsalmon", linestyle=tolerance_linestyle
+                y=self.configuration["convergence_tol_update"],
+                color="lightsalmon",
+                linestyle=tolerance_linestyle,
             )
         else:
             ax1.axhline(
-                y=self.configuration["convergence_tol_residual"], color="lightgray", linestyle=tolerance_linestyle
+                y=self.configuration["convergence_tol_residual"],
+                color="lightgray",
+                linestyle=tolerance_linestyle,
             )
 
         ax1.set_yscale("log")
@@ -835,8 +929,15 @@ class Burgers:
 
         # 4. Energy evolution + Dissipation evolution
         ax3 = fig.add_subplot(gs[2, 0])
-        ax3.plot(self.time_steps, self.energy_history, color="red", label="Total energy")
-        ax3.plot(self.time_steps, self.dissipation_history, color="purple", label="Dissipation")
+        ax3.plot(
+            self.time_steps, self.energy_history, color="red", label="Total energy"
+        )
+        ax3.plot(
+            self.time_steps,
+            self.dissipation_history,
+            color="purple",
+            label="Dissipation",
+        )
         # ax3.set_yscale("linear")
         ax3.set_xlabel("Time step")
         # ax3.set_ylabel("")

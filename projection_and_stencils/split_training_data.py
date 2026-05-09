@@ -7,7 +7,10 @@ from numpy.typing import NDArray
 
 
 def split_data(
-    x_input: NDArray, y_target: NDArray, train_ratio: float = 0.7, val_ratio: float = 0.15
+    x_input: NDArray,
+    y_target: NDArray,
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.15,
 ) -> tuple[
     tuple[NDArray, NDArray],
     tuple[NDArray, NDArray],
@@ -27,7 +30,10 @@ def split_data(
 
 
 def split_data_shuffled(
-    x_input: NDArray, y_target: NDArray, train_ratio: float = 0.7, val_ratio: float = 0.15
+    x_input: NDArray,
+    y_target: NDArray,
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.15,
 ) -> tuple[
     tuple[NDArray, NDArray],
     tuple[NDArray, NDArray],
@@ -67,17 +73,30 @@ def save_splits(output_dir: Path | str, splits: tuple) -> None:
 
 
 def verify_splits(split_path: Path) -> None:
-    """Check the statistics of the split data."""
-    print(f"--- Verification for {split_path.name} ---")
+    """Check the statistics of the split data and write a log file."""
+    lines = [f"--- Verification for {split_path.name} ---"]
+
     for name in ["train", "val", "test"]:
         X = np.load(split_path / f"X_{name}.npy")
         y = np.load(split_path / f"y_{name}.npy")
 
-        print(f"Block [{name.upper()}]:")
-        print(f"  Samples: {X.shape[0]}")
-        print(f"  X mean/std: {X.mean():.4f} / {X.std():.4f}")
-        print(f"  y mean/std: {y.mean():.4f} / {y.std():.4f}")
+        block_lines = [
+            f"Block [{name.upper()}]:",
+            f"  Samples: {X.shape[0]}",
+            f"  X shape: {X.shape}",
+            f"  X mean/std: {X.mean():.4f} / {X.std():.4f}",
+            f"  y mean/std: {y.mean():.4f} / {y.std():.4f}",
+        ]
 
-        # Check for NaN or Inf (common in division by zero during projection_and_stencils)
         if not np.all(np.isfinite(X)):
-            print(f"  ❌ CRITICAL: NaNs or Infs found in X_{name}!")
+            block_lines.append(f"  ❌ CRITICAL: NaNs or Infs found in X_{name}!")
+
+        lines.extend(block_lines)
+
+    output = "\n".join(lines)
+    print(output)
+
+    log_path = split_path / "split_verification.log"
+    with open(log_path, "w") as f:
+        f.write(output + "\n")
+    print(f"Split verification log saved to '{log_path}'.")
