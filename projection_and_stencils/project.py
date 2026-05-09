@@ -54,7 +54,7 @@ def read_dns_data(
     return x, list(times), list(solutions), list(forcings)
 
 
-def box_filter(solution: NDArray, ratio: int) -> tuple[NDArray, NDArray]:
+def box_filter(solution: NDArray, ratio: int, n_les: int) -> tuple[NDArray, NDArray]:
     """Apply a box filter and downsample a DNS snapshot to the LES grid.
 
     Returns:
@@ -64,10 +64,10 @@ def box_filter(solution: NDArray, ratio: int) -> tuple[NDArray, NDArray]:
     uu_bar:
         Filtered, coarse-grained velocity squared (N_les,) — needed for τ_sgs.
     """
-    # assumes uniform periodic grid and centered box filter
-    u_bar = uniform_filter(solution, size=ratio, mode="wrap")[ratio // 2 :: ratio]
-    uu_bar = uniform_filter(solution**2, size=ratio, mode="wrap")[ratio // 2 :: ratio]
-    return u_bar, uu_bar
+    u_bar_full  = uniform_filter(solution,    size=ratio, mode="nearest")
+    uu_bar_full = uniform_filter(solution**2, size=ratio, mode="nearest")
+    indices = np.round(np.linspace(0, len(solution) - 1, n_les)).astype(int)
+    return u_bar_full[indices], uu_bar_full[indices]
 
 
 def compute_tau(u_bar: NDArray, uu_bar: NDArray, snapshot_index: int) -> NDArray:
@@ -258,7 +258,9 @@ def run_projection(
     # --- read DNS snapshots ---------------------------------------------------
     mesh_dns, times, solutions_dns, forcings_dns = read_dns_data(directory)
 
-    mesh_les = mesh_dns[DNS_TO_LES_RATIO // 2 :: DNS_TO_LES_RATIO]
+    N_les = len(mesh_dns) // DNS_TO_LES_RATIO
+    les_indices = np.round(np.linspace(0, len(mesh_dns) - 1, N_les)).astype(int)
+    mesh_les = mesh_dns[les_indices]
     h_les = float(abs(mesh_les[1] - mesh_les[0]))
 
     print(f"LES grid size: {len(mesh_les)}")
@@ -277,13 +279,11 @@ def run_projection(
     u_prime_t_list = []
 
     for i, (solution_dns, forcing_dns) in enumerate(zip(solutions_dns, forcings_dns)):
-        u_bar, uu_bar = box_filter(solution_dns, ratio=DNS_TO_LES_RATIO)
+        u_bar, uu_bar = box_filter(solution_dns, ratio=DNS_TO_LES_RATIO, n_les=N_les)
 
         if i > 0:
             du_dt_dns = (solution_dns - solutions_dns[i - 1]) / dt
-            du_dt_bar = uniform_filter(du_dt_dns, size=DNS_TO_LES_RATIO, mode="wrap")[
-                DNS_TO_LES_RATIO // 2 :: DNS_TO_LES_RATIO
-            ]
+            du_dt_bar = uniform_filter(du_dt_dns, size=DNS_TO_LES_RATIO, mode="nearest")[les_indices]
 
         else:
             du_dt_bar = np.zeros_like(u_bar)
@@ -301,7 +301,7 @@ def run_projection(
             u_bar_prev=solutions_les[-1] if solutions_les else None,
             dt=dt,
         )
-        f_bar, _ = box_filter(forcing_dns, ratio=DNS_TO_LES_RATIO)
+        f_bar, _ = box_filter(forcing_dns, ratio=DNS_TO_LES_RATIO, n_les=N_les)
 
         solutions_les.append(u_bar)
         tau_list.append(tau)
