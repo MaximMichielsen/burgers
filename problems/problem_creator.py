@@ -1,6 +1,6 @@
 from typing import Callable
 
-from problems.initial_conditions import uniform_steady_forcing
+from problems.forcing_types import uniform_steady_forcing
 
 
 def create_problem_definition(
@@ -25,10 +25,10 @@ def create_problem_definition(
 
 
 problem_robijns_one = create_problem_definition(
-    forcing="uniform",
+    forcing=uniform_steady_forcing,
     domain_length=1,
     domain_timespan=2,
     reynolds=100,
     boundary_conditions="fixed_one",
-    initial_condition=uniform_steady_forcing(),
+    initial_condition=uniform_steady_forcing,
 )

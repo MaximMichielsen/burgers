@@ -180,7 +180,9 @@ def plot_training_diagnostics(output_dir: str | Path, stats) -> None:
     axes[0].legend()
 
     axes[1].plot(epochs, stats["train_mae"], label="Train MAE", color="blue")
-    axes[1].plot(epochs, stats["val_mae"], label="Val MAE", color="green", linestyle="--")
+    axes[1].plot(
+        epochs, stats["val_mae"], label="Val MAE", color="green", linestyle="--"
+    )
     axes[1].set_title("Generalization Diagnostic (MAE)")
     axes[1].set_xlabel("Epochs")
     axes[1].set_ylabel("Error")

@@ -18,7 +18,8 @@ from constants import (
     POST_SPLIT_FOLDER,
     AGENTS_FOLDER,
     INPUT_STENCIL,
-    OUTPUT_STENCIL, TRAINING_DATA_FOLDER,
+    OUTPUT_STENCIL,
+    TRAINING_DATA_FOLDER,
 )
 from data_generation.configurations import create_code_test_config, create_dns_config
 from functions import run_config
@@ -31,12 +32,12 @@ from projection_and_stencils.split_training_data import (
 )
 
 # ── Pipeline flags ────────────────────────────────────────────────────────────
-test_pipeline: bool = True
+test_pipeline: bool = False
 generate_data_dns: bool = True
 
 create_projection: bool = True
-perform_split: bool = False
-perform_training: bool = False
+perform_split: bool = True
+perform_training: bool = True
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 CURRENT_DIR = Path(__file__).parent.resolve()
@@ -89,7 +90,9 @@ if __name__ == "__main__":
         model_save_path.mkdir(parents=True, exist_ok=True)
 
         model, train_stats, test_data = train_and_diagnose(post_split_path)
-        test_preds = evaluate_test_performance(model, test_data, output_dir=model_save_path)
+        test_preds = evaluate_test_performance(
+            model, test_data, output_dir=model_save_path
+        )
 
         torch.save(model.state_dict(), model_save_path / "sgs_mlp_model.pth")
         np.save(model_save_path / "training_history.npy", train_stats)

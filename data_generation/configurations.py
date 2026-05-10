@@ -12,6 +12,8 @@ from constants import (
     DNS_SNAPSHOT_AMOUNT,
 )
 from functions import calc_required_grid_points, compute_time_step, set_extractions
+from problems.forcing_types import sin_cos_forcing
+from problems.initial_conditions import uniform_initial_condition
 
 
 def create_dns_config(problem_definition: dict) -> dict:
@@ -76,15 +78,15 @@ def create_dns_config(problem_definition: dict) -> dict:
 def create_code_test_config() -> dict:
     """Quick test run to check code behavior."""
     n_nodes = 512
-    initial_solution = np.zeros(n_nodes)
 
     config_test = Burgers.create_config(
-        initial_condition=initial_solution,
+        initial_condition=uniform_initial_condition,
         simulation_type="dns",
         run_objective="code test",
         node_amount=n_nodes,
         boundary_conditions="fixed",
-        forcing=None,
+        forcing=sin_cos_forcing,
+        forcing_is_steady=False,
         domain_timespan=0.5,
         time_step=0.05,
         domain_length=1,

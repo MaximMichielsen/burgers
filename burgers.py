@@ -24,11 +24,14 @@ from constants import (
 
 logger = logging.getLogger(__name__)
 
-def _to_callable(field):
+
+def _to_callable(field) -> Callable | NDArray | None:
     if callable(field):
         return field
     arr = np.asarray(field)
-    return lambda x: np.interp(x, np.linspace(0, 1, len(arr)), arr)
+    return lambda x: (
+        np.interp(x, np.linspace(0, 1, len(arr)), arr) if field is not None else None
+    )
 
 
 class Burgers:
@@ -73,15 +76,16 @@ class Burgers:
         self.mesh: tuple[NDArray, NDArray] = (self.node_cords, self.elements)
         # --------------------------        output        -------------------------- #
         self.write_solutions: bool = True
-        self.solution: NDArray = self.configuration["initial_condition"].copy()
-        self.initial_condition: NDArray | None = self.configuration[
-            "initial_condition"
-        ].copy()  #  for plotting
+        self.solution: NDArray = self.set_initial_condition(
+            initial_condition=self.configuration["initial_condition"]
+        )
+        self.initial_condition: NDArray = self.solution.copy()
         self.forcing: NDArray | Callable[[NDArray, float], NDArray] | None = (
             self.configuration["forcing"]
             if self.configuration["forcing"] is not None
             else None
         )
+        self.forcing_is_steady: bool = self.configuration["forcing_behavior"]
         self.forcing_current: NDArray | None = None
         self.boundary_conditions: str = self.configuration["boundary_conditions"]
         self.time_extractions: list | None = configuration["time_extractions"]
@@ -102,16 +106,24 @@ class Burgers:
         self.logger = self._setup_logger()
         # ========================================================================== #
 
+    def set_initial_condition(self, initial_condition: NDArray | Callable) -> NDArray:
+        """Set the initial condition based on the type of initial condition given."""
+        if isinstance(initial_condition, Callable):
+            return initial_condition(self.node_cords)
+
+        return initial_condition.copy()
+
     @staticmethod
     def create_config(
-        initial_condition: NDArray,
+        initial_condition: NDArray | Callable,
         simulation_type: str,
         node_amount: int,
         viscosity: float,
         time_step: float,
         domain_timespan: float,
         domain_length: float,
-        forcing: NDArray | str | None = None,
+        forcing: NDArray | Callable | None = None,
+        forcing_is_steady: bool = True,
         run_objective: str = "standard",
         boundary_conditions: str = "fixed",
         convergence_tol_residual: float = TOLERANCE_RESIDUAL,
@@ -134,6 +146,7 @@ class Burgers:
             "convergence_tol_update": convergence_tol_update,
             "initial_condition": initial_condition,
             "forcing": forcing,
+            "forcing_behavior": forcing_is_steady,
             "max_iterations": max_iterations,
             "relax": relaxation,
             "viscosity": viscosity,
@@ -250,18 +263,17 @@ class Burgers:
     def advance_time_step(self) -> None:
         """Advances the solution by one time-step, U^n+1 <- U^n."""
         if callable(self.forcing):
-            self.forcing_current = self.forcing(
-                self.node_cords, self.simulation_time_elapsed
+            self.forcing_current = (
+                self.forcing(self.node_cords, self.simulation_time_elapsed)
+                if not self.forcing_is_steady
+                else self.forcing(self.node_cords)
             )
 
-        elif self.forcing == "uniform":
-            self.forcing_current = np.ones_like(self.solution)
-
         elif self.forcing is None:
-            self.forcing_current = np.zeros_like(self.solution)  # static array or None
+            self.forcing_current = np.zeros_like(self.solution)
 
         else:
-            self.forcing_current = np.zeros_like(self.solution)  # static array or None
+            self.forcing_current = self.forcing
 
         self.solution = self.nr_iteration(solution=self.solution)
         self.energy_history.append(self.compute_energy(self.solution))

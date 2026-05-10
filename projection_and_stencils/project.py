@@ -64,20 +64,21 @@ def box_filter(solution: NDArray, ratio: int, n_les: int) -> tuple[NDArray, NDAr
     uu_bar:
         Filtered, coarse-grained velocity squared (N_les,) — needed for τ_sgs.
     """
-    u_bar_full  = uniform_filter(solution,    size=ratio, mode="nearest")
+    u_bar_full = uniform_filter(solution, size=ratio, mode="nearest")
     uu_bar_full = uniform_filter(solution**2, size=ratio, mode="nearest")
     indices = np.round(np.linspace(0, len(solution) - 1, n_les)).astype(int)
     return u_bar_full[indices], uu_bar_full[indices]
 
 
 def compute_tau(u_bar: NDArray, uu_bar: NDArray, snapshot_index: int) -> NDArray:
-    """Compute the SGS stress τ_sgs = uu_bar - u_bar²."""
+    """Compute the SGS stress τ_sgs = uu_bar - u_bar², clamped to zero."""
     tau = uu_bar - u_bar**2
-    if np.any(tau < 0):
+    if np.any(tau < -1e-10):  # only raise on meaningfully negative values
         raise ValueError(
-            f"Negative τ_sgs at snapshot {snapshot_index}. Check the box-filter implementation."
+            f"Negative τ_sgs at snapshot {snapshot_index}. "
+            f"Min value: {tau.min():.3e}. Check the box-filter implementation."
         )
-    return tau
+    return np.maximum(tau, 0.0)
 
 
 def compute_du_bar_dt(
@@ -288,7 +289,9 @@ def run_projection(
 
         if i > 0:
             du_dt_dns = (solution_dns - solutions_dns[i - 1]) / dt
-            du_dt_bar = uniform_filter(du_dt_dns, size=DNS_TO_LES_RATIO, mode="nearest")[les_indices]
+            du_dt_bar = uniform_filter(
+                du_dt_dns, size=DNS_TO_LES_RATIO, mode="nearest"
+            )[les_indices]
 
         else:
             du_dt_bar = np.zeros_like(u_bar)
@@ -320,8 +323,8 @@ def run_projection(
             u_projected=solutions_les[-1],
             mesh_dns=mesh_dns,
             mesh_les=mesh_les,
-            n_dns =len(mesh_dns),
-            n_les = N_les
+            n_dns=len(mesh_dns),
+            n_les=N_les,
         )
 
     if save:
