@@ -24,6 +24,12 @@ from constants import (
 
 logger = logging.getLogger(__name__)
 
+def _to_callable(field):
+    if callable(field):
+        return field
+    arr = np.asarray(field)
+    return lambda x: np.interp(x, np.linspace(0, 1, len(arr)), arr)
+
 
 class Burgers:
     """Burgers class solver to simulate the discrete system: M * U_t + A(U) * U + nu * K_0 * U + C_fs(U) = f."""
@@ -719,10 +725,7 @@ class Burgers:
         self.logger.info("  %-30s %s", "Parameter", "Value")
         self.logger.info("  " + "-" * 40)
         for k, v in config_loggable.items():
-            if k == "time_extractions":
-                self.logger.info("  %-30s %s", k, len(v))
-            else:
-                self.logger.info("  %-30s %s", k, v)
+            self.logger.info("  %-30s %s", k, v)
         self.logger.info("  " + "-" * 40)
         self.logger.info("-" * 60)
         # --- Timings ---
