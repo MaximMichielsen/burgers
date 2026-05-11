@@ -29,7 +29,7 @@ from data_generation.configurations import (
     create_solver_configs,
 )
 from functions import run_config, read_data, SolutionConfig, plot_solution_comparison
-from problems.problem_creator import periodic_steady_forcing, periodic_sin_forcing_low_visc, \
+from problems.problems import periodic_steady_forcing, periodic_sin_forcing_low_visc, \
     periodic_sin_forcing_high_visc, periodic_sin_forcing_med_visc
 from projection_and_stencils.project import run_projection
 from projection_and_stencils.split_training_data import (
