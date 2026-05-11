@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -21,7 +20,6 @@ from constants import (
     INPUT_STENCIL,
     OUTPUT_STENCIL,
     TRAINING_DATA_FOLDER,
-    MESH_LES,
 )
 from data_generation.configurations import (
     create_code_test_config,
