@@ -1,7 +1,11 @@
 from math import pi
 from typing import Callable
 
-from problems.forcing_types import uniform_steady_forcing, none_forcing, sin_steady_forcing
+from problems.forcing_types import (
+    uniform_steady_forcing,
+    none_forcing,
+    sin_steady_forcing,
+)
 from problems.initial_conditions import uniform_initial_condition
 
 
@@ -59,7 +63,8 @@ periodic_sin_forcing_low_visc = create_problem_definition(
     domain_timespan=2,
     reynolds=50,
     boundary_conditions="periodic",
-    initial_condition=uniform_initial_condition,)
+    initial_condition=uniform_initial_condition,
+)
 
 periodic_sin_forcing_med_visc = create_problem_definition(
     forcing=sin_steady_forcing,
@@ -67,7 +72,8 @@ periodic_sin_forcing_med_visc = create_problem_definition(
     domain_timespan=2,
     reynolds=100,
     boundary_conditions="periodic",
-    initial_condition=uniform_initial_condition,)
+    initial_condition=uniform_initial_condition,
+)
 
 periodic_sin_forcing_high_visc = create_problem_definition(
     forcing=sin_steady_forcing,
@@ -75,5 +81,5 @@ periodic_sin_forcing_high_visc = create_problem_definition(
     domain_timespan=2,
     reynolds=180,
     boundary_conditions="periodic",
-    initial_condition=uniform_initial_condition,)
-
+    initial_condition=uniform_initial_condition,
+)

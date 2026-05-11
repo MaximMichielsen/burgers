@@ -29,8 +29,9 @@ from data_generation.configurations import (
     create_solver_configs,
 )
 from functions import run_config, read_data, SolutionConfig, plot_solution_comparison
-from problems.problems import periodic_steady_forcing, periodic_sin_forcing_low_visc, \
-    periodic_sin_forcing_high_visc, periodic_sin_forcing_med_visc, periodic_no_forcing
+from problems.problems import (
+    periodic_sin_forcing_high_visc,
+)
 from projection_and_stencils.project import run_projection
 from projection_and_stencils.split_training_data import (
     save_splits,
@@ -89,7 +90,6 @@ if __name__ == "__main__":
         solver_data_path_les_no_model, run_folder_no_model = run_config(
             config_les_no_model
         )
-
 
     # ── Derived paths ─────────────────────────────────────────────────────────
     training_data_path = CURRENT_DIR / RUNS_FOLDER / run_folder / TRAINING_DATA_FOLDER
@@ -151,7 +151,7 @@ if __name__ == "__main__":
         if not perform_training:
             agent_folder = run_folder
             model_save_path = Path(agent_folder)
-            model_save_path =  "runs" / model_save_path /"agents/predictor/"
+            model_save_path = "runs" / model_save_path / "agents/predictor/"
 
             model_path = Path(model_save_path / "sgs_mlp_model.pth")
 

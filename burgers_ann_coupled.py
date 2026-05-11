@@ -330,7 +330,7 @@ class Burgers:
             tensor_out = self.ann_model(tensor_in)  # (N, 4)
             y_norm = tensor_out.numpy()
 
-        y = self._denormalise_output(y_norm)         # (N, 4)  physical units
+        y = self._denormalise_output(y_norm)  # (N, 4)  physical units
 
         # Only add the pure SGS channels (1, 2, 3); channel 0 is the resolved
         # convective flux derivative already present in the Galerkin residual.

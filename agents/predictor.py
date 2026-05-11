@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from matplotlib import pyplot as plt
+from numpy.typing import NDArray
 from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
