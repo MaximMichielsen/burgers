@@ -89,44 +89,46 @@ if __name__ == "__main__":
 
     # ── Compare models ────────────────────────────────────────────────────────
 
-    # Pre-load DNS once (its style differs enough to justify explicit setup)
-    dns_solution, mesh_dns = read_data(directory=solver_data_path, final_only=True)
-    _, mesh_les = read_data(solver_data_path_les_analytical, final_only=True)
+    if compare_solvers:
 
-    configs = [
-        SolutionConfig(
-            data_path=solver_data_path,
-            label="DNS",
-            color="gray",
-            linestyle="-",
-            marker="",  # no marker for the reference curve
-            alpha=0.7,
-            mesh=mesh_dns,
-            solution=dns_solution,
-        ),
-        SolutionConfig(
-            data_path=solver_data_path_les_analytical,
-            label="LES - A",
-            color="royalblue",
-            marker="x",
-        ),
-        SolutionConfig(
-            data_path=solver_data_path_les_no_model,
-            label="LES - no model",
-            color="tab:orange",
-            marker=".",
-        ),
-        SolutionConfig(
-            data_path=solver_data_path,  # unused when mesh/solution are provided
-            label="LES - projection",
-            color="lightgreen",
-            marker="^",
-            mesh=mesh_les,
-            solution=projected_solution,
-        ),
-    ]
+        # Pre-load DNS once (its style differs enough to justify explicit setup)
+        dns_solution, mesh_dns = read_data(directory=solver_data_path, final_only=True)
+        _, mesh_les = read_data(solver_data_path_les_analytical, final_only=True)
 
-    fig, ax = plot_solution_comparison(configs, output_path=solver_data_path)
+        configs = [
+            SolutionConfig(
+                data_path=solver_data_path,
+                label="DNS",
+                color="gray",
+                linestyle="-",
+                marker="",  # no marker for the reference curve
+                alpha=0.7,
+                mesh=mesh_dns,
+                solution=dns_solution,
+            ),
+            SolutionConfig(
+                data_path=solver_data_path_les_analytical,
+                label="LES - A",
+                color="royalblue",
+                marker="x",
+            ),
+            SolutionConfig(
+                data_path=solver_data_path_les_no_model,
+                label="LES - no model",
+                color="tab:orange",
+                marker=".",
+            ),
+            SolutionConfig(
+                data_path=solver_data_path,  # unused when mesh/solution are provided
+                label="LES - projection",
+                color="lightgreen",
+                marker="^",
+                mesh=mesh_les,
+                solution=projected_solution,
+            ),
+        ]
+
+        fig, ax = plot_solution_comparison(configs, output_path=solver_data_path)
 
     # ── Train/test split ──────────────────────────────────────────────────────
     if perform_split or test_pipeline:
