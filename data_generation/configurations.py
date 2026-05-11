@@ -10,13 +10,19 @@ from constants import (
     DNS_SPATIAL_FACTOR,
     DNS_POINTS_FACTOR,
     DNS_SNAPSHOT_AMOUNT,
+    DNS_TO_LES_RATIO,
 )
 from functions import calc_required_grid_points, compute_time_step, set_extractions
 from problems.forcing_types import sin_cos_forcing
 from problems.initial_conditions import uniform_initial_condition
 
 
-def create_dns_config(problem_definition: dict) -> dict:
+def create_solver_configs(
+    problem_definition: dict,
+    with_dns: bool = True,
+    with_les_analytical: bool = True,
+    with_les_no_model: bool = True,
+) -> dict | tuple[dict, dict] | tuple[dict, dict, dict]:
     """Create configuration for Burgers solver for a DNS simulation."""
     simulation_length: float = problem_definition["domain_length"]
     simulation_duration: float = problem_definition["domain_timespan"]
@@ -28,24 +34,41 @@ def create_dns_config(problem_definition: dict) -> dict:
     boundary_conditions = problem_definition["boundary_conditions"]
     forcing = problem_definition["forcing"]
 
-    required_grid_points_dns = calc_required_grid_points(
+    grid_points_dns = calc_required_grid_points(
         length=simulation_length,
         reynolds=reynolds,
         factor_spatial=DNS_SPATIAL_FACTOR,
         factor_points=DNS_POINTS_FACTOR,
     )
 
-    mesh, h = np.linspace(
-        start=0, stop=simulation_length, num=required_grid_points_dns, retstep=True
+    print("gridpoints dns", grid_points_dns)
+
+    grid_points_les = grid_points_dns // DNS_TO_LES_RATIO
+
+    print("grid_points_les", grid_points_les)
+
+    mesh_dns, h_dns = np.linspace(
+        start=0, stop=simulation_length, num=grid_points_dns, retstep=True
     )
 
-    initial_solution = initial_condition(mesh)
+    mesh_les, h_les = np.linspace(
+        start=0, stop=simulation_length, num=grid_points_les, retstep=True
+    )
+
+    initial_solution_dns = initial_condition(mesh_dns)
+    initial_solution_les = initial_condition(mesh_les)
+
+    max_velocity = max(max(initial_solution_dns), max(initial_solution_les))
 
     time_step_dns = compute_time_step(
-        mesh=mesh,
-        max_velocity=max(initial_solution),
+        h=h_dns,
+        max_velocity=max(initial_solution_dns),
         viscosity=viscosity,
         do_round_down=True,
+    )
+
+    time_step_les = compute_time_step(
+        h=h_les, max_velocity=max_velocity, viscosity=viscosity, do_round_down=True
     )
 
     dns_extractions = set_extractions(
@@ -54,11 +77,17 @@ def create_dns_config(problem_definition: dict) -> dict:
         time_step=time_step_dns,
     )
 
+    les_extractions = set_extractions(
+        duration=simulation_duration,
+        extraction_amount=DNS_SNAPSHOT_AMOUNT // DNS_TO_LES_RATIO,
+        time_step=time_step_les,
+    )
+
     config_dns = Burgers.create_config(
-        initial_condition=initial_solution,
+        initial_condition=initial_solution_dns,
         simulation_type="dns",
         run_objective="data generation",
-        node_amount=required_grid_points_dns,
+        node_amount=grid_points_dns,
         boundary_conditions=boundary_conditions,
         forcing=forcing,
         domain_timespan=simulation_duration,
@@ -72,18 +101,68 @@ def create_dns_config(problem_definition: dict) -> dict:
         time_extractions=dns_extractions,
     )
 
+    config_les_analytical = Burgers.create_config(
+        initial_condition=initial_solution_les,
+        simulation_type="les",
+        run_objective="data_generation",
+        node_amount=grid_points_les,
+        boundary_conditions=boundary_conditions,
+        forcing=forcing,
+        domain_timespan=simulation_duration,
+        time_step=time_step_les,
+        domain_length=simulation_length,
+        convergence_tol_residual=1e-4,
+        convergence_tol_update=1e-4,
+        max_iterations=20,
+        relaxation=None,
+        viscosity=viscosity,
+        time_extractions=les_extractions,
+    )
+
+    config_les_no_model = Burgers.create_config(
+        initial_condition=initial_solution_les,
+        simulation_type="dns",
+        run_objective="data_generation",
+        node_amount=grid_points_les,
+        boundary_conditions=boundary_conditions,
+        forcing=forcing,
+        domain_timespan=simulation_duration,
+        time_step=time_step_les,
+        domain_length=simulation_length,
+        convergence_tol_residual=1e-4,
+        convergence_tol_update=1e-4,
+        max_iterations=20,
+        relaxation=None,
+        viscosity=viscosity,
+        time_extractions=les_extractions,
+    )
+
+    if with_dns and with_les_analytical and with_les_no_model:
+        return config_dns, config_les_analytical, config_les_no_model
+
+    elif with_dns and with_les_analytical:
+        return config_dns, config_les_analytical
+
+    elif with_dns and with_les_no_model:
+        return config_dns, config_les_no_model
+
     return config_dns
 
 
 def create_code_test_config() -> dict:
     """Quick test run to check code behavior."""
-    n_nodes = 512
+    grid_points_dns = calc_required_grid_points(
+        length=1,
+        reynolds=100,
+        factor_spatial=DNS_SPATIAL_FACTOR,
+        factor_points=DNS_POINTS_FACTOR,
+    )
 
     config_test = Burgers.create_config(
         initial_condition=uniform_initial_condition,
         simulation_type="dns",
         run_objective="code test",
-        node_amount=n_nodes,
+        node_amount=grid_points_dns,
         boundary_conditions="fixed",
         forcing=sin_cos_forcing,
         forcing_is_steady=False,

@@ -245,7 +245,7 @@ def run_projection(
     save: bool = True,
     output_dir: str | Path | None = None,
     verify: bool = True,
-) -> tuple[NDArray, NDArray, dict[str, float]]:
+) -> tuple[NDArray, NDArray, dict[str, float], NDArray]:
     """Project DNS data onto the LES grid and build ANN training data.
 
     Returns:
@@ -357,4 +357,4 @@ def run_projection(
             f"[{run_id}] Saved training data and normalisation stats to '{output_dir}'."
         )
 
-    return X, y, stats
+    return X, y, stats, solutions_les[-1]

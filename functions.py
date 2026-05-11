@@ -12,6 +12,9 @@ from numpy.typing import NDArray
 
 from burgers import Burgers
 
+from dataclasses import dataclass, field
+from typing import Optional
+
 
 def set_extractions(
     duration: float,
@@ -190,11 +193,10 @@ def round_down(value: float, decimals: int) -> float:
 
 
 def compute_time_step(
-    mesh: np.ndarray, max_velocity: float, viscosity: float, do_round_down: bool = True
+    h: float, max_velocity: float, viscosity: float, do_round_down: bool = True
 ) -> float:
     """CFL-based time step: minimum of convective and diffusive limits."""
-    dx = abs(mesh[1] - mesh[0])
-    dt = min(dx / max_velocity, dx**2 / viscosity)
+    dt = min(h / max_velocity, h**2 / viscosity)
     return round_down(dt, 4) if do_round_down else dt
 
 
@@ -215,3 +217,137 @@ def run_config(
         solver.run_dir,
         solver.run_dir.parent.name if return_directory else None,
     )  # absolute, relative run folder
+
+
+def read_data(
+    directory: str | Path,
+    final_only: bool = False,
+) -> (
+    tuple[NDArray, list[float], list[NDArray], list[NDArray]] | tuple[NDArray, NDArray]
+):
+    """Read chronologically sorted DNS snapshots from *directory*.
+
+    Returns:
+    -------
+    x:
+        Spatial coordinate array (N_dns,).
+    times:
+        Sorted list of snapshot times.
+    solutions:
+        Corresponding list of solution arrays, each of shape (N_dns,).
+    """
+    directory = Path(directory)
+    files = sorted(directory.glob("sol_t*.csv"))
+
+    if not files:
+        raise FileNotFoundError(f"No sol_t*.csv files found in {directory}")
+
+    times, solutions, forcings = [], [], []
+    x = None
+
+    for file in files:
+        time = float(file.stem.split("t")[-1])
+        times.append(time)
+
+        data = np.loadtxt(file, delimiter=",", skiprows=1)
+        if x is None:
+            x = data[:, 1]
+        solutions.append(data[:, 2])
+
+        # PLACEHOLDER: Assuming column 3 will be forcing
+        # For now, we create a dummy array of zeros matching the DNS shape
+        try:
+            forcings.append(data[:, 3])
+        except IndexError:
+            forcings.append(np.zeros_like(data[:, 2]))
+
+    times, solutions = zip(*sorted(zip(times, solutions)))
+
+    if final_only:
+        solutions = list(solutions)
+        return solutions[-1], x
+
+    return x, list(times), list(solutions), list(forcings)
+
+
+@dataclass
+class SolutionConfig:
+    """Configuration for a single solution to plot."""
+
+    data_path: Path
+    label: str
+    color: str
+    linestyle: str = "-."
+    marker: str = "o"
+    alpha: float = 0.8
+    mesh: Optional[object] = field(default=None, repr=False)
+    solution: Optional[object] = field(default=None, repr=False)
+
+
+def plot_solution_comparison(
+    configs: list[SolutionConfig],
+    output_path: Path,
+    title: str = "Comparison of DNS and LES Solutions",
+    xlabel: str = "Spatial Domain",
+    ylabel: str = "Solution Value",
+    figsize: tuple = (10, 6),
+    filename: str = "comparison_solvers.png",
+    dpi: int = 150,
+) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Plot and save a comparison of multiple solver solutions.
+
+    Parameters
+    ----------
+    configs : list[SolutionConfig]
+        Each entry holds the path, label, style, and optionally pre-loaded
+        mesh/solution arrays for one curve.
+    output_path : Path
+        Directory (or file path) where the figure is saved.
+    title, xlabel, ylabel : str
+        Axis annotations.
+    figsize : tuple
+        Matplotlib figure size.
+    filename : str
+        Output filename (used when output_path is a directory).
+    dpi : int
+        Resolution of the saved figure.
+
+    Returns
+    -------
+    fig, ax : the Matplotlib figure and axes objects.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    for cfg in configs:
+        mesh = cfg.mesh
+        solution = cfg.solution
+
+        if mesh is None or solution is None:
+            solution, mesh = read_data(directory=cfg.data_path, final_only=True)
+
+        label = f"{cfg.label} ({len(mesh)})"
+
+        ax.plot(
+            mesh,
+            solution,
+            label=label,
+            color=cfg.color,
+            linestyle=cfg.linestyle,
+            marker=cfg.marker,
+            alpha=cfg.alpha,
+        )
+
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.grid(True, which="both", linestyle=":", alpha=0.5)
+    ax.legend(loc="upper left")
+
+    plt.tight_layout()
+
+    save_path = output_path / filename if output_path.is_dir() else output_path
+    plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    plt.show()
+
+    return fig, ax

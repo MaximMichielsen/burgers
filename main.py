@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -20,9 +21,13 @@ from constants import (
     INPUT_STENCIL,
     OUTPUT_STENCIL,
     TRAINING_DATA_FOLDER,
+    MESH_LES,
 )
-from data_generation.configurations import create_code_test_config, create_dns_config
-from functions import run_config
+from data_generation.configurations import (
+    create_code_test_config,
+    create_solver_configs,
+)
+from functions import run_config, read_data, SolutionConfig, plot_solution_comparison
 from problems.problem_creator import problem_robijns_one
 from projection_and_stencils.project import run_projection
 from projection_and_stencils.split_training_data import (
@@ -34,10 +39,13 @@ from projection_and_stencils.split_training_data import (
 # ── Pipeline flags ────────────────────────────────────────────────────────────
 test_pipeline: bool = False
 generate_data_dns: bool = True
+run_les_models: bool = True
+
+compare_solvers: bool = True
 
 create_projection: bool = True
-perform_split: bool = True
-perform_training: bool = True
+perform_split: bool = False
+perform_training: bool = False
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 CURRENT_DIR = Path(__file__).parent.resolve()
@@ -47,13 +55,22 @@ if __name__ == "__main__":
     problem: dict = problem_robijns_one
 
     # ── DNS data generation ───────────────────────────────────────────────────
-    if generate_data_dns:
-        config = (
-            create_code_test_config()
-            if test_pipeline
-            else create_dns_config(problem_definition=problem)
-        )
-        solver_data_path, run_folder = run_config(config)
+    if generate_data_dns and run_les_models:
+        if not test_pipeline:
+            config_dns, config_les_analytical, config_les_no_model = (
+                create_solver_configs(problem_definition=problem)
+            )
+        else:
+            config_dns = create_code_test_config()
+
+        solver_data_path, run_folder = run_config(config_dns)
+        if run_les_models:
+            solver_data_path_les_analytical, run_folder_les_analytical = run_config(
+                config_les_analytical
+            )
+            solver_data_path_les_no_model, run_folder_no_model = run_config(
+                config_les_no_model
+            )
     else:
         run_folder = "run_dns_n512_0507_162249"  # hard-coded directory
         solver_data_path = CURRENT_DIR / RUNS_FOLDER / run_folder / SOLVER_DATA_FOLDER
@@ -68,9 +85,50 @@ if __name__ == "__main__":
         if not solver_data_path.exists():
             raise FileNotFoundError(f"DNS data not found at: {solver_data_path}")
 
-        X, y, stats = run_projection(
+        X, y, stats, projected_solution = run_projection(
             solver_data_path, save=True, output_dir=pre_split_path
         )
+
+    # ── Compare models ────────────────────────────────────────────────────────
+
+    # Pre-load DNS once (its style differs enough to justify explicit setup)
+    dns_solution, mesh_dns = read_data(directory=solver_data_path, final_only=True)
+    _, mesh_les = read_data(solver_data_path_les_analytical, final_only=True)
+
+    configs = [
+        SolutionConfig(
+            data_path=solver_data_path,
+            label="DNS",
+            color="gray",
+            linestyle="-",
+            marker="",  # no marker for the reference curve
+            alpha=0.7,
+            mesh=mesh_dns,
+            solution=dns_solution,
+        ),
+        SolutionConfig(
+            data_path=solver_data_path_les_analytical,
+            label="LES - A",
+            color="royalblue",
+            marker="x",
+        ),
+        SolutionConfig(
+            data_path=solver_data_path_les_no_model,
+            label="LES - no model",
+            color="tab:orange",
+            marker=".",
+        ),
+        SolutionConfig(
+            data_path=solver_data_path,  # unused when mesh/solution are provided
+            label="LES - projection",
+            color="lightgreen",
+            marker="^",
+            mesh=mesh_les,
+            solution=projected_solution,
+        ),
+    ]
+
+    fig, ax = plot_solution_comparison(configs, output_path=solver_data_path)
 
     # ── Train/test split ──────────────────────────────────────────────────────
     if perform_split or test_pipeline:
