@@ -30,7 +30,7 @@ from data_generation.configurations import (
 )
 from functions import run_config, read_data, SolutionConfig, plot_solution_comparison
 from problems.problems import periodic_steady_forcing, periodic_sin_forcing_low_visc, \
-    periodic_sin_forcing_high_visc, periodic_sin_forcing_med_visc
+    periodic_sin_forcing_high_visc, periodic_sin_forcing_med_visc, periodic_no_forcing
 from projection_and_stencils.project import run_projection
 from projection_and_stencils.split_training_data import (
     save_splits,
@@ -53,6 +53,7 @@ run_les_models: bool = True
 create_projection: bool = True
 perform_split: bool = True
 perform_training: bool = True
+ann_diagnostics: bool = False
 
 run_predictor_model: bool = True
 
@@ -63,7 +64,7 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 
 
 if __name__ == "__main__":
-    problem: dict = periodic_sin_forcing_med_visc
+    problem: dict = periodic_sin_forcing_high_visc
 
     # ── DNS data generation ───────────────────────────────────────────────────
     if generate_data_dns or run_les_models:
@@ -138,7 +139,8 @@ if __name__ == "__main__":
         np.save(model_save_path / "training_history.npy", train_stats)
         print(f"Model saved to: {model_save_path / 'sgs_mlp_model.pth'}")
 
-        plot_training_diagnostics(model_save_path, train_stats)
+        if ann_diagnostics:
+            plot_training_diagnostics(model_save_path, train_stats)
 
     # ── Predictor Run ──────────────────────────────────────────────────────────
     if run_predictor_model:

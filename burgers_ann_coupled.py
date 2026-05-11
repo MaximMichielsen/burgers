@@ -599,11 +599,11 @@ class Burgers:
 
             residual_history_loop.append(np.linalg.norm(global_residual))
 
-            print('jacob:', np.isnan(global_jacobian).any())
-            print('res:', np.isnan(global_residual).any())
-            print("cond:", np.linalg.cond(global_jacobian))
-            print("max ann:", max(ann_sgs_nodal))
-            print("min ann:", min(ann_sgs_nodal))
+            # print('jacob:', np.isnan(global_jacobian).any())
+            # print('res:', np.isnan(global_residual).any())
+            # print("cond:", np.linalg.cond(global_jacobian))
+            # print("max ann:", max(ann_sgs_nodal))
+            # print("min ann:", min(ann_sgs_nodal))
 
             with self.timer("linear_solve"):
                 delta_u = np.linalg.solve(global_jacobian, -global_residual)

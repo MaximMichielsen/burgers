@@ -61,6 +61,14 @@ periodic_sin_forcing_low_visc = create_problem_definition(
     boundary_conditions="periodic",
     initial_condition=uniform_initial_condition,)
 
+periodic_sin_forcing_med_visc = create_problem_definition(
+    forcing=sin_steady_forcing,
+    domain_length=2 * pi,
+    domain_timespan=2,
+    reynolds=100,
+    boundary_conditions="periodic",
+    initial_condition=uniform_initial_condition,)
+
 periodic_sin_forcing_high_visc = create_problem_definition(
     forcing=sin_steady_forcing,
     domain_length=2 * pi,
@@ -69,10 +77,3 @@ periodic_sin_forcing_high_visc = create_problem_definition(
     boundary_conditions="periodic",
     initial_condition=uniform_initial_condition,)
 
-periodic_sin_forcing_med_visc = create_problem_definition(
-    forcing=sin_steady_forcing,
-    domain_length=2 * pi,
-    domain_timespan=2,
-    reynolds=100,
-    boundary_conditions="periodic",
-    initial_condition=uniform_initial_condition,)
