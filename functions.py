@@ -205,18 +205,22 @@ def implicit_euler_first_order(field: NDArray | float, h: float) -> NDArray:
     return (np.roll(field, -1) - np.roll(field, 1)) / (2 * h)
 
 
+# TODO add master path saving
+
+
 def run_config(
-    configuration: dict, return_directory: bool = True
+    configuration: dict, save_path: Path | str | None = None, return_directory: bool = True
 ) -> tuple[Path, str] | None:
     """Run a config and return (absolute solver_data path, relative run folder name)."""
+    configuration["save_path"] = save_path
     solver = Burgers(configuration=configuration)
     solver.print_configuration()
     solver.run_simulation()
     solver.post_logging()
-    return (
-        solver.run_dir,
-        solver.run_dir.parent.name if return_directory else None,
-    )  # absolute, relative run folder
+    if save_path is not None:
+        return solver.save_path_dir.name
+
+    return None
 
 
 def read_data(

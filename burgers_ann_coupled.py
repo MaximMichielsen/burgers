@@ -20,14 +20,15 @@ from constants import (
     MAXIMUM_ITERATIONS,
     TOLERANCE_RESIDUAL,
     TOLERANCE_UPDATE,
-    INPUT_STENCIL,
-    OUTPUT_STENCIL,
     NORM_STATS,
     INPUT_UNITS,
     OUTPUT_UNITS,
 )
 
 logger = logging.getLogger(__name__)
+
+# TODO fix master pathing
+# TODO: assemble into main burgers solver
 
 
 def _to_callable(field) -> Callable | NDArray | None:
@@ -52,9 +53,7 @@ class Burgers:
         self,
         configuration: dict,
         ann_model=None,  # optional: a loaded SGSPredictor instance
-        ann_model_path: str
-        | Path
-        | None = None,  # optional: path/dir to saved .pth file
+        ann_model_path=None,  # optional: path/dir to saved .pth file
         ann_model_class=None,  # the SGSPredictor class (not instance)
     ) -> None:
         # ========================================================================== #
@@ -117,6 +116,12 @@ class Burgers:
             / "runs"
             / f"run_{str(self.configuration['simulation_type'])}_n{self.n_nodes}_{self.run_id}"
             / "solver_data"
+        )
+        self.master_path: Path | str | None = self.configuration["master_path"]
+        self.save_path: Path | str | None = (
+            Path(self.master_path / self.configuration["save_path"])
+            if self.master_path is not None
+            else None
         )
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.logger = self._setup_logger()
@@ -236,7 +241,7 @@ class Burgers:
                 return stats
 
         raise FileNotFoundError(
-            f"Normalisation stats not found. Searched:\n"
+            "Normalisation stats not found. Searched:\n"
             + "\n".join(f"  {p}" for p in candidates)
             + "\n\nCopy the norm-stats file next to the model weights "
             "(see main.py save block), or pass stats explicitly."
@@ -385,6 +390,8 @@ class Burgers:
         max_iterations: int = MAXIMUM_ITERATIONS,
         relaxation: float | None = None,
         time_extractions: list | NDArray | None = None,
+        master_path: str | Path | None = None,
+        save_path: str | Path | None = None,
     ) -> dict:
         """Create configuration dictionary."""
         return {
@@ -404,6 +411,8 @@ class Burgers:
             "max_iterations": max_iterations,
             "relax": relaxation,
             "viscosity": viscosity,
+            "master_path": master_path,
+            "save_path": save_path,
         }
 
     @property
@@ -949,7 +958,10 @@ class Burgers:
     def write_solution_to_csv(self) -> None:
         nodes = self.nodes
         coordinates = self.node_cords
-        run_dir = self.run_dir
+        if self.master_path is not None or self.save_path is not None:
+            run_dir = self.save_path
+        else:
+            run_dir = self.run_dir
 
         if self.time_extractions is None:
             solutions = [self.solution]

@@ -1,6 +1,7 @@
 """DNS data generation for obtaining training data."""
 
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 from numpy.typing import NDArray
@@ -16,9 +17,12 @@ from functions import calc_required_grid_points, compute_time_step, set_extracti
 from problems.forcing_types import sin_cos_forcing
 from problems.initial_conditions import uniform_initial_condition
 
+# TODO fix master pathing
+
 
 def create_solver_configs(
     problem_definition: dict,
+    master_dir: Path | str | None = None,
     with_dns: bool = True,
     with_les_analytical: bool = True,
     with_les_no_model: bool = True,
@@ -96,6 +100,7 @@ def create_solver_configs(
         relaxation=None,
         viscosity=viscosity,
         time_extractions=dns_extractions,
+        master_path=master_dir,
     )
 
     config_les_analytical = Burgers.create_config(
@@ -114,6 +119,7 @@ def create_solver_configs(
         relaxation=None,
         viscosity=viscosity,
         time_extractions=les_extractions,
+        master_path=master_dir,
     )
 
     config_les_no_model = Burgers.create_config(
@@ -132,6 +138,7 @@ def create_solver_configs(
         relaxation=None,
         viscosity=viscosity,
         time_extractions=les_extractions,
+        master_path=master_dir,
     )
 
     if create_predictor_config:
@@ -151,6 +158,7 @@ def create_solver_configs(
             relaxation=0.5,
             viscosity=viscosity,
             time_extractions=les_extractions,
+            master_path=master_dir,
         )
         return config_les_predictor
 
@@ -190,5 +198,6 @@ def create_code_test_config() -> dict:
         relaxation=None,
         viscosity=1,
         time_extractions=[0.1, 0.2, 0.3, 0.4, 0.5],
+        master_path="runs/pipeline_test",
     )
     return config_test

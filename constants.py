@@ -62,3 +62,7 @@ AGENTS_FOLDER: str = "agents"
 INPUT_STENCIL: str = "X.npy"
 OUTPUT_STENCIL: str = "y.npy"
 NORM_STATS: str = "norm_stats.npz"
+
+DNS_SAVE_PATH: str = "DNS"
+LES_ANALYTICAL_SAVE_PATH: str = "LES_A"
+LES_NO_MODEL_SAVE_PATH: str = "LES_NM"

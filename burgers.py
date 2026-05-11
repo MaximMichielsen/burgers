@@ -24,6 +24,8 @@ from constants import (
 
 logger = logging.getLogger(__name__)
 
+# TODO fix master pathing
+
 
 def _to_callable(field) -> Callable | NDArray | None:
     if callable(field):
@@ -102,7 +104,15 @@ class Burgers:
             / f"run_{str(self.configuration['simulation_type'])}_n{self.n_nodes}_{self.run_id}"
             / "solver_data"
         )
+        self.master_path: Path | str | None = self.configuration["master_path"]
+        self.save_path: Path | str | None = (
+            Path(self.master_path / self.configuration["save_path"])
+            if self.master_path is not None
+            else None
+        )
+        self.save_path_dir = self.save_path / "solver_data"
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.save_path_dir.mkdir(parents=True, exist_ok=True)
         self.logger = self._setup_logger()
         # ========================================================================== #
 
@@ -131,6 +141,8 @@ class Burgers:
         max_iterations: int = MAXIMUM_ITERATIONS,
         relaxation: float | None = None,
         time_extractions: list | NDArray | None = None,
+        master_path: str | Path | None = None,
+        save_path: str | Path | None = None,
     ) -> dict:
         """Create configuration dictionary."""
         return {
@@ -150,6 +162,8 @@ class Burgers:
             "max_iterations": max_iterations,
             "relax": relaxation,
             "viscosity": viscosity,
+            "master_path": master_path,
+            "save_path": save_path,
         }
 
     @property
@@ -660,7 +674,10 @@ class Burgers:
         """Write solution(s) to CSV file(s) inside a run-specific directory."""
         nodes = self.nodes
         coordinates = self.node_cords
-        run_dir = self.run_dir
+        if self.master_path is not None or self.save_path is not None:
+            run_dir = self.save_path_dir
+        else:
+            run_dir = self.run_dir
 
         if self.time_extractions is None:
             solutions = [self.solution]
@@ -692,7 +709,7 @@ class Burgers:
         """Write run configuration to a JSON file in the run directory."""
         config_serializable = {}
         for k, v in self.configuration.items():
-            if k == "solution_initial":
+            if k == "solution_initial" or k == "master_path" or k == "save_path":
                 continue
             elif isinstance(v, np.ndarray):
                 config_serializable[k] = v.tolist()

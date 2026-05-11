@@ -16,6 +16,7 @@ def create_problem_definition(
     domain_timespan: float,
     boundary_conditions: str,
     initial_condition: Callable,
+    name: str | None = None,
 ) -> dict:
     """Create dictionary containing problem parameters."""
     viscosity = 1 * domain_length / reynolds
@@ -27,6 +28,7 @@ def create_problem_definition(
         "forcing": forcing,
         "boundary_conditions": boundary_conditions,
         "initial_condition": initial_condition,
+        "name": name,
     }
 
 
@@ -48,38 +50,42 @@ periodic_no_forcing = create_problem_definition(
     initial_condition=uniform_initial_condition,
 )
 
-periodic_steady_forcing = create_problem_definition(
+periodic_steady_forcing_uniform = create_problem_definition(
     forcing=uniform_steady_forcing,
     domain_length=1,
     domain_timespan=2,
     reynolds=100,
     boundary_conditions="periodic",
     initial_condition=uniform_initial_condition,
+    name="psfu",
 )
 
-periodic_sin_forcing_low_visc = create_problem_definition(
+periodic_steady_forcing_sin_low_visc = create_problem_definition(
     forcing=sin_steady_forcing,
     domain_length=2 * pi,
     domain_timespan=2,
     reynolds=50,
     boundary_conditions="periodic",
     initial_condition=uniform_initial_condition,
+    name="psfslv",
 )
 
-periodic_sin_forcing_med_visc = create_problem_definition(
+periodic_steady_forcing_sin_med_visc = create_problem_definition(
     forcing=sin_steady_forcing,
     domain_length=2 * pi,
     domain_timespan=2,
     reynolds=100,
     boundary_conditions="periodic",
     initial_condition=uniform_initial_condition,
+    name="psfsmv",
 )
 
-periodic_sin_forcing_high_visc = create_problem_definition(
+periodic_steady_forcing_sin_high_visc = create_problem_definition(
     forcing=sin_steady_forcing,
     domain_length=2 * pi,
     domain_timespan=2,
     reynolds=180,
     boundary_conditions="periodic",
     initial_condition=uniform_initial_condition,
+    name="psfshv",
 )
