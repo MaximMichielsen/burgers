@@ -245,6 +245,7 @@ def run_projection(
     save: bool = True,
     output_dir: str | Path | None = None,
     verify: bool = True,
+    enforce_boundary_conditions: bool = True,
 ) -> tuple[NDArray, NDArray, dict[str, float], NDArray]:
     """Project DNS data onto the LES grid and build ANN training data.
 
@@ -286,6 +287,10 @@ def run_projection(
 
     for i, (solution_dns, forcing_dns) in enumerate(zip(solutions_dns, forcings_dns)):
         u_bar, uu_bar = box_filter(solution_dns, ratio=DNS_TO_LES_RATIO, n_les=N_les)
+
+        # if enforce_boundary_conditions:
+        #     u_bar[0] = 1
+        #     u_bar[-1] = 1
 
         if i > 0:
             du_dt_dns = (solution_dns - solutions_dns[i - 1]) / dt

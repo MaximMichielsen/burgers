@@ -22,6 +22,7 @@ def create_solver_configs(
     with_dns: bool = True,
     with_les_analytical: bool = True,
     with_les_no_model: bool = True,
+    create_predictor_config: bool = False,
 ) -> dict | tuple[dict, dict] | tuple[dict, dict, dict]:
     """Create configuration for Burgers solver for a DNS simulation."""
     simulation_length: float = problem_definition["domain_length"]
@@ -41,11 +42,7 @@ def create_solver_configs(
         factor_points=DNS_POINTS_FACTOR,
     )
 
-    print("gridpoints dns", grid_points_dns)
-
     grid_points_les = grid_points_dns // DNS_TO_LES_RATIO
-
-    print("grid_points_les", grid_points_les)
 
     mesh_dns, h_dns = np.linspace(
         start=0, stop=simulation_length, num=grid_points_dns, retstep=True
@@ -136,6 +133,26 @@ def create_solver_configs(
         viscosity=viscosity,
         time_extractions=les_extractions,
     )
+
+    if create_predictor_config:
+        config_les_predictor = Burgers.create_config(
+            initial_condition=initial_solution_les,
+            simulation_type="les_ann",
+            run_objective="data_generation",
+            node_amount=grid_points_les,
+            boundary_conditions=boundary_conditions,
+            forcing=forcing,
+            domain_timespan=simulation_duration,
+            time_step=time_step_les,
+            domain_length=simulation_length,
+            convergence_tol_residual=1e-4,
+            convergence_tol_update=1e-4,
+            max_iterations=20,
+            relaxation=0.5,
+            viscosity=viscosity,
+            time_extractions=les_extractions,
+        )
+        return config_les_predictor
 
     if with_dns and with_les_analytical and with_les_no_model:
         return config_dns, config_les_analytical, config_les_no_model

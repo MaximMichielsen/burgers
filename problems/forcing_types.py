@@ -17,3 +17,7 @@ def none_forcing(mesh: NDArray) -> NDArray:
 def sin_cos_forcing(mesh: NDArray, time: float) -> NDArray:
     """Return sin(x) * cos(t) unsteady forcing function."""
     return np.sin(mesh) * np.cos(time)
+
+def sin_steady_forcing(mesh: NDArray) -> NDArray:
+    """Return sin(x) steady forcing function."""
+    return np.sin(mesh)
