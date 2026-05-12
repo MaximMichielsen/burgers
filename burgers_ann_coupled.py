@@ -118,11 +118,14 @@ class Burgers:
             / "solver_data"
         )
         self.master_path: Path | str | None = self.configuration["master_path"]
-        self.save_path: Path | str | None = (
-            Path(self.master_path / self.configuration["save_path"])
-            if self.master_path is not None
-            else None
+
+        print(
+            f"DEBUG: Master: {self.master_path} | Config Path: {self.configuration['save_path']}"
         )
+        self.save_path = Path(self.master_path) / self.configuration["save_path"]
+        print(f"DEBUG: Result: {self.save_path}")
+
+        self.save_path_dir = self.save_path
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.logger = self._setup_logger()
 
@@ -985,9 +988,10 @@ class Burgers:
         print(f"wrote {write_count} snapshots at {run_dir}")
 
     def write_config_to_json(self) -> None:
+        """Write run configuration to a JSON file in the run directory."""
         config_serializable = {}
         for k, v in self.configuration.items():
-            if k == "solution_initial":
+            if k == "solution_initial" or k == "master_path" or k == "save_path":
                 continue
             elif isinstance(v, np.ndarray):
                 config_serializable[k] = v.tolist()
@@ -999,7 +1003,6 @@ class Burgers:
                 config_serializable[k] = v
 
         config_serializable["run_id"] = self.run_id
-        config_serializable["ann_model_loaded"] = self.ann_model is not None
 
         with open(self.run_dir / "config.json", "w") as f:
             json.dump(config_serializable, f, indent=2)

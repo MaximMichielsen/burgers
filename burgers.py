@@ -104,13 +104,16 @@ class Burgers:
             / f"run_{str(self.configuration['simulation_type'])}_n{self.n_nodes}_{self.run_id}"
             / "solver_data"
         )
+
         self.master_path: Path | str | None = self.configuration["master_path"]
-        self.save_path: Path | str | None = (
-            Path(self.master_path / self.configuration["save_path"])
-            if self.master_path is not None
-            else None
+
+        print(
+            f"DEBUG: Master: {self.master_path} | Config Path: {self.configuration['save_path']}"
         )
-        self.save_path_dir = self.save_path / "solver_data"
+        self.save_path = Path(self.master_path) / self.configuration["save_path"]
+        print(f"DEBUG: Result: {self.save_path}")
+
+        self.save_path_dir = self.save_path
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.save_path_dir.mkdir(parents=True, exist_ok=True)
         self.logger = self._setup_logger()
@@ -647,8 +650,8 @@ class Burgers:
         for k, v in self.configuration.items():
             if k == "time_extractions":
                 print(f"{k}: {len(v)}")
-            elif k != "solution_initial":
-                print(f"{k}: {round(v, ndigits=4) if isinstance(v, float) else v}")
+            elif k != "solution_initial" or k == "forcing":
+                continue
         print("=" * 60)
 
     def _maybe_extract_solution(self, idx_extract: int) -> int:

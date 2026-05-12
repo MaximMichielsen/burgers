@@ -26,6 +26,7 @@ from constants import (
     DNS_SAVE_PATH,
     LES_ANALYTICAL_SAVE_PATH,
     LES_NO_MODEL_SAVE_PATH,
+    LES_ANN_SAVE_PATH,
 )
 from data_generation.configurations import (
     create_code_test_config,
@@ -53,15 +54,16 @@ logging.getLogger().setLevel(logging.DEBUG)  # see ANN SGS channel norms
 # ── Pipeline flags ────────────────────────────────────────────────────────────
 test_pipeline: bool = False
 
-generate_data_dns: bool = True
-run_les_models: bool = True
+generate_data_dns: bool = False
+run_les_models: bool = False
 
-create_projection: bool = True
-perform_split: bool = True
-perform_training: bool = True
+create_projection: bool = False
+perform_split: bool = False
+perform_training: bool = False
+
 ann_diagnostics: bool = False
 
-run_predictor_model: bool = True
+run_predictor_model: bool = False
 
 compare_solvers: bool = True
 
@@ -79,7 +81,7 @@ if __name__ == "__main__":
         master_path = CURRENT_DIR / RUNS_FOLDER / master_run_id
     else:
         # Update this string to the specific folder
-        _manual_run_id = "run_psfshv_0511_172058"
+        _manual_run_id = "run_psfshv_0512_113222"
         master_path = CURRENT_DIR / RUNS_FOLDER / _manual_run_id
 
     master_path.mkdir(parents=True, exist_ok=True)
@@ -89,6 +91,7 @@ if __name__ == "__main__":
     pre_split_path = training_data_path / PRE_SPLIT_FOLDER
     post_split_path = training_data_path / POST_SPLIT_FOLDER
     model_save_path = master_path / AGENTS_FOLDER / PREDICTOR_FOLDER
+    predictor_data_path = master_path / SOLVER_DATA_FOLDER / LES_ANN_SAVE_PATH
 
     # ── DNS data generation ──────────────────────────────────────────────
     if generate_data_dns or run_les_models:
@@ -102,23 +105,26 @@ if __name__ == "__main__":
             config_dns = create_code_test_config()
 
     if generate_data_dns:
-        solver_data_path, _ = run_config(
-            config_dns, save_path=Path(DNS_SAVE_PATH) / SOLVER_DATA_FOLDER
+        solver_data_path = run_config(
+            config_dns, save_path=f"{SOLVER_DATA_FOLDER}/{DNS_SAVE_PATH}"
         )
     else:
-        solver_data_path = master_path / DNS_SAVE_PATH / SOLVER_DATA_FOLDER
+        solver_data_path = master_path / SOLVER_DATA_FOLDER / DNS_SAVE_PATH
+        solver_data_path_les_analytical = master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH
+        solver_data_path_les_no_model = master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH
 
-    print("sovler data path:", solver_data_path)
+    solver_data_path = Path(solver_data_path)
+    print(solver_data_path)
 
     # ── LES data generation ──────────────────────────────────────────────
     if run_les_models:
-        solver_data_path_les_analytical, _ = run_config(
+        solver_data_path_les_analytical = run_config(
             config_les_analytical,
-            save_path=Path(LES_ANALYTICAL_SAVE_PATH) / SOLVER_DATA_FOLDER,
+            save_path=f"{SOLVER_DATA_FOLDER}/{LES_ANALYTICAL_SAVE_PATH}",
         )
-        solver_data_path_les_no_model, _ = run_config(
+        solver_data_path_les_no_model = run_config(
             config_les_no_model,
-            save_path=Path(LES_NO_MODEL_SAVE_PATH) / SOLVER_DATA_FOLDER,
+            save_path=f"{SOLVER_DATA_FOLDER}/{LES_NO_MODEL_SAVE_PATH}",
         )
 
     # ── Projection / stencils ─────────────────────────────────────────────────
@@ -165,11 +171,14 @@ if __name__ == "__main__":
 
     # ── Predictor Run ──────────────────────────────────────────────────────────
     if run_predictor_model:
+        predictor_data_path.mkdir(parents=True, exist_ok=True)
         config_predictor = create_solver_configs(
             problem_definition=problem,
             master_dir=master_path,
             create_predictor_config=True,
         )
+
+        config_predictor["save_path"] = f"{SOLVER_DATA_FOLDER}/{LES_ANN_SAVE_PATH}"
 
         solver_predictor = BurgersCoupled(
             config_predictor,
@@ -182,10 +191,11 @@ if __name__ == "__main__":
         solver_predictor.run_simulation()
         solver_predictor.post_logging()
 
-        predictor_data_path = solver_predictor.run_dir
+        predictor_data_path = solver_predictor.save_path_dir
 
     # ── Compare models ────────────────────────────────────────────────────────
     if compare_solvers:
+        print(solver_data_path)
         dns_solution, mesh_dns = read_data(directory=solver_data_path, final_only=True)
         _, mesh_les = read_data(solver_data_path_les_analytical, final_only=True)
 
@@ -205,27 +215,33 @@ if __name__ == "__main__":
                 label="LES - A",
                 color="royalblue",
                 marker="x",
+                mesh=mesh_les,
             ),
             SolutionConfig(
                 data_path=solver_data_path_les_no_model,
                 label="LES - no model",
                 color="tab:orange",
                 marker=".",
-            ),
-            SolutionConfig(
-                data_path=solver_data_path,  # unused when mesh/solution are provided
-                label="LES - projection",
-                color="lightgreen",
-                marker="^",
                 mesh=mesh_les,
-                solution=projected_solution,
             ),
             SolutionConfig(
                 data_path=predictor_data_path,
                 label="LES - ANN",
                 color="salmon",
                 marker="d",
+                mesh=mesh_les,
             ),
         ]
+
+        if create_projection:
+            projection_config = SolutionConfig(
+                data_path=solver_data_path,  # unused when mesh/solution are provided
+                label="LES - projection",
+                color="lightgreen",
+                marker="^",
+                mesh=mesh_les,
+                solution=projected_solution,
+            )
+            configs.append(projection_config)
 
         fig, ax = plot_solution_comparison(configs, output_path=master_path)
