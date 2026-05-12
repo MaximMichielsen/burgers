@@ -220,7 +220,6 @@ def run_config(
     solver.run_simulation()
     solver.post_logging()
     if save_path is not None and return_directory:
-        print("dqsfqdf", solver.save_path_dir)
         return solver.save_path_dir
 
     return None

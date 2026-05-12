@@ -42,8 +42,7 @@ from projection_and_stencils.split_training_data import (
     split_data_shuffled,
     verify_splits,
 )
-
-from burgers_ann_coupled import Burgers as BurgersCoupled
+from burgers import Burgers
 from agents.predictor import SGSPredictor
 
 import datetime
@@ -54,16 +53,16 @@ logging.getLogger().setLevel(logging.DEBUG)  # see ANN SGS channel norms
 # ── Pipeline flags ────────────────────────────────────────────────────────────
 test_pipeline: bool = False
 
-generate_data_dns: bool = False
-run_les_models: bool = False
+generate_data_dns: bool = True
+run_les_models: bool = True
 
-create_projection: bool = False
-perform_split: bool = False
-perform_training: bool = False
+create_projection: bool = True
+perform_split: bool = True
+perform_training: bool = True
 
 ann_diagnostics: bool = False
 
-run_predictor_model: bool = False
+run_predictor_model: bool = True
 
 compare_solvers: bool = True
 
@@ -110,8 +109,12 @@ if __name__ == "__main__":
         )
     else:
         solver_data_path = master_path / SOLVER_DATA_FOLDER / DNS_SAVE_PATH
-        solver_data_path_les_analytical = master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH
-        solver_data_path_les_no_model = master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH
+        solver_data_path_les_analytical = (
+            master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH
+        )
+        solver_data_path_les_no_model = (
+            master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH
+        )
 
     solver_data_path = Path(solver_data_path)
     print(solver_data_path)
@@ -180,7 +183,7 @@ if __name__ == "__main__":
 
         config_predictor["save_path"] = f"{SOLVER_DATA_FOLDER}/{LES_ANN_SAVE_PATH}"
 
-        solver_predictor = BurgersCoupled(
+        solver_predictor = Burgers(
             config_predictor,
             ann_model_path=model_save_path,
             ann_model_class=SGSPredictor,
