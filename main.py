@@ -117,7 +117,6 @@ if __name__ == "__main__":
         )
 
     solver_data_path = Path(solver_data_path)
-    print(solver_data_path)
 
     # ── LES data generation ──────────────────────────────────────────────
     if run_les_models:
@@ -199,7 +198,6 @@ if __name__ == "__main__":
 
     # ── Compare models ────────────────────────────────────────────────────────
     if compare_solvers:
-        print(solver_data_path)
         dns_solution, mesh_dns = read_data(directory=solver_data_path, final_only=True)
         _, mesh_les = read_data(solver_data_path_les_analytical, final_only=True)
 
