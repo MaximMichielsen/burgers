@@ -60,7 +60,7 @@ create_projection: bool = True
 perform_split: bool = True
 perform_training: bool = True
 
-ann_diagnostics: bool = False
+show_ann_diagnostics: bool = False
 
 run_predictor_model: bool = True
 
@@ -169,8 +169,9 @@ if __name__ == "__main__":
 
         np.save(model_save_path / "training_history.npy", train_stats)
 
-        if ann_diagnostics:
-            plot_training_diagnostics(model_save_path, train_stats)
+        plot_training_diagnostics(
+            model_save_path, train_stats, show_fig=show_ann_diagnostics
+        )
 
     # ── Predictor Run ──────────────────────────────────────────────────────────
     if run_predictor_model:

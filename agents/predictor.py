@@ -165,7 +165,9 @@ def evaluate_test_performance(model, test_data, output_dir: Path | str) -> NDArr
     return preds.numpy()
 
 
-def plot_training_diagnostics(output_dir: str | Path, stats) -> None:
+def plot_training_diagnostics(
+    output_dir: str | Path, stats, show_fig: bool = False
+) -> None:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -194,5 +196,6 @@ def plot_training_diagnostics(output_dir: str | Path, stats) -> None:
     save_path = output_dir / "training_diagnostics.png"
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     print(f"Saved training diagnostics plot to '{save_path}'.")
-    plt.show()
+    if show_fig:
+        plt.show()
     plt.close(fig)

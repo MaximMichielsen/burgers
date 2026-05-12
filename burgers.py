@@ -139,7 +139,7 @@ class Burgers:
             if self.configuration["forcing"] is not None
             else None
         )
-        self.forcing_is_steady: bool = self.configuration["forcing_behavior"]
+        self.forcing_is_steady: bool = self.configuration["forcing_is_steady"]
         self.forcing_current: NDArray | None = None
         self.boundary_conditions: str = self.configuration["boundary_conditions"]
         self.time_extractions: list | None = configuration["time_extractions"]
@@ -439,7 +439,7 @@ class Burgers:
             "convergence_tol_update": convergence_tol_update,
             "initial_condition": initial_condition,
             "forcing": forcing,
-            "forcing_behavior": forcing_is_steady,
+            "forcing_is_steady": forcing_is_steady,
             "max_iterations": max_iterations,
             "relax": relaxation,
             "viscosity": viscosity,
@@ -1054,7 +1054,7 @@ class Burgers:
         for k, v in self.configuration.items():
             if k == "time_extractions":
                 print(f"{k}: {len(v)}")
-            elif k not in ("solution_initial", "forcing"):
+            elif k not in ("initial_condition", "forcing"):
                 print(f"{k}: {round(v, 4) if isinstance(v, float) else v}")
         if self._use_ann:
             print(f"ANN model loaded      : {self.ann_model is not None}")
