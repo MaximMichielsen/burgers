@@ -17,8 +17,6 @@ from functions import calc_required_grid_points, compute_time_step, set_extracti
 from problems.forcing_types import sin_cos_forcing
 from problems.initial_conditions import uniform_initial_condition
 
-# TODO fix master pathing
-
 
 def create_solver_configs(
     problem_definition: dict,
@@ -34,9 +32,8 @@ def create_solver_configs(
     reynolds: float = problem_definition["reynolds"]
     viscosity: float = problem_definition["viscosity"]
     initial_condition: NDArray | Callable = problem_definition["initial_condition"]
-
-    # TODO: change handling of boundary conditions and forcing -> similar to initial condition
-    boundary_conditions = problem_definition["boundary_conditions"]
+    boundary_condition_type = problem_definition["boundary_condition_type"]
+    boundary_condition_value = problem_definition["boundary_condition_value"]
     forcing = problem_definition["forcing"]
 
     grid_points_dns = calc_required_grid_points(
@@ -89,7 +86,8 @@ def create_solver_configs(
         simulation_type="dns",
         run_objective="data generation",
         node_amount=grid_points_dns,
-        boundary_conditions=boundary_conditions,
+        boundary_condition_type=boundary_condition_type,
+        boundary_condition_value=boundary_condition_value,
         forcing=forcing,
         domain_timespan=simulation_duration,
         time_step=time_step_dns,
@@ -108,7 +106,8 @@ def create_solver_configs(
         simulation_type="les",
         run_objective="data_generation",
         node_amount=grid_points_les,
-        boundary_conditions=boundary_conditions,
+        boundary_condition_type=boundary_condition_type,
+        boundary_condition_value=boundary_condition_value,
         forcing=forcing,
         domain_timespan=simulation_duration,
         time_step=time_step_les,
@@ -127,7 +126,8 @@ def create_solver_configs(
         simulation_type="dns",
         run_objective="data_generation",
         node_amount=grid_points_les,
-        boundary_conditions=boundary_conditions,
+        boundary_condition_type=boundary_condition_type,
+        boundary_condition_value=boundary_condition_value,
         forcing=forcing,
         domain_timespan=simulation_duration,
         time_step=time_step_les,
@@ -147,7 +147,8 @@ def create_solver_configs(
             simulation_type="les_ann",
             run_objective="data_generation",
             node_amount=grid_points_les,
-            boundary_conditions=boundary_conditions,
+            boundary_condition_type=boundary_condition_type,
+            boundary_condition_value=boundary_condition_value,
             forcing=forcing,
             domain_timespan=simulation_duration,
             time_step=time_step_les,
@@ -188,7 +189,8 @@ def create_code_test_config() -> dict:
         simulation_type="dns",
         run_objective="code test",
         node_amount=grid_points_dns,
-        boundary_conditions="fixed",
+        boundary_condition_type="fixed",
+        boundary_condition_value=0,
         forcing=sin_cos_forcing,
         forcing_is_steady=False,
         domain_timespan=0.5,

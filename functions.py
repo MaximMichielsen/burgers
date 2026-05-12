@@ -205,9 +205,6 @@ def implicit_euler_first_order(field: NDArray | float, h: float) -> NDArray:
     return (np.roll(field, -1) - np.roll(field, 1)) / (2 * h)
 
 
-# TODO add master path saving
-
-
 def run_config(
     configuration: dict,
     save_path: Path | str | None = None,

@@ -1,6 +1,8 @@
 from math import pi
 from typing import Callable
 
+from numpy.typing import NDArray
+
 from problems.forcing_types import (
     uniform_steady_forcing,
     none_forcing,
@@ -14,8 +16,9 @@ def create_problem_definition(
     reynolds: float,
     domain_length: float,
     domain_timespan: float,
-    boundary_conditions: str,
     initial_condition: Callable,
+    boundary_condition_type: str,
+    boundary_condition_value: float | NDArray | Callable | None = None,
     name: str | None = None,
 ) -> dict:
     """Create dictionary containing problem parameters."""
@@ -26,7 +29,8 @@ def create_problem_definition(
         "reynolds": reynolds,
         "viscosity": viscosity,
         "forcing": forcing,
-        "boundary_conditions": boundary_conditions,
+        "boundary_condition_type": boundary_condition_type,
+        "boundary_condition_value": boundary_condition_value,
         "initial_condition": initial_condition,
         "name": name,
     }
@@ -37,7 +41,8 @@ problem_robijns_one = create_problem_definition(
     domain_length=1,
     domain_timespan=2,
     reynolds=100,
-    boundary_conditions="fixed_one",
+    boundary_condition_type="dirichlet",
+    boundary_condition_value=1,
     initial_condition=uniform_initial_condition,
 )
 
@@ -46,7 +51,7 @@ periodic_no_forcing = create_problem_definition(
     domain_length=1,
     domain_timespan=2,
     reynolds=100,
-    boundary_conditions="periodic",
+    boundary_condition_type="periodic",
     initial_condition=uniform_initial_condition,
 )
 
@@ -55,7 +60,7 @@ periodic_steady_forcing_uniform = create_problem_definition(
     domain_length=1,
     domain_timespan=2,
     reynolds=100,
-    boundary_conditions="periodic",
+    boundary_condition_type="periodic",
     initial_condition=uniform_initial_condition,
     name="psfu",
 )
@@ -65,7 +70,7 @@ periodic_steady_forcing_sin_low_visc = create_problem_definition(
     domain_length=2 * pi,
     domain_timespan=2,
     reynolds=50,
-    boundary_conditions="periodic",
+    boundary_condition_type="periodic",
     initial_condition=uniform_initial_condition,
     name="psfslv",
 )
@@ -75,7 +80,7 @@ periodic_steady_forcing_sin_med_visc = create_problem_definition(
     domain_length=2 * pi,
     domain_timespan=2,
     reynolds=100,
-    boundary_conditions="periodic",
+    boundary_condition_type="periodic",
     initial_condition=uniform_initial_condition,
     name="psfsmv",
 )
@@ -85,7 +90,7 @@ periodic_steady_forcing_sin_high_visc = create_problem_definition(
     domain_length=2 * pi,
     domain_timespan=2,
     reynolds=180,
-    boundary_conditions="periodic",
+    boundary_condition_type="periodic",
     initial_condition=uniform_initial_condition,
     name="psfshv",
 )

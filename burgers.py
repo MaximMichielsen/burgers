@@ -128,6 +128,24 @@ class Burgers:
         self.element_size: float = self.domain_length / (self.n_nodes - 1)
         self.mesh: tuple[NDArray, NDArray] = (self.node_cords, self.elements)
 
+        # ── boundary conditions ──────────────────────────────────────────
+        # Type selects the enforcement strategy; value is the Dirichlet
+        # target — stored as a callable so the rest of the solver never
+        # needs to branch on its original form (scalar / array / callable).
+        _valid_bc_types = {"dirichlet", "periodic"}
+        self.boundary_condition_type: str = self.configuration[
+            "boundary_condition_type"
+        ]
+        if self.boundary_condition_type not in _valid_bc_types:
+            raise ValueError(
+                f"Unknown boundary_condition_type {self.boundary_condition_type!r}. "
+                f"Expected one of {_valid_bc_types}."
+            )
+        _raw_bc_value = self.configuration.get("boundary_condition_value", 0.0)
+        self.boundary_condition_value: Callable[[NDArray], NDArray] = _to_callable(
+            _raw_bc_value if _raw_bc_value is not None else 0.0
+        )
+
         # ── output / IO ─────────────────────────────────────────────────
         self.write_solutions: bool = True
         self.solution: NDArray = self.set_initial_condition(
@@ -141,7 +159,6 @@ class Burgers:
         )
         self.forcing_is_steady: bool = self.configuration["forcing_is_steady"]
         self.forcing_current: NDArray | None = None
-        self.boundary_conditions: str = self.configuration["boundary_conditions"]
         self.time_extractions: list | None = configuration["time_extractions"]
         self.is_extracted_at_times: list | bool | None = (
             [False for _ in self.time_extractions]
@@ -413,10 +430,11 @@ class Burgers:
         time_step: float,
         domain_timespan: float,
         domain_length: float,
+        boundary_condition_type: str,
+        boundary_condition_value: float | NDArray | Callable | None = None,
         forcing: NDArray | Callable | None = None,
         forcing_is_steady: bool = True,
         run_objective: str = "standard",
-        boundary_conditions: str = "fixed",
         convergence_tol_residual: float = TOLERANCE_RESIDUAL,
         convergence_tol_update: float = TOLERANCE_UPDATE,
         max_iterations: int = MAXIMUM_ITERATIONS,
@@ -429,7 +447,8 @@ class Burgers:
         return {
             "simulation_type": str(simulation_type),
             "objective": str(run_objective),
-            "boundary_conditions": boundary_conditions,
+            "boundary_condition_type": boundary_condition_type,
+            "boundary_condition_value": boundary_condition_value,
             "time_extractions": time_extractions,
             "node_amount": node_amount,
             "domain_timespan": domain_timespan,
@@ -557,7 +576,6 @@ class Burgers:
 
     def advance_time_step(self) -> None:
         """Advance the solution by one time-step: U^{n+1} ← U^n."""
-        # Evaluate forcing.
         if callable(self.forcing):
             self.forcing_current = (
                 self.forcing(self.node_cords, self.simulation_time_elapsed)
@@ -652,7 +670,7 @@ class Burgers:
             # ── Linear solve ──
             with self.timer("linear_solve"):
                 delta_u = np.linalg.solve(global_jacobian, -global_residual)
-                if self.configuration["boundary_conditions"] == "periodic":
+                if self.boundary_condition_type == "periodic":
                     delta_u_reduced = delta_u.copy()
                     delta_u = np.zeros_like(solution_k)
                     delta_u[:-1] = delta_u_reduced
@@ -780,32 +798,31 @@ class Burgers:
         global_jacobian: NDArray,
         solution_k: NDArray,
     ) -> tuple[NDArray, NDArray]:
-        bc_type = self.boundary_conditions
-        if bc_type == "fixed":
-            return self._apply_fixed_bcs(
-                global_residual, global_jacobian, solution_k, target_value=0
+        """Dispatch to the correct BC enforcement based on ``boundary_condition_type``."""
+        if self.boundary_condition_type == "dirichlet":
+            return self._apply_dirichlet_bcs(
+                global_residual, global_jacobian, solution_k
             )
-        elif bc_type == "fixed_one":
-            return self._apply_fixed_bcs(
-                global_residual, global_jacobian, solution_k, target_value=1
-            )
-        elif bc_type == "periodic":
+        else:  # "periodic" — validated at construction
             return self._apply_periodic_bcs(global_residual, global_jacobian)
-        else:
-            raise ValueError(
-                f"Unknown boundary condition type: {bc_type!r}. "
-                "Expected 'fixed', 'fixed_one', or 'periodic'."
-            )
 
-    def _apply_fixed_bcs(
+    def _apply_dirichlet_bcs(
         self,
         global_residual: NDArray,
         global_jacobian: NDArray,
         solution_k: NDArray,
-        target_value: float = 0.0,
     ) -> tuple[NDArray, NDArray]:
+        """Enforce Dirichlet BCs via row-replacement.
+
+        The target value at each boundary node is obtained by evaluating
+        ``self.boundary_condition_value`` — a callable produced from
+        whatever the caller passed (scalar, array, or function) — at the
+        physical coordinate of that node.  This mirrors exactly how
+        ``initial_condition`` and ``forcing`` are handled.
+        """
         for node in self.boundary_nodes:
-            global_residual[node] = solution_k[node] - target_value
+            target = float(self.boundary_condition_value(self.node_cords[node]))
+            global_residual[node] = solution_k[node] - target
             global_jacobian[node, :] = 0
             global_jacobian[node, node] = 1
         return global_residual, global_jacobian
@@ -815,6 +832,7 @@ class Burgers:
         global_residual: NDArray,
         global_jacobian: NDArray,
     ) -> tuple[NDArray, NDArray]:
+        """Enforce periodic BCs by folding the last DOF into the first."""
         global_residual[0] += global_residual[-1]
         global_jacobian[0, :] += global_jacobian[-1, :]
         global_jacobian[:, 0] += global_jacobian[:, -1]
