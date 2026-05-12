@@ -9,6 +9,7 @@ from matplotlib import animation
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from numpy.typing import NDArray
+from typing import List, Union
 
 from burgers import Burgers
 
@@ -27,25 +28,24 @@ def set_extractions(
     extraction_interval = (
         duration / (extraction_amount - 1) if extraction_amount > 1 else duration
     )
-    if time_step > extraction_interval and strict:
-        raise ValueError(
-            f"Time step ({time_step}) is larger than the requested extraction "
-            f"interval ({extraction_interval:.4f}). Reduce extraction_amount."
-        )
+    if extraction_interval < time_step:
+        if strict:
+            raise ValueError(
+                f"Requested extraction interval ({extraction_interval}) is lower than the given time_step ({time_step})."
+            )
 
-    elif time_step > extraction_interval and not strict:
-        extraction_amount_ = int(duration / (time_step))
-        print(
-            f"Time step ({time_step}) is larger than requested extraction. "
-            f"Setting extractions to maximum possible value."
-        )
-        return np.linspace(start=0, stop=duration, num=extraction_amount_ + 1)
+        else:
+            extractions = np.arange(0, duration + (time_step / 2), step=time_step)
+            print(
+                f"Requested extraction interval ({extraction_interval}) is lower than the given time_step ({time_step})."
+                f"Setting extractions to maximum possible frequency (every time step): extraction amount: ({len(extractions)})."
+            )
+            return extractions
 
     if mode == "linear":
         return np.linspace(start=0, stop=duration, num=extraction_amount)
 
-    else:
-        raise ValueError("NO OTHER METHOD THAN LINEAR CURRENTLY")
+    raise ValueError(f"Mode '{mode}' is not supported. Use 'linear'.")
 
 
 def plot_solutions_from_directory(directory: str | Path) -> None:
@@ -144,6 +144,100 @@ def plot_solutions_from_directory_animated(
     plt.tight_layout()
     plt.show()
     return ani  # keep reference alive so GC doesn't kill it
+
+
+def plot_multiple_solutions_animated(
+    directories: List[Union[str, Path]],
+    labels: List[str] = None,
+    interval: int = 100,
+    repeat: bool = True,
+) -> animation.FuncAnimation:
+    """
+    Animate solution CSVs from multiple directories to compare them.
+    Assumes all directories contain files with matching timestamps.
+    """
+    if labels is None:
+        labels = [Path(d).name for d in directories]
+
+    all_times = []
+    all_solutions = []  # List of lists: [dir_idx][time_idx]
+    x_axis = None
+
+    # ---- Data Collection ----
+    for directory in directories:
+        directory = Path(directory)
+        files = sorted(directory.glob("sol_t*.csv"))
+
+        if not files:
+            print(f"Warning: No files found in {directory}")
+            continue
+
+        dir_times = []
+        dir_sols = []
+
+        for file in files:
+            t = float(file.stem.split("t")[-1])
+            data = np.loadtxt(file, delimiter=",", skiprows=1)
+            if x_axis is None:
+                x_axis = data[:, 1]
+            dir_times.append(t)
+            dir_sols.append(data[:, 2])
+
+        # Sort current directory by time
+        dir_times, dir_sols = zip(*sorted(zip(dir_times, dir_sols)))
+        all_times.append(dir_times)
+        all_solutions.append(list(dir_sols))
+
+    # Use the first directory's timestamps as the master clock
+    master_times = all_times[0]
+    num_frames = len(master_times)
+
+    # ---- Axis Limits ----
+    u_min = min(np.min(s) for traj in all_solutions for s in traj)
+    u_max = max(np.max(s) for traj in all_solutions for s in traj)
+    pad = 0.05 * (u_max - u_min) if u_max != u_min else 1.0
+
+    # ---- Set up Plot ----
+    fig, ax = plt.subplots(figsize=(10, 6))
+    lines = []
+    for i, label in enumerate(labels):
+        (line,) = ax.plot(x_axis, all_solutions[i][0], lw=2, label=label)
+        lines.append(line)
+
+    time_text = ax.text(
+        0.02, 0.95, "", transform=ax.transAxes, fontsize=12, verticalalignment="top"
+    )
+
+    ax.set_xlim(x_axis[0], x_axis[-1])
+    ax.set_ylim(u_min - pad, u_max + pad)
+    ax.set_xlabel("x")
+    ax.set_ylabel("u")
+    ax.set_title("Comparison of Solution Evolutions")
+    ax.legend(loc="upper right")
+    ax.grid(True)
+
+    def update(frame: int):
+        """Update all lines for the current frame."""
+        for i, line in enumerate(lines):
+            # Ensure we don't index out of bounds if directories have different file counts
+            if frame < len(all_solutions[i]):
+                line.set_ydata(all_solutions[i][frame])
+
+        time_text.set_text(f"t = {master_times[frame]:.4f}")
+        return lines + [time_text]
+
+    ani = animation.FuncAnimation(
+        fig,
+        update,
+        frames=num_frames,
+        interval=interval,
+        blit=True,
+        repeat=repeat,
+    )
+
+    plt.tight_layout()
+    plt.show()
+    return ani
 
 
 def create_config_variables(

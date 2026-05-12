@@ -94,3 +94,23 @@ periodic_steady_forcing_sin_high_visc = create_problem_definition(
     initial_condition=uniform_initial_condition,
     name="psfshv",
 )
+
+periodic_steady_forcing_sin_high_visc_long_t = create_problem_definition(
+    forcing=sin_steady_forcing,
+    domain_length=2 * pi,
+    domain_timespan=10,
+    reynolds=180,
+    boundary_condition_type="periodic",
+    initial_condition=uniform_initial_condition,
+    name="psfshvlt",
+)
+
+periodic_steady_forcing_sin_low_visc_long_t = create_problem_definition(
+    forcing=sin_steady_forcing,
+    domain_length=2 * pi,
+    domain_timespan=10,
+    reynolds=50,
+    boundary_condition_type="periodic",
+    initial_condition=uniform_initial_condition,
+    name="psfslvlt",
+)

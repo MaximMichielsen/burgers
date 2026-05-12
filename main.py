@@ -1,5 +1,6 @@
 """Main pipeline for thesis."""
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +35,7 @@ from data_generation.configurations import (
 )
 from functions import run_config, read_data, SolutionConfig, plot_solution_comparison
 from problems.problems import (
-    periodic_steady_forcing_sin_high_visc,
+    periodic_steady_forcing_sin_low_visc_long_t,
 )
 from projection_and_stencils.project import run_projection
 from projection_and_stencils.split_training_data import (
@@ -52,6 +53,8 @@ logging.getLogger().setLevel(logging.DEBUG)  # see ANN SGS channel norms
 
 # ── Pipeline flags ────────────────────────────────────────────────────────────
 test_pipeline: bool = False
+set_manual_run: bool = False
+set_ann_manually: bool = False
 
 generate_data_dns: bool = True
 run_les_models: bool = True
@@ -71,17 +74,23 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 
 
 if __name__ == "__main__":
-    problem: dict = periodic_steady_forcing_sin_high_visc
+    problem: dict = periodic_steady_forcing_sin_low_visc_long_t
 
     # ── Master Path Definition ───────────────────────────────────────────────
     if generate_data_dns:
         timestamp = datetime.datetime.now().strftime("%m%d_%H%M%S")
         master_run_id = f"run_{problem['name']}_{timestamp}"
         master_path = CURRENT_DIR / RUNS_FOLDER / master_run_id
-    else:
+    elif set_manual_run:
         # Update this string to the specific folder
         _manual_run_id = "run_psfshv_0512_113222"
         master_path = CURRENT_DIR / RUNS_FOLDER / _manual_run_id
+
+    else:
+        with open("latest_run_parameters.json") as f:
+            latest_run_details = json.load(f)
+        latest_run_id = latest_run_details["run_id"]
+        master_path = Path(latest_run_details["master_path"])
 
     master_path.mkdir(parents=True, exist_ok=True)
 
@@ -183,6 +192,12 @@ if __name__ == "__main__":
 
         config_predictor["save_path"] = f"{SOLVER_DATA_FOLDER}/{LES_ANN_SAVE_PATH}"
 
+        if set_ann_manually:
+            run_path = "run_psfshvlt_0512_145816"
+            model_save_path = (
+                CURRENT_DIR / RUNS_FOLDER / run_path / AGENTS_FOLDER / PREDICTOR_FOLDER
+            )
+
         solver_predictor = Burgers(
             config_predictor,
             ann_model_path=model_save_path,
@@ -247,3 +262,13 @@ if __name__ == "__main__":
             configs.append(projection_config)
 
         fig, ax = plot_solution_comparison(configs, output_path=master_path)
+
+    # Write to a json for simple run_id path housekeeping.
+    if not generate_data_dns or set_manual_run:
+        print("Writing run paths to the latest_run_parameters.json file.")
+        latest_run_config = {
+            "master_path": str(master_path),
+            "run_id": str(master_run_id),
+        }
+        with open("latest_run_parameters.json", "w") as f:
+            json.dump(latest_run_config, f, indent=2)
