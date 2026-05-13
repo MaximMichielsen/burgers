@@ -35,6 +35,7 @@ def create_solver_configs(
     boundary_condition_type = problem_definition["boundary_condition_type"]
     boundary_condition_value = problem_definition["boundary_condition_value"]
     forcing = problem_definition["forcing"]
+    forcing_is_steady = problem_definition["forcing_is_steady"]
 
     grid_points_dns = calc_required_grid_points(
         length=simulation_length,
@@ -89,6 +90,7 @@ def create_solver_configs(
         boundary_condition_type=boundary_condition_type,
         boundary_condition_value=boundary_condition_value,
         forcing=forcing,
+        forcing_is_steady=forcing_is_steady,
         domain_timespan=simulation_duration,
         time_step=time_step_dns,
         domain_length=simulation_length,
@@ -109,6 +111,7 @@ def create_solver_configs(
         boundary_condition_type=boundary_condition_type,
         boundary_condition_value=boundary_condition_value,
         forcing=forcing,
+        forcing_is_steady=forcing_is_steady,
         domain_timespan=simulation_duration,
         time_step=time_step_les,
         domain_length=simulation_length,
@@ -129,6 +132,7 @@ def create_solver_configs(
         boundary_condition_type=boundary_condition_type,
         boundary_condition_value=boundary_condition_value,
         forcing=forcing,
+        forcing_is_steady=forcing_is_steady,
         domain_timespan=simulation_duration,
         time_step=time_step_les,
         domain_length=simulation_length,
@@ -150,6 +154,7 @@ def create_solver_configs(
             boundary_condition_type=boundary_condition_type,
             boundary_condition_value=boundary_condition_value,
             forcing=forcing,
+            forcing_is_steady=forcing_is_steady,
             domain_timespan=simulation_duration,
             time_step=time_step_les,
             domain_length=simulation_length,

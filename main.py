@@ -8,6 +8,8 @@ import torch
 
 import logging
 
+from matplotlib import pyplot as plt
+
 from agents.predictor import (
     evaluate_test_performance,
     plot_training_diagnostics,
@@ -35,7 +37,7 @@ from data_generation.configurations import (
 )
 from functions import run_config, read_data, SolutionConfig, plot_solution_comparison
 from problems.problems import (
-    periodic_steady_forcing_sin_low_visc_long_t,
+    periodic_unsteady_forcing_sin_med_visc_long_t,
 )
 from projection_and_stencils.project import run_projection
 from projection_and_stencils.split_training_data import (
@@ -54,36 +56,41 @@ logging.getLogger().setLevel(logging.DEBUG)  # see ANN SGS channel norms
 # ── Pipeline flags ────────────────────────────────────────────────────────────
 test_pipeline: bool = False
 set_manual_run: bool = False
-set_ann_manually: bool = False
+_manual_run_id = "run_pufsmvlt_0513_113451"
+set_ann_manually: bool = True
 
-generate_data_dns: bool = True
+generate_data_dns: bool = False
 run_les_models: bool = True
+run_analytical = True
+run_no_model = False
 
-create_projection: bool = True
-perform_split: bool = True
-perform_training: bool = True
+create_projection: bool = False
+perform_split: bool = False
+perform_training: bool = False
 
 show_ann_diagnostics: bool = False
 
 run_predictor_model: bool = True
 
-compare_solvers: bool = True
+compute_energy_evolution: bool = True
+compare_solvers: bool = False
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 CURRENT_DIR = Path(__file__).parent.resolve()
 
 
 if __name__ == "__main__":
-    problem: dict = periodic_steady_forcing_sin_low_visc_long_t
+    problem: dict = periodic_unsteady_forcing_sin_med_visc_long_t
+    problem["domain_timespan"] = 60
 
     # ── Master Path Definition ───────────────────────────────────────────────
-    if generate_data_dns:
+    if generate_data_dns or run_les_models:
         timestamp = datetime.datetime.now().strftime("%m%d_%H%M%S")
         master_run_id = f"run_{problem['name']}_{timestamp}"
         master_path = CURRENT_DIR / RUNS_FOLDER / master_run_id
+
     elif set_manual_run:
         # Update this string to the specific folder
-        _manual_run_id = "run_psfshv_0512_113222"
         master_path = CURRENT_DIR / RUNS_FOLDER / _manual_run_id
 
     else:
@@ -113,11 +120,11 @@ if __name__ == "__main__":
             config_dns = create_code_test_config()
 
     if generate_data_dns:
-        solver_data_path = run_config(
+        solver_data_path_dns = run_config(
             config_dns, save_path=f"{SOLVER_DATA_FOLDER}/{DNS_SAVE_PATH}"
         )
     else:
-        solver_data_path = master_path / SOLVER_DATA_FOLDER / DNS_SAVE_PATH
+        solver_data_path_dns = master_path / SOLVER_DATA_FOLDER / DNS_SAVE_PATH
         solver_data_path_les_analytical = (
             master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH
         )
@@ -125,27 +132,29 @@ if __name__ == "__main__":
             master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH
         )
 
-    solver_data_path = Path(solver_data_path)
+    solver_data_path_dns = Path(solver_data_path_dns)
 
     # ── LES data generation ──────────────────────────────────────────────
     if run_les_models:
-        solver_data_path_les_analytical = run_config(
-            config_les_analytical,
-            save_path=f"{SOLVER_DATA_FOLDER}/{LES_ANALYTICAL_SAVE_PATH}",
-        )
-        solver_data_path_les_no_model = run_config(
-            config_les_no_model,
-            save_path=f"{SOLVER_DATA_FOLDER}/{LES_NO_MODEL_SAVE_PATH}",
-        )
+        if run_analytical:
+            solver_data_path_les_analytical = run_config(
+                config_les_analytical,
+                save_path=f"{SOLVER_DATA_FOLDER}/{LES_ANALYTICAL_SAVE_PATH}",
+            )
+        if run_no_model:
+            solver_data_path_les_no_model = run_config(
+                config_les_no_model,
+                save_path=f"{SOLVER_DATA_FOLDER}/{LES_NO_MODEL_SAVE_PATH}",
+            )
 
     # ── Projection / stencils ─────────────────────────────────────────────────
     if create_projection:
         pre_split_path.mkdir(parents=True, exist_ok=True)
-        if not solver_data_path.exists():
-            raise FileNotFoundError(f"DNS data not found at: {solver_data_path}")
+        if not solver_data_path_dns.exists():
+            raise FileNotFoundError(f"DNS data not found at: {solver_data_path_dns}")
 
         X, y, stats, projected_solution = run_projection(
-            solver_data_path, save=True, output_dir=pre_split_path, verify=False
+            solver_data_path_dns, save=True, output_dir=pre_split_path, verify=False
         )
 
     # ── Train/test split ──────────────────────────────────────────────────────
@@ -193,7 +202,7 @@ if __name__ == "__main__":
         config_predictor["save_path"] = f"{SOLVER_DATA_FOLDER}/{LES_ANN_SAVE_PATH}"
 
         if set_ann_manually:
-            run_path = "run_psfshvlt_0512_145816"
+            run_path = "run_psfslvlt_0512_152815"
             model_save_path = (
                 CURRENT_DIR / RUNS_FOLDER / run_path / AGENTS_FOLDER / PREDICTOR_FOLDER
             )
@@ -213,12 +222,14 @@ if __name__ == "__main__":
 
     # ── Compare models ────────────────────────────────────────────────────────
     if compare_solvers:
-        dns_solution, mesh_dns = read_data(directory=solver_data_path, final_only=True)
+        dns_solution, mesh_dns = read_data(
+            directory=solver_data_path_dns, final_only=True
+        )
         _, mesh_les = read_data(solver_data_path_les_analytical, final_only=True)
 
         configs = [
             SolutionConfig(
-                data_path=solver_data_path,
+                data_path=solver_data_path_dns,
                 label="DNS",
                 color="gray",
                 linestyle="-",
@@ -235,13 +246,6 @@ if __name__ == "__main__":
                 mesh=mesh_les,
             ),
             SolutionConfig(
-                data_path=solver_data_path_les_no_model,
-                label="LES - no model",
-                color="tab:orange",
-                marker=".",
-                mesh=mesh_les,
-            ),
-            SolutionConfig(
                 data_path=predictor_data_path,
                 label="LES - ANN",
                 color="salmon",
@@ -252,7 +256,7 @@ if __name__ == "__main__":
 
         if create_projection:
             projection_config = SolutionConfig(
-                data_path=solver_data_path,  # unused when mesh/solution are provided
+                data_path=solver_data_path_dns,  # unused when mesh/solution are provided
                 label="LES - projection",
                 color="lightgreen",
                 marker="^",
@@ -261,10 +265,49 @@ if __name__ == "__main__":
             )
             configs.append(projection_config)
 
+        if run_no_model:
+            no_model_config = SolutionConfig(
+                data_path=solver_data_path_les_no_model,
+                label="LES - no model",
+                color="tab:orange",
+                marker=".",
+                mesh=mesh_les,
+            )
+            configs.append(no_model_config)
+
         fig, ax = plot_solution_comparison(configs, output_path=master_path)
 
+    # ── Energy evolution ────────────────────────────────────────────────────────
+    if compute_energy_evolution:
+        # mesh_dns, times_dns, solutions_dns, _ = read_data(directory=solver_data_path_dns, final_only=False)
+        mesh_les, times_les, solutions_les, _ = read_data(
+            directory=solver_data_path_les_analytical, final_only=False
+        )
+        mesh_ann, times_ann, solutions_ann, _ = read_data(
+            directory=predictor_data_path, final_only=False
+        )
+
+        x_coords_les = mesh_les
+        # x_coords_dns = mesh_dns
+        x_coords_ann = mesh_ann
+
+        dns_energy_evolution = [
+            np.trapezoid(0.5 * u**2, x_coords_les) for u in solutions_les
+        ]
+        ann_energy_evolution = [
+            np.trapezoid(0.5 * u**2, x_coords_ann) for u in solutions_ann
+        ]
+
+        plt.plot(times_les, dns_energy_evolution, label="LES")
+        plt.plot(times_ann, ann_energy_evolution, label="ANN")
+        plt.xlabel("Time")
+        plt.ylabel("Energy")
+        plt.legend()
+        plt.show()
+
+    # ── Latest run writing ──────────────────────────────────────────────────────
     # Write to a json for simple run_id path housekeeping.
-    if not generate_data_dns or set_manual_run:
+    if not generate_data_dns or not set_manual_run:
         print("Writing run paths to the latest_run_parameters.json file.")
         latest_run_config = {
             "master_path": str(master_path),

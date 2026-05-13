@@ -7,12 +7,14 @@ from problems.forcing_types import (
     uniform_steady_forcing,
     none_forcing,
     sin_steady_forcing,
+    sin_cos_unsteady_forcing,
 )
 from problems.initial_conditions import uniform_initial_condition
 
 
 def create_problem_definition(
     forcing: str | Callable | None,
+    forcing_is_steady: bool,
     reynolds: float,
     domain_length: float,
     domain_timespan: float,
@@ -29,6 +31,7 @@ def create_problem_definition(
         "reynolds": reynolds,
         "viscosity": viscosity,
         "forcing": forcing,
+        "forcing_is_steady": forcing_is_steady,
         "boundary_condition_type": boundary_condition_type,
         "boundary_condition_value": boundary_condition_value,
         "initial_condition": initial_condition,
@@ -38,6 +41,7 @@ def create_problem_definition(
 
 problem_robijns_one = create_problem_definition(
     forcing=uniform_steady_forcing,
+    forcing_is_steady=True,
     domain_length=1,
     domain_timespan=2,
     reynolds=100,
@@ -48,6 +52,7 @@ problem_robijns_one = create_problem_definition(
 
 periodic_no_forcing = create_problem_definition(
     forcing=none_forcing,
+    forcing_is_steady=True,
     domain_length=1,
     domain_timespan=2,
     reynolds=100,
@@ -57,6 +62,7 @@ periodic_no_forcing = create_problem_definition(
 
 periodic_steady_forcing_uniform = create_problem_definition(
     forcing=uniform_steady_forcing,
+    forcing_is_steady=True,
     domain_length=1,
     domain_timespan=2,
     reynolds=100,
@@ -67,6 +73,7 @@ periodic_steady_forcing_uniform = create_problem_definition(
 
 periodic_steady_forcing_sin_low_visc = create_problem_definition(
     forcing=sin_steady_forcing,
+    forcing_is_steady=True,
     domain_length=2 * pi,
     domain_timespan=2,
     reynolds=50,
@@ -77,6 +84,7 @@ periodic_steady_forcing_sin_low_visc = create_problem_definition(
 
 periodic_steady_forcing_sin_med_visc = create_problem_definition(
     forcing=sin_steady_forcing,
+    forcing_is_steady=True,
     domain_length=2 * pi,
     domain_timespan=2,
     reynolds=100,
@@ -87,6 +95,7 @@ periodic_steady_forcing_sin_med_visc = create_problem_definition(
 
 periodic_steady_forcing_sin_high_visc = create_problem_definition(
     forcing=sin_steady_forcing,
+    forcing_is_steady=True,
     domain_length=2 * pi,
     domain_timespan=2,
     reynolds=180,
@@ -97,6 +106,7 @@ periodic_steady_forcing_sin_high_visc = create_problem_definition(
 
 periodic_steady_forcing_sin_high_visc_long_t = create_problem_definition(
     forcing=sin_steady_forcing,
+    forcing_is_steady=True,
     domain_length=2 * pi,
     domain_timespan=10,
     reynolds=180,
@@ -107,10 +117,22 @@ periodic_steady_forcing_sin_high_visc_long_t = create_problem_definition(
 
 periodic_steady_forcing_sin_low_visc_long_t = create_problem_definition(
     forcing=sin_steady_forcing,
+    forcing_is_steady=True,
     domain_length=2 * pi,
     domain_timespan=10,
     reynolds=50,
     boundary_condition_type="periodic",
     initial_condition=uniform_initial_condition,
     name="psfslvlt",
+)
+
+periodic_unsteady_forcing_sin_med_visc_long_t = create_problem_definition(
+    forcing=sin_cos_unsteady_forcing,
+    forcing_is_steady=False,
+    domain_length=2 * pi,
+    domain_timespan=10,
+    reynolds=100,
+    boundary_condition_type="periodic",
+    initial_condition=uniform_initial_condition,
+    name="pufsmvlt",
 )
