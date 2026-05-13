@@ -8,6 +8,7 @@ from problems.forcing_types import (
     none_forcing,
     sin_steady_forcing,
     sin_cos_unsteady_forcing,
+    sin_cos_unsteady_forcing_plus_uniform_steady,
 )
 from problems.initial_conditions import uniform_initial_condition
 
@@ -135,4 +136,17 @@ periodic_unsteady_forcing_sin_med_visc_long_t = create_problem_definition(
     boundary_condition_type="periodic",
     initial_condition=uniform_initial_condition,
     name="pufsmvlt",
+)
+
+periodic_unsteady_forcing_sin_plus_steady_uniform_med_visc_long_t = (
+    create_problem_definition(
+        forcing=sin_cos_unsteady_forcing_plus_uniform_steady,
+        forcing_is_steady=False,
+        domain_length=2 * pi,
+        domain_timespan=10,
+        reynolds=100,
+        boundary_condition_type="periodic",
+        initial_condition=uniform_initial_condition,
+        name="pufspsumvlt",
+    )
 )

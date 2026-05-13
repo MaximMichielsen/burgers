@@ -37,7 +37,7 @@ from data_generation.configurations import (
 )
 from functions import run_config, read_data, SolutionConfig, plot_solution_comparison
 from problems.problems import (
-    periodic_unsteady_forcing_sin_med_visc_long_t,
+    periodic_unsteady_forcing_sin_plus_steady_uniform_med_visc_long_t,
 )
 from projection_and_stencils.project import run_projection
 from projection_and_stencils.split_training_data import (
@@ -56,7 +56,7 @@ logging.getLogger().setLevel(logging.DEBUG)  # see ANN SGS channel norms
 # ── Pipeline flags ────────────────────────────────────────────────────────────
 test_pipeline: bool = False
 set_manual_run: bool = False
-_manual_run_id = "run_pufsmvlt_0513_113451"
+_manual_run_id = "run_pufspsumvlt_0513_120112"
 set_ann_manually: bool = True
 
 generate_data_dns: bool = False
@@ -80,8 +80,8 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 
 
 if __name__ == "__main__":
-    problem: dict = periodic_unsteady_forcing_sin_med_visc_long_t
-    problem["domain_timespan"] = 60
+    problem: dict = periodic_unsteady_forcing_sin_plus_steady_uniform_med_visc_long_t
+    problem["domain_timespan"] = 16
 
     # ── Master Path Definition ───────────────────────────────────────────────
     if generate_data_dns or run_les_models:

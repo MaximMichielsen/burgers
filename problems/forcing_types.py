@@ -29,3 +29,10 @@ def sin_cos_unsteady_forcing(
 ) -> NDArray:
     """Return sin(x) * cos(omega t) unsteady forcing function."""
     return np.sin(mesh) * np.cos(omega * t)
+
+
+def sin_cos_unsteady_forcing_plus_uniform_steady(
+    mesh: NDArray, t: float, omega: float = 2 * np.pi, uniform_factor: float = 0.1
+) -> NDArray:
+    """Return sin(x) * cos(omega t) unsteady forcing function."""
+    return np.sin(mesh) * np.cos(omega * t) + uniform_factor * np.ones_like(mesh)
