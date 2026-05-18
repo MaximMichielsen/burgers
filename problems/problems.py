@@ -49,6 +49,7 @@ problem_robijns_one = create_problem_definition(
     boundary_condition_type="dirichlet",
     boundary_condition_value=1,
     initial_condition=uniform_initial_condition,
+    name="robijns_one",
 )
 
 periodic_no_forcing = create_problem_definition(

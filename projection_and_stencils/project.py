@@ -95,17 +95,55 @@ def compute_du_bar_dt(
     return (u_bar_now - u_bar_prev) / dt
 
 
-def extract_stencil(field: NDArray) -> NDArray:
-    """Build a 4-point periodic stencil [i-2, i-1, i, i+1] for every node."""
-    return np.stack(
-        [
-            np.roll(field, 2),  # i-2
-            np.roll(field, 1),  # i-1
-            field,  # i
-            np.roll(field, -1),  # i+1
-        ],
-        axis=1,
-    )
+def extract_stencil(
+    field: NDArray,
+    mode: str,
+    bc_values: tuple[float, float],
+) -> NDArray:
+    """Build a 4-point stencil [i-2, i-1, i, i+1] for every node.
+
+    Parameters
+    ----------
+    field : NDArray
+        1-D field of shape (N,).
+    mode : str
+        ``"periodic"``  – wrap edges with np.roll (default, for periodic BCs).
+        ``"fixed"``     – pad edges with known Dirichlet boundary values.
+    bc_values : tuple[float, float]
+        (left_bc, right_bc) used only when mode == "fixed".
+        E.g. (1.0, 1.0) if u=1 is enforced at both walls.
+    """
+    if mode == "periodic":
+        return np.stack(
+            [
+                np.roll(field, 2),  # i-2
+                np.roll(field, 1),  # i-1
+                field,  # i
+                np.roll(field, -1),  # i+1
+            ],
+            axis=1,
+        )
+
+    elif mode == "dirichlet":
+        left, right = (
+            bc_values if isinstance(bc_values, tuple) else (bc_values, bc_values)
+        )
+        # Pad: [left, left, f0, f1, ..., f_{N-1}, right]
+        # so we have 2 ghost cells on the left, 1 on the right
+        padded = np.concatenate([[left, left], field, [right]])
+        N = len(field)
+        return np.stack(
+            [
+                padded[0:N],  # i-2
+                padded[1 : N + 1],  # i-1
+                padded[2 : N + 2],  # i   (= field itself)
+                padded[3 : N + 3],  # i+1
+            ],
+            axis=1,
+        )
+
+    else:
+        raise ValueError(f"Unknown mode '{mode}'. Choose 'periodic' or 'dirichlet'.")
 
 
 def build_features(
@@ -113,8 +151,10 @@ def build_features(
     du_bar_dt_list: list[NDArray],
     forcing_list: list[NDArray],
     tau_list: list[NDArray],
-    u_prime_t_list: list[NDArray],  # New input
+    u_prime_t_list: list[NDArray],
     h_les: float,
+    bc_mode: str,
+    bc_values: tuple[float, float],
 ) -> tuple[NDArray, NDArray]:
     """Assemble the raw (un-normalized) feature matrix.
 
@@ -141,13 +181,17 @@ def build_features(
     for n in range(2, len(solutions_les)):
         features = np.hstack(
             [
-                extract_stencil(solutions_les[n]),  # ū^n       (N, 4)
-                extract_stencil(solutions_les[n - 1]),  # ū^{n-1}   (N, 4)
-                extract_stencil(solutions_les[n - 2]),  # ū^{n-2}   (N, 4)
-                extract_stencil(du_bar_dt_list[n]),  # ∂ū/∂t     (N, 4)
-                extract_stencil(forcing_list[n]),  # f     (N, 4)
+                extract_stencil(solutions_les[n], mode=bc_mode, bc_values=bc_values),
+                extract_stencil(
+                    solutions_les[n - 1], mode=bc_mode, bc_values=bc_values
+                ),
+                extract_stencil(
+                    solutions_les[n - 2], mode=bc_mode, bc_values=bc_values
+                ),
+                extract_stencil(du_bar_dt_list[n], mode=bc_mode, bc_values=bc_values),
+                extract_stencil(forcing_list[n], mode=bc_mode, bc_values=bc_values),
             ]
-        )  # → (N_les, 20)
+        )
 
         X_rows.append(features)
 
@@ -242,10 +286,11 @@ def verify_global_projection(
 
 def run_projection(
     directory: str | Path,
+    bc_mode: str,
+    bc_values: tuple[float, float],
     save: bool = True,
     output_dir: str | Path | None = None,
     verify: bool = True,
-    enforce_boundary_conditions: bool = True,
 ) -> tuple[NDArray, NDArray, dict[str, float], NDArray]:
     """Project DNS data onto the LES grid and build ANN training data.
 
@@ -288,9 +333,17 @@ def run_projection(
     for i, (solution_dns, forcing_dns) in enumerate(zip(solutions_dns, forcings_dns)):
         u_bar, uu_bar = box_filter(solution_dns, ratio=DNS_TO_LES_RATIO, n_les=N_les)
 
-        # if enforce_boundary_conditions:
-        #     u_bar[0] = 1
-        #     u_bar[-1] = 1
+        # Enforce Dirichlet BCs on the filtered field before anything else
+        if bc_mode == "dirichlet":
+            left, right = (
+                (bc_values, bc_values)
+                if not isinstance(bc_values, tuple)
+                else bc_values
+            )
+            u_bar[0] = left
+            u_bar[-1] = right
+            uu_bar[0] = left**2
+            uu_bar[-1] = right**2
 
         if i > 0:
             du_dt_dns = (solution_dns - solutions_dns[i - 1]) / dt
@@ -345,6 +398,8 @@ def run_projection(
         forcing_list=forcing_list,
         u_prime_t_list=u_prime_t_list,
         h_les=h_les,
+        bc_mode=bc_mode,
+        bc_values=bc_values,
     )
 
     stats = compute_normalization_stats(X_raw, y_raw)

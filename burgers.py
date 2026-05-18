@@ -142,9 +142,7 @@ class Burgers:
                 f"Expected one of {_valid_bc_types}."
             )
         _raw_bc_value = self.configuration.get("boundary_condition_value", 0.0)
-        self.boundary_condition_value: Callable[[NDArray], NDArray] = _to_callable(
-            _raw_bc_value if _raw_bc_value is not None else 0.0
-        )
+        self.boundary_condition_value = _raw_bc_value
 
         # ── output / IO ─────────────────────────────────────────────────
         self.write_solutions: bool = True
@@ -372,14 +370,25 @@ class Burgers:
 
         sgs_nodal = y[:, 1] + y[:, 2] + y[:, 3]  # exclude channel 0
 
-        logger.debug(
+        self.logger.info(
+            "[ANN SGS] y physical — ch0: %.3e  ch1: %.3e  ch2: %.3e  ch3: %.3e",
+            np.mean(np.abs(y[:, 0])),
+            np.mean(np.abs(y[:, 1])),
+            np.mean(np.abs(y[:, 2])),
+            np.mean(np.abs(y[:, 3])),
+        )
+        self.logger.info(
+            "[ANN SGS] sgs_nodal mean abs: %.3e", np.mean(np.abs(sgs_nodal))
+        )
+
+        self.logger.debug(
             "[ANN SGS] channel norms — 0:%.3e  1:%.3e  2:%.3e  3:%.3e",
             np.linalg.norm(y[:, 0]),
             np.linalg.norm(y[:, 1]),
             np.linalg.norm(y[:, 2]),
             np.linalg.norm(y[:, 3]),
         )
-        logger.debug("[ANN SGS] correction norm: %.3e", np.linalg.norm(sgs_nodal))
+        self.logger.debug("[ANN SGS] correction norm: %.3e", np.linalg.norm(sgs_nodal))
         return sgs_nodal
 
     def _update_solution_history(self, u: NDArray) -> None:
@@ -821,7 +830,7 @@ class Burgers:
         ``initial_condition`` and ``forcing`` are handled.
         """
         for node in self.boundary_nodes:
-            target = float(self.boundary_condition_value(self.node_cords[node]))
+            target = self.boundary_condition_value
             global_residual[node] = solution_k[node] - target
             global_jacobian[node, :] = 0
             global_jacobian[node, node] = 1

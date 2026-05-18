@@ -11,7 +11,7 @@ from matplotlib.animation import FuncAnimation
 from numpy.typing import NDArray
 from typing import List, Union
 
-from burgers import Burgers
+from burgers_2 import Burgers
 
 from dataclasses import dataclass, field
 from typing import Optional

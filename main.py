@@ -36,10 +36,8 @@ from data_generation.configurations import (
     create_solver_configs,
 )
 from functions import run_config, read_data, SolutionConfig, plot_solution_comparison
-from problems.problems import (
-    periodic_unsteady_forcing_sin_plus_steady_uniform_med_visc_long_t,
-)
-from projection_and_stencils.project import run_projection
+from problems.problems import problem_robijns_one
+from projection_and_stencils.project_2 import run_projection
 from projection_and_stencils.split_training_data import (
     save_splits,
     split_data_shuffled,
@@ -56,32 +54,31 @@ logging.getLogger().setLevel(logging.DEBUG)  # see ANN SGS channel norms
 # ── Pipeline flags ────────────────────────────────────────────────────────────
 test_pipeline: bool = False
 set_manual_run: bool = False
-_manual_run_id = "run_pufspsumvlt_0513_120112"
-set_ann_manually: bool = True
+_manual_run_id = "run_None_0516_155128"
+set_ann_manually: bool = False
 
-generate_data_dns: bool = False
+generate_data_dns: bool = True
 run_les_models: bool = True
 run_analytical = True
-run_no_model = False
+run_no_model = True
 
-create_projection: bool = False
-perform_split: bool = False
-perform_training: bool = False
+create_projection: bool = True
+perform_split: bool = True
+perform_training: bool = True
 
 show_ann_diagnostics: bool = False
 
 run_predictor_model: bool = True
 
 compute_energy_evolution: bool = True
-compare_solvers: bool = False
+compare_solvers: bool = True
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 CURRENT_DIR = Path(__file__).parent.resolve()
 
 
 if __name__ == "__main__":
-    problem: dict = periodic_unsteady_forcing_sin_plus_steady_uniform_med_visc_long_t
-    problem["domain_timespan"] = 16
+    problem: dict = problem_robijns_one
 
     # ── Master Path Definition ───────────────────────────────────────────────
     if generate_data_dns or run_les_models:
@@ -154,7 +151,12 @@ if __name__ == "__main__":
             raise FileNotFoundError(f"DNS data not found at: {solver_data_path_dns}")
 
         X, y, stats, projected_solution = run_projection(
-            solver_data_path_dns, save=True, output_dir=pre_split_path, verify=False
+            directory=solver_data_path_dns,
+            bc_mode=problem["boundary_condition_type"],
+            bc_values=problem["boundary_condition_value"],
+            save=True,
+            output_dir=pre_split_path,
+            verify=False,
         )
 
     # ── Train/test split ──────────────────────────────────────────────────────
@@ -202,9 +204,15 @@ if __name__ == "__main__":
         config_predictor["save_path"] = f"{SOLVER_DATA_FOLDER}/{LES_ANN_SAVE_PATH}"
 
         if set_ann_manually:
-            run_path = "run_psfslvlt_0512_152815"
+            run_path = ""
             model_save_path = (
                 CURRENT_DIR / RUNS_FOLDER / run_path / AGENTS_FOLDER / PREDICTOR_FOLDER
+            )
+        elif not perform_training:
+            raise ValueError(
+                "set_ann_manually is False and perform_training is False — "
+                "no model was trained this run and no manual path was given. "
+                "Set set_ann_manually=True and provide a run path."
             )
 
         solver_predictor = Burgers(
@@ -311,7 +319,7 @@ if __name__ == "__main__":
         print("Writing run paths to the latest_run_parameters.json file.")
         latest_run_config = {
             "master_path": str(master_path),
-            "run_id": str(master_run_id),
+            "run_id": str(latest_run_id),  # was master_run_id
         }
         with open("latest_run_parameters.json", "w") as f:
             json.dump(latest_run_config, f, indent=2)

@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 
+from functions import compute_time_step
 from validation.validation import initial_condition, exact_solution, evaluate_on_mesh
 from burgers import Burgers
 
@@ -27,12 +28,6 @@ exact_solutions: list[np.ndarray] = [
 
 # ── Run definitions ───────────────────────────────────────────────────────────────
 LES_NODE_COUNTS: list[int] = [2**5, 2**6, 2**7]
-
-
-def compute_time_step(mesh: np.ndarray, max_velocity: float, viscosity: float) -> float:
-    """CFL-based time step: minimum of convective and diffusive limits."""
-    dx = abs(mesh[1] - mesh[0])
-    return min(dx / max_velocity, dx**2 / viscosity)
 
 
 def build_configs(
