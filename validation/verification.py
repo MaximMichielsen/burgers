@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from burgers import Burgers
+from old.burgers import Burgers
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 
 from functions import compute_time_step
 from validation.validation import initial_condition, exact_solution, evaluate_on_mesh
-from burgers import Burgers
+from old.burgers import Burgers
 
 # ── Domain & physics ─────────────────────────────────────────────────────────────
 LENGTH: float = 1.0

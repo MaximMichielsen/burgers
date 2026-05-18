@@ -96,7 +96,7 @@ class BurgersPure:
         self.element_size: float = self.domain_length / (self.n_nodes - 1)
 
         # ── boundary conditions ──────────────────────────────────────────
-        _valid_bc_types = {"dirichlet", " fixed", "periodic"}
+        _valid_bc_types = {"dirichlet", "fixed", "periodic"}
         self.boundary_condition_type: str = self.configuration[
             "boundary_condition_type"
         ]
@@ -134,7 +134,9 @@ class BurgersPure:
         self.extracted_forcings: list[NDArray] | None = None
 
         self.master_path: Path | str | None = self.configuration["master_path"]
-        self.save_path = Path(self.master_path) / self.configuration["save_path"]
+        self.save_name = self.configuration.get("save_path", self.simulation_mode)
+        self.save_name = self.simulation_mode if self.save_name is None else self.save_name
+        self.save_path = Path(self.master_path) / self.save_name
         self.save_path.mkdir(parents=True, exist_ok=True)
 
         self.logger = self._setup_logger()
@@ -940,7 +942,7 @@ class BurgersPure:
         plt.tight_layout()
 
         # --- Saving Routine ---
-        if hasattr(self, 'save_path') and self.save_path:
+        if hasattr(self, "save_path") and self.save_path:
             # Ensure the directory exists
             save_dir = Path(self.save_path)
             save_dir.mkdir(parents=True, exist_ok=True)
@@ -949,7 +951,7 @@ class BurgersPure:
             file_path = save_dir / f"post_plotting_{self.simulation_mode}.png"
 
             # Save the figure (dpi=300 keeps it crisp for reports/papers)
-            plt.savefig(file_path, dpi=300, bbox_inches='tight')
+            plt.savefig(file_path, dpi=300, bbox_inches="tight")
             print(f"Plot successfully saved to: {file_path}")
 
         # --- Showing / Closing Routine ---
