@@ -147,7 +147,6 @@ def run_projection(
         Normalisation statistics dict (``X_mean``, ``X_std``, ``y_mean``, ``y_std``).
     """
     directory = Path(directory)
-    run_id = directory.name  # e.g. "run_DNS_0423_174914"
     output_dir = Path(output_dir)
 
     # --- read DNS snapshots ---------------------------------------------------

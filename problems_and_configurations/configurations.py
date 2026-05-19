@@ -11,8 +11,8 @@ from constants import (
     DNS_TO_LES_RATIO,
 )
 from functions import calc_required_grid_points, compute_time_step, set_extractions
-from old.problem_domains.initial_conditions import uniform_initial_condition
 from problems_and_configurations.forcing_types import sin_cos_forcing
+from problems_and_configurations.initial_conditions import uniform_initial_condition
 
 from solvers.burgers_pure import BurgersPure as Burgers
 
@@ -256,20 +256,20 @@ def create_code_test_config() -> dict:
 
     config_test = Burgers.create_config(
         initial_condition=uniform_initial_condition,
-        simulation_type="dns",
+        simulation_mode="dns",
         run_objective="code test",
         node_amount=grid_points_dns,
         boundary_condition_type="fixed",
         boundary_condition_value=0,
-        forcing=sin_cos_forcing,
-        forcing_is_steady=False,
+        external_forcing=sin_cos_forcing,
+        forcing_steady=False,
         domain_timespan=0.5,
         time_step=0.05,
         domain_length=1,
         max_iterations=20,
         relaxation=None,
         viscosity=1,
-        time_extractions=[0.1, 0.2, 0.3, 0.4, 0.5],
+        extract_at_times=[0.1, 0.2, 0.3, 0.4, 0.5],
         master_path="runs/pipeline_test",
     )
     return config_test

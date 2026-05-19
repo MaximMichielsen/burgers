@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 
 from solvers.burgers_pure import BurgersPure
 
+
 @dataclass
 class SolutionConfig:
     """Configuration for a single solution to plot."""
@@ -60,6 +61,7 @@ def set_extractions(
         return np.linspace(start=0, stop=duration, num=extraction_amount)
 
     raise ValueError(f"Mode '{mode}' is not supported. Use 'linear'.")
+
 
 def read_data(
     directory: str | Path,
@@ -213,3 +215,72 @@ def plot_solutions_from_directory_animated(
     plt.tight_layout()
     plt.show()
     return ani  # keep reference alive so GC doesn't kill it
+
+
+def plot_solution_comparison(
+    configs: list[SolutionConfig],
+    output_path: Path,
+    title: str = "Comparison of DNS and LES Solutions",
+    xlabel: str = "Spatial Domain",
+    ylabel: str = "Solution Value",
+    figsize: tuple = (10, 6),
+    filename: str = "comparison_solvers.png",
+    dpi: int = 150,
+) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Plot and save a comparison of multiple solver solutions.
+
+    Parameters
+    ----------
+    configs : list[SolutionConfig]
+        Each entry holds the path, label, style, and optionally pre-loaded
+        mesh/solution arrays for one curve.
+    output_path : Path
+        Directory (or file path) where the figure is saved.
+    title, xlabel, ylabel : str
+        Axis annotations.
+    figsize : tuple
+        Matplotlib figure size.
+    filename : str
+        Output filename (used when output_path is a directory).
+    dpi : int
+        Resolution of the saved figure.
+
+    Returns
+    -------
+    fig, ax : the Matplotlib figure and axes objects.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    for cfg in configs:
+        mesh = cfg.mesh
+        solution = cfg.solution
+
+        if mesh is None or solution is None:
+            solution, mesh = read_data(directory=cfg.data_path, final_only=True)
+
+        label = f"{cfg.label} ({len(mesh)})"
+
+        ax.plot(
+            mesh,
+            solution,
+            label=label,
+            color=cfg.color,
+            linestyle=cfg.linestyle,
+            marker=cfg.marker,
+            alpha=cfg.alpha,
+        )
+
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.grid(True, which="both", linestyle=":", alpha=0.5)
+    ax.legend(loc="upper left")
+
+    plt.tight_layout()
+
+    save_path = output_path / filename if output_path.is_dir() else output_path
+    plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    plt.show()
+
+    return fig, ax
