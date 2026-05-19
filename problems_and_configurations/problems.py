@@ -2,8 +2,8 @@ from typing import Callable
 
 from numpy.typing import NDArray
 
-from problems_and_configurations.forcing_types import none_forcing
-from problems_and_configurations.initial_conditions import zero_initial_condition
+from problems_and_configurations.forcing_types import none_forcing, uniform_steady_forcing
+from problems_and_configurations.initial_conditions import zero_initial_condition, uniform_initial_condition
 
 
 def create_problem_definition(
@@ -43,4 +43,29 @@ placeholder_problem = create_problem_definition(
     boundary_condition_value=0,
     initial_condition=zero_initial_condition,
     name="placeholder",
+)
+
+
+problem_robijns_one = create_problem_definition(
+    forcing=uniform_steady_forcing,
+    forcing_is_steady=True,
+    domain_length=1,
+    domain_timespan=2,
+    reynolds=100,
+    boundary_condition_type="dirichlet",
+    boundary_condition_value=1,
+    initial_condition=uniform_initial_condition,
+    name="robijns_one",
+)
+
+
+periodic_steady_forcing_uniform = create_problem_definition(
+    forcing=uniform_steady_forcing,
+    forcing_is_steady=True,
+    domain_length=1,
+    domain_timespan=2,
+    reynolds=100,
+    boundary_condition_type="periodic",
+    initial_condition=uniform_initial_condition,
+    name="psfu",
 )

@@ -68,7 +68,7 @@ class BurgersPure:
         self.simulation_mode: str | None = self.configuration["simulation_mode"]
         self.max_iterations: int = self.configuration["max_iterations"]
 
-        _valid_types = {"dns", "no_mode", "les", "ann"}
+        _valid_types = {"dns", "no_model", "les", "ann"}
         if self.simulation_mode not in _valid_types:
             raise ValueError(
                 f"Unknown simulation_type {self.simulation_mode!r}. "
@@ -134,10 +134,7 @@ class BurgersPure:
         self.extracted_forcings: list[NDArray] | None = None
 
         self.master_path: Path | str | None = self.configuration["master_path"]
-        self.save_name = self.configuration.get("save_path", self.simulation_mode)
-        self.save_name = self.simulation_mode if self.save_name is None else self.save_name
-        self.save_path = Path(self.master_path) / self.save_name
-        self.save_path.mkdir(parents=True, exist_ok=True)
+        self.master_path.mkdir(parents=True, exist_ok=True)
 
         self.logger = self._setup_logger()
 
@@ -165,7 +162,6 @@ class BurgersPure:
         relaxation: float | None = None,
         extract_at_times: list | NDArray | None = None,
         master_path: str | Path | None = None,
-        save_path: str | Path | None = None,
     ) -> dict:
         """Build and return a configuration dictionary."""
         return {
@@ -187,7 +183,6 @@ class BurgersPure:
             "relax": relaxation,
             "viscosity": viscosity,
             "master_path": master_path,
-            "save_path": save_path,
         }
 
     # ------------------------------------------------------------------ #
@@ -660,7 +655,7 @@ class BurgersPure:
         """Write solution snapshot(s) to CSV files."""
         nodes = self.nodes
         coordinates = self.node_coords
-        run_dir = self.save_path
+        run_dir = self.master_path
 
         if self.extract_at_times is None:
             solutions = [self.solution]
@@ -694,15 +689,11 @@ class BurgersPure:
         if logger_.handlers:
             return logger_
         formatter = logging.Formatter("[%(levelname)s] - %(message)s")
-        sh = logging.StreamHandler(sys.stdout)
-        sh.setFormatter(formatter)
-        sh.setLevel(logging.INFO)
         fh = logging.FileHandler(
-            self.save_path / f"{self.run_id}.log", encoding="utf-8"
+            self.master_path / f"{self.run_id}.log", encoding="utf-8"
         )
         fh.setFormatter(formatter)
         fh.setLevel(logging.INFO)
-        logger_.addHandler(sh)
         logger_.addHandler(fh)
         logger_.propagate = False
         logging.getLogger("matplotlib").setLevel(logging.WARNING)
@@ -777,7 +768,7 @@ class BurgersPure:
         """Write run configuration to ``config.json`` in the run directory."""
         config_serializable = {}
         for k, v in self.configuration.items():
-            if k in ("solution_initial", "master_path", "save_path"):
+            if k in ("solution_initial", "master_path"):
                 continue
             elif isinstance(v, np.ndarray):
                 config_serializable[k] = v.tolist()
@@ -788,7 +779,7 @@ class BurgersPure:
             else:
                 config_serializable[k] = v
         config_serializable["run_id"] = self.run_id
-        with open(self.save_path / "config.json", "w") as f:
+        with open(self.master_path / "config.json", "w") as f:
             json.dump(config_serializable, f, indent=2)
 
     def print_configuration(self) -> None:
@@ -942,9 +933,9 @@ class BurgersPure:
         plt.tight_layout()
 
         # --- Saving Routine ---
-        if hasattr(self, "save_path") and self.save_path:
+        if hasattr(self, "master_path") and self.master_path:
             # Ensure the directory exists
-            save_dir = Path(self.save_path)
+            save_dir = Path(self.master_path)
             save_dir.mkdir(parents=True, exist_ok=True)
 
             # Define file name (dynamically names it based on the simulation mode)

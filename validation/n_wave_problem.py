@@ -1,6 +1,6 @@
 import numpy as np
 
-from burgers_pure import BurgersPure
+from solvers.burgers_pure import BurgersPure
 from functions import set_extractions, plot_solutions_from_directory_animated
 
 

@@ -38,7 +38,7 @@ from data_generation.configurations import (
 from functions import run_config, read_data, SolutionConfig, plot_solution_comparison
 from problem_domains.problems import problem_robijns_one
 from projection_and_stencils.project_2 import run_projection
-from projection_and_stencils.split_training_data import (
+from data_curation.split_training_data import (
     save_splits,
     split_data_shuffled,
     verify_splits,
