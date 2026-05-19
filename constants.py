@@ -31,7 +31,7 @@ DNS_SPATIAL_FACTOR: float = 0.5
 DNS_POINTS_FACTOR: float = 1.1
 
 # LES SPECIFICS
-DNS_TO_LES_RATIO: int = 2**3
+DNS_TO_LES_RATIO: int = 2**2
 N_NODES_LES: int = int(N_NODES_DNS / DNS_TO_LES_RATIO)
 
 MESH_LES: NDArray
@@ -44,9 +44,9 @@ N_NODES_LES_COARSE: int = int(N_NODES_LES / 2)
 NODES_LIST: list[int] = [N_NODES_LES, N_NODES_LES_COARSE, N_NODES_LES_FINE]
 
 # PREDICTOR AGENT
-HIDDEN_UNITS: int = 128
+HIDDEN_UNITS: int = 64
 INPUT_UNITS: int = 20
-OUTPUT_UNITS: int = 4
+OUTPUT_UNITS: int = 5
 BATCH_SIZE: int = 128
 LEARNING_RATE: float = 0.001
 EPOCHS: int = 150
@@ -58,7 +58,7 @@ TRAINING_DATA_FOLDER: str = "training_data"
 PREDICTOR_FOLDER: str = "predictor"
 PRE_SPLIT_FOLDER: str = "pre_split"
 POST_SPLIT_FOLDER: str = "post_split"
-AGENTS_FOLDER: str = "agents"
+AGENTS_FOLDER: str = "ml_agents"
 INPUT_STENCIL: str = "X.npy"
 OUTPUT_STENCIL: str = "y.npy"
 NORM_STATS: str = "norm_stats.npz"

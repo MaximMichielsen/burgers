@@ -171,6 +171,7 @@ def run_projection(
     du_bar_dt_list = []
     forcing_list = []
     u_prime_t_list = []
+    dns_on_les_list = []
 
     for i, (solution_dns, forcing_dns) in enumerate(zip(solutions_dns, forcings_dns)):
         u_bar, uu_bar = box_filter(solution_dns, ratio=DNS_TO_LES_RATIO, n_les=N_les)
@@ -215,6 +216,7 @@ def run_projection(
         tau_list.append(tau)
         du_bar_dt_list.append(du_bar_dt)
         forcing_list.append(f_bar)
+        dns_on_les_list.append(solution_dns[les_indices])
 
     if verify:
         verify_global_projection(
@@ -230,4 +232,6 @@ def run_projection(
     if save:
         output_dir.mkdir(parents=True, exist_ok=True)
         np.save(output_dir / "solutions_projection.npy", np.array(solutions_les))
+        np.save(output_dir / "dns_on_les.npy", np.array(dns_on_les_list))
+        np.save(output_dir / "forcings_projection.npy", np.array(forcing_list))
         print("Saved global LES projection snapshots for verification.")
