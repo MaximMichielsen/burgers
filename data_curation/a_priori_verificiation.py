@@ -32,6 +32,8 @@ from matplotlib.gridspec import GridSpec
 from numpy.typing import NDArray
 from scipy.stats import pearsonr
 
+from constants import OUTPUT_UNITS
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -41,9 +43,9 @@ OUTPUT_TERM_LABELS: list[str] = [
     r"$(w_x,\,u'^2/2)_e$  [Reynolds]",
     r"$(w_l,\,u'_t)_e$  [temporal L]",
     r"$(w_r,\,u'_t)_e$  [temporal R]",
-    r"$(w_x,\,u'_x)_e$  [viscous]",
+    r"viscous",
 ]
-N_OUTPUT_TERMS = 5
+N_OUTPUT_TERMS = OUTPUT_UNITS
 
 # ---------------------------------------------------------------------------
 # Metric helpers
@@ -131,7 +133,8 @@ def print_metrics_table(
         f"  {'─' * 32} {'─' * col_w} {'─' * col_w} {'─' * col_w} {'─' * col_w} {'─' * col_w}"
     )
     for term_idx, label in enumerate(OUTPUT_TERM_LABELS):
-        short_label = label.split("[")[1].rstrip("]").strip()
+        parts = label.split("[")
+        short_label = parts[1].rstrip("]").strip() if len(parts) > 1 else label.strip()
         print(
             f"  {short_label:<32} "
             f"{metrics['rho'][term_idx]:>{col_w}.4f} "

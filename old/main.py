@@ -10,11 +10,6 @@ import logging
 
 from matplotlib import pyplot as plt
 
-from old.agents.predictor import (
-    evaluate_test_performance,
-    plot_training_diagnostics,
-    train_and_diagnose,
-)
 from constants import (
     RUNS_FOLDER,
     SOLVER_DATA_FOLDER,

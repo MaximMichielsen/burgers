@@ -245,6 +245,68 @@ def create_solver_configs(
     return config_dns, config_les_analytical, config_les_no_model
 
 
+from solvers.burgers_coupled import BurgersCoupled
+
+
+def create_ann_config(
+    problem_definition: dict,
+    ann_model_path: Path,
+    normalisation_stats_path: Path,
+    les_ann_dir: Path | str | None = None,
+) -> dict:
+    """ANN-coupled LES configuration, matching LES grid and time step."""
+    simulation_length: float = problem_definition["domain_length"]
+    simulation_duration: float = problem_definition["domain_timespan"]
+    reynolds: float = problem_definition["reynolds"]
+    viscosity: float = problem_definition["viscosity"]
+    initial_condition: NDArray | Callable = problem_definition["initial_condition"]
+
+    grid_points_dns = calc_required_grid_points(
+        length=simulation_length,
+        reynolds=reynolds,
+        factor_spatial=DNS_SPATIAL_FACTOR,
+        factor_points=DNS_POINTS_FACTOR,
+    )
+    grid_points_les = grid_points_dns // DNS_TO_LES_RATIO
+    mesh_les, h_les = np.linspace(
+        start=0, stop=simulation_length, num=grid_points_les, retstep=True
+    )
+    initial_solution_les = initial_condition(mesh_les)
+    time_step_les = compute_time_step(
+        h=h_les,
+        max_velocity=max(initial_solution_les),
+        viscosity=viscosity,
+        do_round_down=True,
+    )
+    les_extractions = set_extractions(
+        duration=simulation_duration,
+        extraction_amount=DNS_SNAPSHOT_AMOUNT // DNS_TO_LES_RATIO,
+        time_step=time_step_les,
+    )
+
+    return BurgersCoupled.create_coupled_config(
+        ann_model_path=ann_model_path,
+        normalisation_stats_path=normalisation_stats_path,
+        initial_condition=initial_solution_les,
+        simulation_mode="ann",
+        run_objective="ann_coupled_les",
+        node_amount=grid_points_les,
+        boundary_condition_type=problem_definition["boundary_condition_type"],
+        boundary_condition_value=problem_definition["boundary_condition_value"],
+        external_forcing=problem_definition["external_forcing"],
+        forcing_steady=problem_definition["forcing_steady"],
+        domain_timespan=simulation_duration,
+        time_step=time_step_les,
+        domain_length=simulation_length,
+        convergence_tol_residual=1e-4,
+        convergence_tol_update=1e-4,
+        max_iterations=20,
+        viscosity=viscosity,
+        extract_at_times=les_extractions,
+        master_path=les_ann_dir,
+    )
+
+
 def create_code_test_config() -> dict:
     """Quick test run to check code behavior."""
     grid_points_dns = calc_required_grid_points(
