@@ -437,6 +437,7 @@ def run_apriori_verification(
     output_dir: Path,
     domain_length: float,
     dt: float,
+    n_elements: int,
     dataset_label: str = "Validation",
     element_idx_timeseries: int = 4,
     snapshot_idx_spatial: int = -1,
@@ -505,73 +506,64 @@ def run_apriori_verification(
     # Re-order rows back to time×space order for sequential plots.
     # This requires the original (unshuffled) sequential data; if only the
     # shuffled val/test set is available, skip with a warning.
+    # --- Time-series, spatial profile, and spectrum ---
+    # Requires unshuffled sequential data saved by split_and_save.
     sequential_path = data_dir / f"X_{prefix}_sequential.npy"
     sequential_y_path = data_dir / f"y_{prefix}_sequential.npy"
-    if sequential_path.exists() and sequential_y_path.exists():
-        x_seq = np.load(sequential_path)
-        y_seq_true_norm = np.load(sequential_y_path)
-        y_seq_pred_norm = model_predict_fn(x_seq)
 
-        y_seq_true_phys = y_seq_true_norm * y_std + y_mean
-        y_seq_pred_phys = y_seq_pred_norm * y_std + y_mean
-
-        # x_seq rows correspond to (time_step, element) pairs; n_elements varies
-        # depending on boundary exclusions — infer from y_seq shape and dt.
-        n_seq_samples = y_seq_true_phys.shape[0]
-        # Approximate: assume samples are ordered (t0,e0),(t0,e1),...,(t1,e0),...
-        # The exact reconstruction depends on how assemble_training_data was called.
-        # Here we use a simple heuristic: take every n_elements-th row.
-        # Users should pass n_elements explicitly if they need exact ordering.
-        print(
-            "Warning: time-series plot uses simplified row ordering. "
-            "Pass n_elements for exact reconstruction."
-        )
-        n_elements_approx = max(1, n_seq_samples // max(1, int(n_seq_samples**0.5)))
-        element_rows = np.arange(
-            element_idx_timeseries, n_seq_samples, n_elements_approx
-        )
-        if len(element_rows) > 1:
-            times_approx = np.arange(len(element_rows)) * dt
-            plot_time_series_single_element(
-                y_true_seq=y_seq_true_phys[element_rows],
-                y_pred_seq=y_seq_pred_phys[element_rows],
-                times=times_approx,
-                element_idx=element_idx_timeseries,
-                output_path=output_dir,
-                dataset_label=dataset_label,
-            )
-    else:
+    if not (sequential_path.exists() and sequential_y_path.exists()):
         print(
             f"Sequential data not found at '{sequential_path}'. "
-            "Skipping time-series plot. Save unshuffled data as "
-            "X_{prefix}_sequential.npy to enable this plot."
+            "Skipping time-series, spatial profile, and spectrum plots. "
+            "Add sequential saves to split_and_save to enable these."
+        )
+        return metrics
+
+    x_seq = np.load(sequential_path)
+    y_seq_true_norm = np.load(sequential_y_path)
+    y_seq_pred_norm = model_predict_fn(x_seq)
+
+    y_seq_true_phys = y_seq_true_norm * y_std + y_mean
+    y_seq_pred_phys = y_seq_pred_norm * y_std + y_mean
+
+    n_seq_samples = y_seq_true_phys.shape[0]
+
+    # Rows are ordered (t0,e0),(t0,e1),...,(t0,e_{N-1}),(t1,e0),...
+    # Row k → time step k // n_elements, element k % n_elements.
+
+    # Time-series: every n_elements-th row from offset element_idx_timeseries
+    element_rows = np.arange(element_idx_timeseries, n_seq_samples, n_elements)
+    if len(element_rows) > 1:
+        times_seq = np.arange(len(element_rows)) * dt
+        plot_time_series_single_element(
+            y_true_seq=y_seq_true_phys[element_rows],
+            y_pred_seq=y_seq_pred_phys[element_rows],
+            times=times_seq,
+            element_idx=element_idx_timeseries,
+            output_path=output_dir,
+            dataset_label=dataset_label,
         )
 
-    # --- Spatial profile and spectrum at one snapshot ---
-    # Requires snapshot-ordered data; use sequential if available, else skip.
-    if sequential_path.exists():
-        # Take the last time step's worth of elements from the sequential set
-        # (heuristic: last n_elements_approx rows)
-        snap_rows = np.arange(max(0, n_seq_samples - n_elements_approx), n_seq_samples)
-        if len(snap_rows) > 0:
-            element_coords = np.linspace(0.0, domain_length, len(snap_rows))
-            snapshot_time_val = float(len(snap_rows) * dt)
+    # Spatial profile + spectrum: last n_elements rows = final snapshot
+    snap_rows = np.arange(n_seq_samples - n_elements, n_seq_samples)
+    element_coords = np.linspace(0.0, domain_length, n_elements)
+    snapshot_time_val = float((n_seq_samples // n_elements) * dt)
 
-            plot_spatial_profile_single_snapshot(
-                y_true_snapshot=y_seq_true_phys[snap_rows],
-                y_pred_snapshot=y_seq_pred_phys[snap_rows],
-                element_coords=element_coords,
-                snapshot_time=snapshot_time_val,
-                output_path=output_dir,
-                dataset_label=dataset_label,
-            )
-            plot_interaction_term_spectrum(
-                y_true_snapshot=y_seq_true_phys[snap_rows],
-                y_pred_snapshot=y_seq_pred_phys[snap_rows],
-                domain_length=domain_length,
-                snapshot_time=snapshot_time_val,
-                output_path=output_dir,
-                dataset_label=dataset_label,
-            )
+    plot_spatial_profile_single_snapshot(
+        y_true_snapshot=y_seq_true_phys[snap_rows],
+        y_pred_snapshot=y_seq_pred_phys[snap_rows],
+        element_coords=element_coords,
+        snapshot_time=snapshot_time_val,
+        output_path=output_dir,
+        dataset_label=dataset_label,
+    )
+    plot_interaction_term_spectrum(
+        y_true_snapshot=y_seq_true_phys[snap_rows],
+        y_pred_snapshot=y_seq_pred_phys[snap_rows],
+        domain_length=domain_length,
+        snapshot_time=snapshot_time_val,
+        output_path=output_dir,
+        dataset_label=dataset_label,
+    )
 
     return metrics

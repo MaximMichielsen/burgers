@@ -449,6 +449,16 @@ def split_and_save(
     np.save(output_dir / "y_val.npy", y_data[val_indices])
     np.savez(output_dir / "normalisation_stats.npz", **normalisation_stats)
 
+    # Save sequential (unshuffled) val slice for time-series and spatial plots
+    np.save(
+        output_dir / "X_val_sequential.npy",
+        x_data[val_indices[np.argsort(val_indices)]],
+    )
+    np.save(
+        output_dir / "y_val_sequential.npy",
+        y_data[val_indices[np.argsort(val_indices)]],
+    )
+
     print(
         f"Saved {len(train_indices)} training and {len(val_indices)} validation samples"
         f" to '{output_dir}'."

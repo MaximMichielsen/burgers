@@ -137,10 +137,17 @@ metrics_val = run_apriori_verification(
     domain_length=problem["domain_length"],
     dt=config_les["time_step"],
     dataset_label="Validation",
+    n_elements=n_les_nodes - 1,  # add this
 )
 
 # ---------------------------------------------------------------------------
-# Step 7: Solution comparison plots (DNS / LES-A / LES-NM / projection)
+# Step 7: Run coupled-solver
+# ---------------------------------------------------------------------------
+
+
+
+# ---------------------------------------------------------------------------
+# Step 8: Solution comparison plots (DNS / LES-A / LES-NM / projection)
 # ---------------------------------------------------------------------------
 
 projected_solution = np.load(projection_path / "solutions_projection.npy")[-1]
@@ -176,6 +183,13 @@ projection_plot_config = SolutionConfig(
     marker="^",
     mesh=mesh_les,
     solution=projected_solution,
+)
+predictor_plot_config = SolutionConfig(
+    data_path=predictor_data_path,
+    label="LES - ANN",
+    color="salmon",
+    marker="d",
+    mesh=mesh_les,
 )
 
 plot_solution_comparison(
