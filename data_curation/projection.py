@@ -131,7 +131,6 @@ def run_projection(
     directory: str | Path,
     bc_mode: str,
     bc_values: tuple[float, float],
-    save: bool = True,
     output_dir: str | Path | None = None,
     verify: bool = True,
 ) -> None:
@@ -229,9 +228,8 @@ def run_projection(
             n_les=N_les,
         )
 
-    if save:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        np.save(output_dir / "solutions_projection.npy", np.array(solutions_les))
-        np.save(output_dir / "dns_on_les.npy", np.array(dns_on_les_list))
-        np.save(output_dir / "forcings_projection.npy", np.array(forcing_list))
-        print("Saved global LES projection snapshots for verification.")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    np.save(output_dir / "solutions_projection.npy", np.array(solutions_les))
+    np.save(output_dir / "dns_on_les.npy", np.array(dns_on_les_list))
+    np.save(output_dir / "forcings_projection.npy", np.array(forcing_list))
+    print("Saved global LES projection snapshots for verification.")

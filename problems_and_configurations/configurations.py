@@ -123,6 +123,7 @@ def create_solver_configs(
     dns_dir: Path | str | None = None,
     les_a_dir: Path | str | None = None,
     les_nm_dir: Path | str | None = None,
+    les_time_step_override: float | None = None,
 ) -> tuple[dict, dict, dict]:
     """Create configuration for Burgers solver for a DNS simulation."""
     simulation_length: float = problem_definition["domain_length"]
@@ -164,8 +165,12 @@ def create_solver_configs(
         do_round_down=True,
     )
 
-    time_step_les = compute_time_step(
-        h=h_les, max_velocity=max_velocity, viscosity=viscosity, do_round_down=True
+    time_step_les = (
+        les_time_step_override
+        if les_time_step_override is not None
+        else compute_time_step(
+            h=h_les, max_velocity=max_velocity, viscosity=viscosity, do_round_down=True
+        )
     )
 
     dns_extractions = set_extractions(
@@ -253,6 +258,7 @@ def create_ann_config(
     ann_model_path: Path,
     normalisation_stats_path: Path,
     les_ann_dir: Path | str | None = None,
+    time_step_override: float | None = None,
 ) -> dict:
     """ANN-coupled LES configuration, matching LES grid and time step."""
     simulation_length: float = problem_definition["domain_length"]
@@ -272,11 +278,16 @@ def create_ann_config(
         start=0, stop=simulation_length, num=grid_points_les, retstep=True
     )
     initial_solution_les = initial_condition(mesh_les)
-    time_step_les = compute_time_step(
-        h=h_les,
-        max_velocity=max(initial_solution_les),
-        viscosity=viscosity,
-        do_round_down=True,
+
+    time_step_les = (
+        time_step_override
+        if time_step_override is not None
+        else compute_time_step(
+            h=h_les,
+            max_velocity=max(initial_solution_les),
+            viscosity=viscosity,
+            do_round_down=True,
+        )
     )
     les_extractions = set_extractions(
         duration=simulation_duration,

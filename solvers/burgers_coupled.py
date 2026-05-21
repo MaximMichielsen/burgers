@@ -43,7 +43,6 @@ import torch
 from numpy.typing import NDArray
 
 from constants import OUTPUT_UNITS
-from data_curation.a_priori_verificiation import N_OUTPUT_TERMS
 from solvers.burgers_pure import BurgersPure
 from data_curation.training_data_assembly import (
     build_input_stencil,
@@ -76,7 +75,7 @@ class BurgersCoupled(BurgersPure):
         clip_pusuluri: bool = False,
         clip_rajampeta: bool = False,
         exclude_visc: bool = True,
-        sigma_multiplier: float = 1.0
+        sigma_multiplier: float = 3.0,
     ) -> None:
         super().__init__(configuration)
 
@@ -110,7 +109,6 @@ class BurgersCoupled(BurgersPure):
         self.clip_raj: bool = clip_rajampeta
         self.exclude_visc: bool = exclude_visc
 
-
         if self.clip_raj and not self.clip_pus:
             raise ValueError(
                 "If clipping using Rajampeta's, set Pusuluri's also to True."
@@ -118,6 +116,7 @@ class BurgersCoupled(BurgersPure):
 
         # Pusuluri clipping
         if self.clip_pus:
+            print("Clipping (Pusuluri)")
             self._y_lower_bound = self._y_mean - sigma_multiplier * self._y_std
             self._y_upper_bound = self._y_mean + sigma_multiplier * self._y_std
 
@@ -173,16 +172,14 @@ class BurgersCoupled(BurgersPure):
             self._u_bar_history.append(self.initial_condition.copy())
             self._du_bar_dt_history.append(np.zeros(self.n_nodes))
             self._du_bar_dt_history.append(np.zeros(self.n_nodes))
-            self._forcing_history.append(
+
+            forcing_append = (
                 self.forcing_current.copy()
                 if self.forcing_current is not None
                 else np.zeros(self.n_nodes)
             )
-            self._forcing_history.append(
-                self.forcing_current.copy()
-                if self.forcing_current is not None
-                else np.zeros(self.n_nodes)
-            )
+            self._forcing_history.append(forcing_append)
+            self._forcing_history.append(forcing_append)
 
         # Push current (just-completed) solution as the newest lagged level
         u_bar_new = self.solution.copy()
@@ -334,7 +331,7 @@ class BurgersCoupled(BurgersPure):
             y_norm_tensor = self._predictor(x_tensor)
             y_norm = y_norm_tensor.numpy()
 
-        # De-normalise back to physical space
+        # De-normalize back to physical space
         y_phys = y_norm * self._y_std + self._y_mean  # (n_valid, 5)
 
         # Pusuluri μ ± 3σ clipping (offline training bounds)
@@ -347,6 +344,7 @@ class BurgersCoupled(BurgersPure):
             y_elem = y_phys[local_idx].copy()
 
             if self.clip_raj:
+                print("clipping (Rajampeta)")
                 node_left = elem_idx
                 node_right = elem_idx + 1
                 b0 = float(self._u_bar_history[-1][node_left])
@@ -360,10 +358,8 @@ class BurgersCoupled(BurgersPure):
                 if uet > 0:
                     y_elem[:] = 0.0
 
-
             if self.exclude_visc:
                 y_elem[4] = 0.0
-
 
             ann_correction_all[elem_idx] = y_elem
 

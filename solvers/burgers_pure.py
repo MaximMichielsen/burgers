@@ -235,7 +235,11 @@ class BurgersPure:
             if self.extract_at_times is not None:
                 while idx_extract < len(self.extract_at_times):
                     self.extracted_solutions.append(self.solution.copy())
-                    self.extracted_forcings.append(self.forcing_current.copy())
+                    self.extracted_forcings.append(
+                        self.forcing_current.copy()
+                        if self.forcing_current is not None
+                        else np.zeros_like(self.solution)
+                    )
                     logger.info(
                         "Extracted solution at t=%.4f (end-of-simulation flush)",
                         self.extract_at_times[idx_extract],
@@ -465,10 +469,6 @@ class BurgersPure:
         term_adv = (2 * abs(variable_u) / self.element_size) ** 2
         term_diff = (4 * self.viscosity / self.element_size**2) ** 2
         return 0.5 / np.sqrt(term_time + term_adv + term_diff)
-
-    # ------------------------------------------------------------------ #
-    #  Main pipeline helpers
-    # ------------------------------------------------------------------ #
 
     # ------------------------------------------------------------------ #
     #  Convergence NR

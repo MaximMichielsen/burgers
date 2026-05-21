@@ -5,6 +5,8 @@ from numpy.typing import NDArray
 from problems_and_configurations.forcing_types import (
     none_forcing,
     uniform_steady_forcing,
+    sin_steady_forcing,
+    compute_sine_forcing,
 )
 from problems_and_configurations.initial_conditions import (
     zero_initial_condition,
@@ -64,6 +66,41 @@ robijns_one = create_problem_definition(
     name="robijns_one",
 )
 
+raj_one = create_problem_definition(
+    external_forcing=uniform_steady_forcing,
+    forcing_steady=True,
+    domain_length=1,
+    domain_timespan=1,
+    reynolds=100,
+    boundary_condition_type="dirichlet",
+    boundary_condition_value=0,
+    initial_condition=zero_initial_condition,
+    name="raj_one",
+)
+
+raj_two = create_problem_definition(
+    external_forcing=compute_sine_forcing,
+    forcing_steady=False,
+    domain_length=1,
+    domain_timespan=4,
+    reynolds=100,
+    boundary_condition_type="dirichlet",
+    boundary_condition_value=1,
+    initial_condition=uniform_initial_condition,
+    name="raj_two",
+)
+
+raj_three = create_problem_definition(
+    external_forcing=uniform_steady_forcing,
+    forcing_steady=True,
+    domain_length=1,
+    domain_timespan=1,
+    reynolds=100,
+    boundary_condition_type="dirichlet",
+    boundary_condition_value=1,
+    initial_condition=uniform_initial_condition,
+    name="raj_three",
+)
 
 periodic_steady_forcing_uniform = create_problem_definition(
     external_forcing=uniform_steady_forcing,
