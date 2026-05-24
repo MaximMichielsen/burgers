@@ -133,6 +133,8 @@ def run_projection(
     bc_values: tuple[float, float],
     output_dir: str | Path | None = None,
     verify: bool = True,
+    les_snapshot_indices: np.ndarray | None = None,  # replaces les_every_n_dns_steps
+    n_nodes_les: int | None = None,
 ) -> None:
     """Project DNS data onto the LES grid and build ANN training data.
 
@@ -151,7 +153,7 @@ def run_projection(
     # --- read DNS snapshots ---------------------------------------------------
     mesh_dns, times, solutions_dns, forcings_dns = read_dns_data(directory)
 
-    N_les = len(mesh_dns) // DNS_TO_LES_RATIO
+    N_les = n_nodes_les if n_nodes_les is not None else (len(mesh_dns) - 1) // DNS_TO_LES_RATIO + 1
     les_indices = np.round(np.linspace(0, len(mesh_dns) - 1, N_les)).astype(int)
     mesh_les = mesh_dns[les_indices]
     h_les = float(abs(mesh_les[1] - mesh_les[0]))
@@ -228,8 +230,15 @@ def run_projection(
             n_les=N_les,
         )
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    np.save(output_dir / "solutions_projection.npy", np.array(solutions_les))
-    np.save(output_dir / "dns_on_les.npy", np.array(dns_on_les_list))
-    np.save(output_dir / "forcings_projection.npy", np.array(forcing_list))
-    print("Saved global LES projection snapshots for verification.")
+    if les_snapshot_indices is None:
+        les_snapshot_indices = np.arange(len(solutions_les))
+
+    solutions_les_array = np.array(solutions_les)[les_snapshot_indices]
+    dns_on_les_array = np.array(dns_on_les_list)[les_snapshot_indices]
+    forcing_array = np.array(forcing_list)[les_snapshot_indices]
+    times_array = np.array(times)[les_snapshot_indices]
+
+    np.save(output_dir / "solutions_projection.npy", solutions_les_array)
+    np.save(output_dir / "dns_on_les.npy", dns_on_les_array)
+    np.save(output_dir / "forcings_projection.npy", forcing_array)
+    np.save(output_dir / "times.npy", times_array)

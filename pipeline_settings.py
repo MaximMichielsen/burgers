@@ -45,6 +45,22 @@ class PipelineConfig:
         )
 
     @classmethod
+    def coupled_only_clipped(cls, manual_path: str = "") -> "PipelineConfig":
+        """Skip everything except coupled simulation and plotting."""
+        return cls(
+            run_solvers=False,
+            run_projection=False,
+            run_training_assembly=False,
+            run_training=False,
+            run_apriori=False,
+            run_coupled=True,
+            run_plotting=True,
+            manual_path=manual_path,
+            clip_pusuluri=True,
+            clip_rajampeta=True,
+        )
+
+    @classmethod
     def all_stages_clipped(cls, manual_path: str = "") -> PipelineConfig:
         """Run all stages, the predictor model is clipped for stability."""
         return cls(manual_path=manual_path, clip_pusuluri=True, clip_rajampeta=True)
@@ -60,11 +76,15 @@ class PipelineConfig:
         )
 
     @classmethod
-    def all_but_dns(cls, manual_path: str = "") -> PipelineConfig:
-        """Run all stages except DNS, the predictor model is clipped for stability."""
+    def only_plot(cls, manual_path: str) -> PipelineConfig:
+        """Run only the plotting, requires manual path."""
         return cls(
+            run_solvers=False,
+            run_projection=False,
+            run_training_assembly=False,
+            run_training=False,
+            run_apriori=False,
+            run_coupled=False,
+            run_plotting=True,
             manual_path=manual_path,
-            run_dns=False,
-            clip_pusuluri=False,
-            clip_rajampeta=False,
         )

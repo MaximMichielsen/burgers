@@ -123,7 +123,10 @@ def create_solver_configs(
     dns_dir: Path | str | None = None,
     les_a_dir: Path | str | None = None,
     les_nm_dir: Path | str | None = None,
-    les_time_step_override: float | None = None,
+    dns_time_step: float | None = None,
+    les_time_step: float | None = None,
+        n_nodes_dns: int | None = None,
+        n_nodes_les: int | None = None,
 ) -> tuple[dict, dict, dict]:
     """Create configuration for Burgers solver for a DNS simulation."""
     simulation_length: float = problem_definition["domain_length"]
@@ -136,14 +139,18 @@ def create_solver_configs(
     forcing = problem_definition["external_forcing"]
     forcing_is_steady = problem_definition["forcing_steady"]
 
-    grid_points_dns = calc_required_grid_points(
-        length=simulation_length,
-        reynolds=reynolds,
-        factor_spatial=DNS_SPATIAL_FACTOR,
-        factor_points=DNS_POINTS_FACTOR,
-    )
-
-    grid_points_les = grid_points_dns // DNS_TO_LES_RATIO
+    if n_nodes_dns is not None and n_nodes_les is not None:
+        grid_points_dns = n_nodes_dns
+        grid_points_les = n_nodes_les
+    else:
+        reynolds: float = problem_definition["reynolds"]
+        grid_points_dns = calc_required_grid_points(
+            length=simulation_length,
+            reynolds=reynolds,
+            factor_spatial=DNS_SPATIAL_FACTOR,
+            factor_points=DNS_POINTS_FACTOR,
+        )
+        grid_points_les = (grid_points_dns - 1) // DNS_TO_LES_RATIO + 1
 
     mesh_dns, h_dns = np.linspace(
         start=0, stop=simulation_length, num=grid_points_dns, retstep=True
@@ -158,30 +165,36 @@ def create_solver_configs(
 
     max_velocity = max(max(initial_solution_dns), max(initial_solution_les))
 
-    time_step_dns = compute_time_step(
-        h=h_dns,
-        max_velocity=max(initial_solution_dns),
-        viscosity=viscosity,
-        do_round_down=True,
+    time_step_dns = (
+        dns_time_step
+        if dns_time_step is not None
+        else compute_time_step(
+            h=h_dns,
+            max_velocity=max(initial_solution_dns),
+            viscosity=viscosity,
+            do_round_down=True,
+        )
     )
 
     time_step_les = (
-        les_time_step_override
-        if les_time_step_override is not None
+        les_time_step
+        if les_time_step is not None
         else compute_time_step(
             h=h_les, max_velocity=max_velocity, viscosity=viscosity, do_round_down=True
         )
     )
 
+    n_dns_steps = int(round(simulation_duration / time_step_dns))
+
     dns_extractions = set_extractions(
         duration=simulation_duration,
-        extraction_amount=DNS_SNAPSHOT_AMOUNT,
+        extraction_amount=n_dns_steps,  # every step
         time_step=time_step_dns,
     )
 
     les_extractions = set_extractions(
         duration=simulation_duration,
-        extraction_amount=DNS_SNAPSHOT_AMOUNT // DNS_TO_LES_RATIO,
+        extraction_amount=int(simulation_duration / time_step_les),
         time_step=time_step_les,
     )
 
@@ -259,6 +272,7 @@ def create_ann_config(
     normalisation_stats_path: Path,
     les_ann_dir: Path | str | None = None,
     time_step_override: float | None = None,
+    n_nodes_les: int | None = None,
 ) -> dict:
     """ANN-coupled LES configuration, matching LES grid and time step."""
     simulation_length: float = problem_definition["domain_length"]
@@ -273,7 +287,11 @@ def create_ann_config(
         factor_spatial=DNS_SPATIAL_FACTOR,
         factor_points=DNS_POINTS_FACTOR,
     )
-    grid_points_les = grid_points_dns // DNS_TO_LES_RATIO
+    grid_points_les = (
+        n_nodes_les
+        if n_nodes_les is not None
+        else (grid_points_dns - 1) // DNS_TO_LES_RATIO + 1
+    )
     mesh_les, h_les = np.linspace(
         start=0, stop=simulation_length, num=grid_points_les, retstep=True
     )

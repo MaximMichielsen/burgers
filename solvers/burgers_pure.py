@@ -246,8 +246,6 @@ class BurgersPure:
                     )
                     idx_extract += 1
 
-        self.post_plotting()
-
         if self.write_solutions:
             self.write_config_to_json()
             self.write_solution_to_csv()
@@ -668,7 +666,7 @@ class BurgersPure:
 
         write_count = 0
         for solution, time, forcing in zip(solutions, times, forcings):
-            filepath = run_dir / f"sol_t{time:.3f}.csv"
+            filepath = run_dir / f"sol_t{time:.6f}.csv"
             with open(filepath, mode="w", newline="") as file:
                 writer = csv.writer(file)
                 writer.writerow(["node_index", "x_coordinate", "velocity", "forcing"])
@@ -709,11 +707,33 @@ class BurgersPure:
         self.logger.info("RUN COMPLETE — id: %s", self.run_id)
         self.logger.info("=" * 60)
 
-        config_loggable = {
-            k: round(v, 4) if isinstance(v, float) else v
-            for k, v in self.configuration.items()
-            if k != "solution_initial"
-        }
+        config_loggable = {}
+        for k, v in self.configuration.items():
+            if k in ("solution_initial", "master_path", "initial_condition"):
+                continue
+            elif k == "extract_at_times":
+                if v is not None:
+                    config_loggable[k] = (
+                        f"{len(v)} extractions, "
+                        f"first 5: {[float(t) for t in v[:5]]}"
+                    )
+                else:
+                    config_loggable[k] = "None"
+            elif k in ("convergence_tol_residual", "convergence_tol_update"):
+                config_loggable[k] = f"{v:.2e}"
+            elif k == "external_forcing":
+                if callable(v):
+                    module = getattr(v, "__module__", "")
+                    config_loggable[k] = f"{v.__name__} (from {module})"
+                elif v is None:
+                    config_loggable[k] = "None"
+                else:
+                    config_loggable[k] = f"array, shape {np.array(v).shape}"
+            elif isinstance(v, float):
+                config_loggable[k] = f"{v:.6g}"
+            else:
+                config_loggable[k] = v
+
         self.logger.info("Configuration settings:")
         self.logger.info("  Time Integration: Second Order Implicit Euler")
         self.logger.info("  Simulation mode   : %s", self.simulation_mode)
@@ -790,9 +810,25 @@ class BurgersPure:
         print(f"Simulation mode: {self.simulation_mode}")
         print("=" * 60)
         for k, v in self.configuration.items():
-            if k == "time_extractions":
-                print(f"{k}: {len(v)}")
-            elif k not in ("initial_condition", "forcing"):
+            if k == "simulation_mode":  # already printed above
+                continue
+            if k == "extract_at_times":
+                if v is not None:
+                    print(f"extract_at_times: {len(v)} extractions, "
+                          f"first 5 steps: {[float(t) for t in v[:5]]}")
+                else:
+                    print("extract_at_times: None")
+            elif k == "convergence_tol_residual" or k == "convergence_tol_update":
+                print(f"{k}: {v:.2e}")
+            elif k == "external_forcing":
+                if callable(v):
+                    module = getattr(v, '__module__', '')
+                    print(f"external_forcing: {v.__name__} (from {module})")
+                elif v is None:
+                    print("external_forcing: None")
+                else:
+                    print(f"external_forcing: array, shape {np.array(v).shape}")
+            elif k not in ("initial_condition",):
                 print(f"{k}: {round(v, 4) if isinstance(v, float) else v}")
         print("=" * 60)
 
@@ -943,7 +979,7 @@ class BurgersPure:
 
             # Save the figure (dpi=300 keeps it crisp for reports/papers)
             plt.savefig(file_path, dpi=300, bbox_inches="tight")
-            print(f"Plot successfully saved to: {file_path}")
+            print(f"Post-simulation plot saved to: {file_path}")
 
         # --- Showing / Closing Routine ---
         if show_plot:

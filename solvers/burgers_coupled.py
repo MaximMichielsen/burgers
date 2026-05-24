@@ -116,7 +116,6 @@ class BurgersCoupled(BurgersPure):
 
         # Pusuluri clipping
         if self.clip_pus:
-            print("Clipping (Pusuluri)")
             self._y_lower_bound = self._y_mean - sigma_multiplier * self._y_std
             self._y_upper_bound = self._y_mean + sigma_multiplier * self._y_std
 
@@ -344,7 +343,6 @@ class BurgersCoupled(BurgersPure):
             y_elem = y_phys[local_idx].copy()
 
             if self.clip_raj:
-                print("clipping (Rajampeta)")
                 node_left = elem_idx
                 node_right = elem_idx + 1
                 b0 = float(self._u_bar_history[-1][node_left])
