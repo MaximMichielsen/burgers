@@ -69,3 +69,10 @@ LES_NO_MODEL_SAVE_PATH: str = "LES_NM"
 LES_ANN_SAVE_PATH: str = "LES_ANN"
 PREDICTOR_AGENT_FOLDER: str = "predictor"
 A_PRIORI_FOLDER: str = "apriori"
+
+LES_ANN_UNCLIPPED_FOLDER: str = "unclipped"
+LES_ANN_PUSULURI_FOLDER: str = "pusuluri"
+LES_ANN_RAJAMPETA_FOLDER: str = "rajampeta"
+
+LES_ANN_STABLE_FOLDER: str = "stable"
+LES_ANN_BLOWN_UP_FOLDER: str = "blown_up"

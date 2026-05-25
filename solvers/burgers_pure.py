@@ -744,12 +744,17 @@ class BurgersPure:
 
         if self.timings_performance:
             self.logger.info("Timings:")
-            total = self.timings_performance["total_simulation"]
+            total = self.timings_performance.get("total_simulation")
+            if total is None:
+                self.logger.warning("total_simulation timing not recorded (run may have been interrupted).")
+                total = sum(
+                    v for k, v in self.timings_performance.items()
+                    if k != "total_simulation"
+                )
             for phase, t in sorted(self.timings_performance.items()):
                 if phase != "total_simulation":
-                    self.logger.info(
-                        "  %-25s %.4fs (%5.1f%%)", phase, t, 100 * t / total
-                    )
+                    pct = (100 * t / total) if total > 0 else float("nan")
+                    self.logger.info("  %-25s %.4fs (%5.1f%%)", phase, t, pct)
             self.logger.info("  %-25s %.4fs", "TOTAL", total)
         else:
             self.logger.warning("No timing data recorded.")

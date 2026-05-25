@@ -40,7 +40,7 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 
 # -- pipeline settings ----------------------------
 manual_path: str = "run_raj_two_0524_194829"
-pipeline = PipelineConfig.all_but_dns_clipped(manual_path=manual_path)
+pipeline = PipelineConfig.coupled_only(manual_path=manual_path)
 
 
 # ---------------------------------------------------------------------------
@@ -197,16 +197,19 @@ if pipeline.run_apriori:
 # ---------------------------------------------------------------------------
 # Step 7: Run coupled-solver
 # ---------------------------------------------------------------------------
+solver_data_dir = master_path / SOLVER_DATA_FOLDER
 
-les_ann_data_path = master_path / SOLVER_DATA_FOLDER / LES_ANN_SAVE_PATH
-
-config_ann = create_ann_config(
+config_ann, les_ann_stable_path, les_ann_blown_up_path = create_ann_config(
     problem_definition=problem,
     ann_model_path=model_output_path / "sgs_predictor.pt",
     normalisation_stats_path=training_path / "normalisation_stats.npz",
-    les_ann_dir=les_ann_data_path,
+    les_ann_dir=solver_data_dir,  # base only — sub-dirs resolved inside
     time_step_override=DT_LES,
-    n_nodes_les=N_NODES_LES_TARGET,  # NEW
+    n_nodes_les=N_NODES_LES_TARGET,
+    clip_pusuluri=pipeline.clip_pusuluri,
+    clip_rajampeta=pipeline.clip_rajampeta,
+    blowup_threshold=1e4,
+    blowup_buffer_size=5_000,
 )
 
 if pipeline.run_coupled:
@@ -218,6 +221,8 @@ if pipeline.run_coupled:
     solver_ann.print_configuration()
     solver_ann.run_simulation()
     solver_ann.post_processing()
+
+les_ann_data_path = solver_ann.master_path if pipeline.run_coupled else les_ann_stable_path
 
 # ---------------------------------------------------------------------------
 # Step 8: Solution comparison plots (DNS / LES-A / LES-NM / projection)

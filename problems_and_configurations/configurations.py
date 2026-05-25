@@ -9,12 +9,19 @@ from constants import (
     DNS_POINTS_FACTOR,
     DNS_SNAPSHOT_AMOUNT,
     DNS_TO_LES_RATIO,
+    LES_ANN_RAJAMPETA_FOLDER,
+    LES_ANN_PUSULURI_FOLDER,
+    LES_ANN_UNCLIPPED_FOLDER,
+    LES_ANN_STABLE_FOLDER,
+    LES_ANN_SAVE_PATH,
+    LES_ANN_BLOWN_UP_FOLDER,
 )
 from functions import calc_required_grid_points, compute_time_step, set_extractions
 from problems_and_configurations.forcing_types import sin_cos_forcing
 from problems_and_configurations.initial_conditions import uniform_initial_condition
 
 from solvers.burgers_pure import BurgersPure as Burgers
+from solvers.burgers_coupled import BurgersCoupled
 
 
 def create_placeholder_config(
@@ -125,8 +132,8 @@ def create_solver_configs(
     les_nm_dir: Path | str | None = None,
     dns_time_step: float | None = None,
     les_time_step: float | None = None,
-        n_nodes_dns: int | None = None,
-        n_nodes_les: int | None = None,
+    n_nodes_dns: int | None = None,
+    n_nodes_les: int | None = None,
 ) -> tuple[dict, dict, dict]:
     """Create configuration for Burgers solver for a DNS simulation."""
     simulation_length: float = problem_definition["domain_length"]
@@ -143,7 +150,6 @@ def create_solver_configs(
         grid_points_dns = n_nodes_dns
         grid_points_les = n_nodes_les
     else:
-        reynolds: float = problem_definition["reynolds"]
         grid_points_dns = calc_required_grid_points(
             length=simulation_length,
             reynolds=reynolds,
@@ -155,7 +161,6 @@ def create_solver_configs(
     mesh_dns, h_dns = np.linspace(
         start=0, stop=simulation_length, num=grid_points_dns, retstep=True
     )
-
     mesh_les, h_les = np.linspace(
         start=0, stop=simulation_length, num=grid_points_les, retstep=True
     )
@@ -175,7 +180,6 @@ def create_solver_configs(
             do_round_down=True,
         )
     )
-
     time_step_les = (
         les_time_step
         if les_time_step is not None
@@ -185,13 +189,11 @@ def create_solver_configs(
     )
 
     n_dns_steps = int(round(simulation_duration / time_step_dns))
-
     dns_extractions = set_extractions(
         duration=simulation_duration,
-        extraction_amount=n_dns_steps,  # every step
+        extraction_amount=n_dns_steps,
         time_step=time_step_dns,
     )
-
     les_extractions = set_extractions(
         duration=simulation_duration,
         extraction_amount=int(simulation_duration / time_step_les),
@@ -218,7 +220,6 @@ def create_solver_configs(
         extract_at_times=dns_extractions,
         master_path=dns_dir,
     )
-
     config_les_analytical = Burgers.create_config(
         initial_condition=initial_solution_les,
         simulation_mode="les",
@@ -239,7 +240,6 @@ def create_solver_configs(
         extract_at_times=les_extractions,
         master_path=les_a_dir,
     )
-
     config_les_no_model = Burgers.create_config(
         initial_condition=initial_solution_les,
         simulation_mode="no_model",
@@ -263,7 +263,42 @@ def create_solver_configs(
     return config_dns, config_les_analytical, config_les_no_model
 
 
-from solvers.burgers_coupled import BurgersCoupled
+def resolve_ann_run_path(
+    solver_data_dir: Path,
+    clip_pusuluri: bool,
+    clip_rajampeta: bool,
+) -> tuple[Path, Path]:
+    """Return (stable_path, blown_up_path) for the given clipping variant.
+
+    Parameters
+    ----------
+    solver_data_dir:
+        ``master_path / SOLVER_DATA_FOLDER`` — must exist at call time.
+    clip_pusuluri:
+        Whether Pusuluri μ ± 3σ clipping is active.
+    clip_rajampeta:
+        Whether Rajampeta backscatter limiting is active (implies Pusuluri).
+
+    Returns
+    -------
+    stable_path, blown_up_path : Path
+        Both directories are created before returning.
+    """
+    if clip_rajampeta:
+        clip_variant_folder = LES_ANN_RAJAMPETA_FOLDER
+    elif clip_pusuluri:
+        clip_variant_folder = LES_ANN_PUSULURI_FOLDER
+    else:
+        clip_variant_folder = LES_ANN_UNCLIPPED_FOLDER
+
+    base_ann_dir = solver_data_dir / LES_ANN_SAVE_PATH / clip_variant_folder
+    stable_path = base_ann_dir / LES_ANN_STABLE_FOLDER
+    blown_up_path = base_ann_dir / LES_ANN_BLOWN_UP_FOLDER
+
+    stable_path.mkdir(parents=True, exist_ok=True)
+    blown_up_path.mkdir(parents=True, exist_ok=True)
+
+    return stable_path, blown_up_path
 
 
 def create_ann_config(
@@ -273,29 +308,83 @@ def create_ann_config(
     les_ann_dir: Path | str | None = None,
     time_step_override: float | None = None,
     n_nodes_les: int | None = None,
-) -> dict:
-    """ANN-coupled LES configuration, matching LES grid and time step."""
+    clip_pusuluri: bool = False,
+    clip_rajampeta: bool = False,
+    blowup_threshold: float = 1e4,
+    blowup_buffer_size: int = 5_000,
+    ann_warmup_steps: int = 2,
+) -> tuple[dict, Path, Path]:
+    """ANN-coupled LES configuration, matching LES grid and time step.
+
+    Mirrors the structure of the other config builders: resolves the initial
+    condition to an array, computes extractions via ``set_extractions``, and
+    uses explicit convergence tolerances and iteration caps.
+
+    Parameters
+    ----------
+    problem_definition:
+        Standard problem dict (same format as DNS/LES builders).
+    ann_model_path:
+        Path to ``sgs_predictor.pt``.
+    normalisation_stats_path:
+        Path to ``normalisation_stats.npz``.
+    les_ann_dir:
+        Base solver-data directory (``master_path / SOLVER_DATA_FOLDER``).
+        Sub-directories are resolved here; do not pre-append clipping or
+        stability sub-folders.
+    time_step_override:
+        If given, bypasses the CFL-based time-step computation.
+    n_nodes_les:
+        If given, bypasses the DNS-ratio-based node count.
+    clip_pusuluri:
+        Enable Pusuluri μ ± 3σ output clipping.
+    clip_rajampeta:
+        Enable Rajampeta backscatter limiting (implies Pusuluri).
+    blowup_threshold:
+        Amplitude magnitude above which blow-up is declared.
+    blowup_buffer_size:
+        Number of past steps retained in the blow-up buffer.
+    ann_warmup_steps:
+        Pure-Galerkin steps before activating the ANN.
+
+    Returns
+    -------
+    config : dict
+        Ready to pass to ``BurgersCoupled(...)``.
+    stable_path : Path
+        Output directory for a clean run.
+    blown_up_path : Path
+        Output directory for a blown-up run.
+    """
     simulation_length: float = problem_definition["domain_length"]
     simulation_duration: float = problem_definition["domain_timespan"]
     reynolds: float = problem_definition["reynolds"]
     viscosity: float = problem_definition["viscosity"]
     initial_condition: NDArray | Callable = problem_definition["initial_condition"]
+    boundary_condition_type = problem_definition["boundary_condition_type"]
+    boundary_condition_value = problem_definition["boundary_condition_value"]
+    forcing = problem_definition["external_forcing"]
+    forcing_is_steady = problem_definition["forcing_steady"]
 
-    grid_points_dns = calc_required_grid_points(
-        length=simulation_length,
-        reynolds=reynolds,
-        factor_spatial=DNS_SPATIAL_FACTOR,
-        factor_points=DNS_POINTS_FACTOR,
-    )
     grid_points_les = (
         n_nodes_les
         if n_nodes_les is not None
-        else (grid_points_dns - 1) // DNS_TO_LES_RATIO + 1
+        else (
+            calc_required_grid_points(
+                length=simulation_length,
+                reynolds=reynolds,
+                factor_spatial=DNS_SPATIAL_FACTOR,
+                factor_points=DNS_POINTS_FACTOR,
+            )
+            - 1
+        )
+        // DNS_TO_LES_RATIO
+        + 1
     )
     mesh_les, h_les = np.linspace(
         start=0, stop=simulation_length, num=grid_points_les, retstep=True
     )
-    initial_solution_les = initial_condition(mesh_les)
+    initial_solution_les: NDArray = initial_condition(mesh_les)
 
     time_step_les = (
         time_step_override
@@ -313,27 +402,41 @@ def create_ann_config(
         time_step=time_step_les,
     )
 
-    return BurgersCoupled.create_coupled_config(
+    stable_path, blown_up_path = resolve_ann_run_path(
+        solver_data_dir=Path(les_ann_dir),
+        clip_pusuluri=clip_pusuluri,
+        clip_rajampeta=clip_rajampeta,
+    )
+
+    config = BurgersCoupled.create_coupled_config(
         ann_model_path=ann_model_path,
         normalisation_stats_path=normalisation_stats_path,
+        ann_warmup_steps=ann_warmup_steps,
+        blowup_threshold=blowup_threshold,
+        blowup_buffer_size=blowup_buffer_size,
+        blown_up_path=str(blown_up_path),
+        # --- BurgersPure base keys ---
         initial_condition=initial_solution_les,
         simulation_mode="ann",
-        run_objective="ann_coupled_les",
+        run_objective="data_generation",
         node_amount=grid_points_les,
-        boundary_condition_type=problem_definition["boundary_condition_type"],
-        boundary_condition_value=problem_definition["boundary_condition_value"],
-        external_forcing=problem_definition["external_forcing"],
-        forcing_steady=problem_definition["forcing_steady"],
-        domain_timespan=simulation_duration,
+        viscosity=viscosity,
         time_step=time_step_les,
+        domain_timespan=simulation_duration,
         domain_length=simulation_length,
+        boundary_condition_type=boundary_condition_type,
+        boundary_condition_value=boundary_condition_value,
+        external_forcing=forcing,
+        forcing_steady=forcing_is_steady,
         convergence_tol_residual=1e-4,
         convergence_tol_update=1e-4,
         max_iterations=20,
-        viscosity=viscosity,
+        relaxation=None,
         extract_at_times=les_extractions,
-        master_path=les_ann_dir,
+        master_path=stable_path,
     )
+
+    return config, stable_path, blown_up_path
 
 
 def create_code_test_config() -> dict:
@@ -344,7 +447,6 @@ def create_code_test_config() -> dict:
         factor_spatial=DNS_SPATIAL_FACTOR,
         factor_points=DNS_POINTS_FACTOR,
     )
-
     config_test = Burgers.create_config(
         initial_condition=uniform_initial_condition,
         simulation_mode="dns",
