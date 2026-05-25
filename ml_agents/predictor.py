@@ -1,12 +1,8 @@
-"""SGS predictor model for VMS-ANN Burgers LES.
+"""SGS predictor: MLP training, loading, and diagnostics.
 
-Architecture (Research Proposal §2.3.1, following Robijns 2019 / Pusuluri 2021):
-    - 3 fully connected hidden layers, 64 units each, ReLU activation
-    - Input:  20 features  (lagged extended stencil, FS2)
-    - Output:  5 scalars   (cross, Reynolds, u't_L, u't_R, viscous SGS)
-    - Optimizer: RMSprop
-    - Loss (training):   MSE
-    - Metric (monitoring): MAE on validation set
+Architecture (Research Proposal §2.3.1, Robijns 2019 / Pusuluri 2021):
+    3 × 64 ReLU hidden layers | Input: 20 | Output: 5
+    Optimizer: RMSprop | Loss: MSE | Early-stop metric: val MAE
 """
 
 from pathlib import Path
@@ -21,12 +17,12 @@ from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
 
 from constants import (
+    BATCH_SIZE,
+    EPOCHS,
     HIDDEN_UNITS,
     INPUT_UNITS,
-    OUTPUT_UNITS,
-    EPOCHS,
-    BATCH_SIZE,
     LEARNING_RATE,
+    OUTPUT_UNITS,
 )
 
 
@@ -35,20 +31,14 @@ from constants import (
 # ---------------------------------------------------------------------------
 
 
-def load_split_data(
-    path: Path,
-) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-    """Load train/val tensors from *path*.
-
-    Returns
-    -------
-    X_train, y_train, X_val, y_val : float32 Tensors
-    """
-    x_train = torch.tensor(np.load(path / "X_train.npy"), dtype=torch.float32)
-    y_train = torch.tensor(np.load(path / "y_train.npy"), dtype=torch.float32)
-    x_val = torch.tensor(np.load(path / "X_val.npy"), dtype=torch.float32)
-    y_val = torch.tensor(np.load(path / "y_val.npy"), dtype=torch.float32)
-    return x_train, y_train, x_val, y_val
+def load_split_data(data_path: Path) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Load train/val float32 tensors from data_path."""
+    return (
+        torch.tensor(np.load(data_path / "X_train.npy"), dtype=torch.float32),
+        torch.tensor(np.load(data_path / "y_train.npy"), dtype=torch.float32),
+        torch.tensor(np.load(data_path / "X_val.npy"), dtype=torch.float32),
+        torch.tensor(np.load(data_path / "y_val.npy"), dtype=torch.float32),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -57,10 +47,7 @@ def load_split_data(
 
 
 class SGSPredictor(nn.Module):
-    """Three-hidden-layer MLP for SGS closure prediction.
-
-    Matches Research Proposal §2.3.1: 3 × 64 ReLU hidden layers.
-    """
+    """Three-hidden-layer MLP for SGS closure prediction (3 × 64, ReLU)."""
 
     def __init__(
         self,
@@ -76,11 +63,10 @@ class SGSPredictor(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim),  # linear output — no activation
+            nn.Linear(hidden_dim, output_dim),
         )
 
     def forward(self, x_input: Tensor) -> Tensor:
-        """Forward pass."""
         return self.net(x_input)
 
 
@@ -90,25 +76,19 @@ class SGSPredictor(nn.Module):
 
 
 class EarlyStopping:
-    """Monitor validation MAE and stop when it stops improving.
-
-    Saves the best model weights for restoration on stop.
-    """
+    """Stop training when validation MAE stops improving; restores best weights."""
 
     def __init__(self, patience: int = 15, min_delta: float = 1e-5) -> None:
         self.patience = patience
         self.min_delta = min_delta
         self.counter: int = 0
-        self.best_loss: float | None = None
+        self.best_loss: float = float("inf")
         self.early_stop: bool = False
         self.best_state: dict | None = None
 
     def __call__(self, val_loss: float, model: nn.Module) -> None:
-        """Update state given the latest validation loss."""
-        if self.best_loss is None:
-            self.best_loss = val_loss
-            self.best_state = {k: v.clone() for k, v in model.state_dict().items()}
-        elif val_loss < self.best_loss - self.min_delta:
+        """Update state; save best weights when validation loss improves."""
+        if val_loss < self.best_loss - self.min_delta:
             self.best_loss = val_loss
             self.best_state = {k: v.clone() for k, v in model.state_dict().items()}
             self.counter = 0
@@ -126,29 +106,8 @@ class EarlyStopping:
 def train_predictor(
     data_path: Path,
     output_dir: Path,
-) -> tuple["SGSPredictor", dict]:
-    """Train the SGS predictor on the assembled training data.
-
-    Follows RP §2.3.1:
-        - MSE loss for gradient updates
-        - MAE monitored on validation set for early stopping
-        - RMSprop optimiser
-        - LR reduced on plateau
-
-    Parameters
-    ----------
-    data_path:
-        Directory with X_train.npy, y_train.npy, X_val.npy, y_val.npy.
-    output_dir:
-        Where to save the trained model and diagnostics.
-
-    Returns
-    -------
-    model : SGSPredictor
-        Best model (weights restored from best validation MAE checkpoint).
-    training_stats : dict
-        Keys: train_mse, train_mae, val_mae — one value per completed epoch.
-    """
+) -> tuple[SGSPredictor, dict]:
+    """Train the SGS predictor; return (best_model, training_stats)."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -180,26 +139,21 @@ def train_predictor(
     print("-" * 56)
 
     for epoch_idx in range(EPOCHS):
-        # --- Training pass ---
         model.train()
         epoch_mse_total = 0.0
         for batch_x, batch_y in train_loader:
             optimizer.zero_grad()
-            prediction = model(batch_x)
-            loss_value = mse_loss_fn(prediction, batch_y)
+            loss_value = mse_loss_fn(model(batch_x), batch_y)
             loss_value.backward()
             optimizer.step()
             epoch_mse_total += loss_value.item()
 
         epoch_train_mse = epoch_mse_total / len(train_loader)
 
-        # --- Evaluation pass ---
         model.eval()
         with torch.no_grad():
-            train_preds = model(x_train)
-            val_preds = model(x_val)
-            train_mae_value = mae_loss_fn(train_preds, y_train).item()
-            val_mae_value = mae_loss_fn(val_preds, y_val).item()
+            train_mae_value = mae_loss_fn(model(x_train), y_train).item()
+            val_mae_value = mae_loss_fn(model(x_val), y_val).item()
 
         scheduler.step(val_mae_value)
         early_stopper(val_mae_value, model)
@@ -210,27 +164,23 @@ def train_predictor(
 
         if epoch_idx % 10 == 0 or epoch_idx == EPOCHS - 1:
             gap = val_mae_value - train_mae_value
-            status = "STABLE" if abs(gap) < 0.05 else "DIVERGING"
             print(
                 f"Epoch {epoch_idx:04d} | "
                 f"Train MSE: {epoch_train_mse:.5f} | "
                 f"Train MAE: {train_mae_value:.5f} | "
                 f"Val MAE: {val_mae_value:.5f} | "
-                f"Gap: {gap:+.5f} ({status})"
+                f"Gap: {gap:+.5f} ({'STABLE' if abs(gap) < 0.05 else 'DIVERGING'})"
             )
 
         if early_stopper.early_stop:
             print(
-                f"\nEarly stopping at epoch {epoch_idx}. "
-                f"Best val MAE: {early_stopper.best_loss:.6f}"
+                f"\nEarly stopping at epoch {epoch_idx}. Best val MAE: {early_stopper.best_loss:.6f}"
             )
             break
 
-    # Restore best weights
     if early_stopper.best_state is not None:
         model.load_state_dict(early_stopper.best_state)
 
-    # Save model
     model_save_path = output_dir / "sgs_predictor.pt"
     torch.save(
         {
@@ -242,7 +192,6 @@ def train_predictor(
         model_save_path,
     )
     print(f"\nModel saved to '{model_save_path}'.")
-
     return model, training_stats
 
 
@@ -251,9 +200,9 @@ def train_predictor(
 # ---------------------------------------------------------------------------
 
 
-def load_predictor(model_path: Path) -> "SGSPredictor":
+def load_predictor(model_path: Path) -> SGSPredictor:
     """Load a saved SGSPredictor from a .pt checkpoint."""
-    checkpoint = torch.load(model_path, map_location="cpu")
+    checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
     model = SGSPredictor(
         input_dim=checkpoint["input_dim"],
         hidden_dim=checkpoint["hidden_dim"],
@@ -270,18 +219,13 @@ def load_predictor(model_path: Path) -> "SGSPredictor":
 
 
 def evaluate_on_test_set(
-    model: "SGSPredictor",
+    model: SGSPredictor,
     data_path: Path,
     output_dir: Path,
 ) -> NDArray:
-    """Evaluate the trained model on held-out test data and log results.
+    """Evaluate on held-out test data; log MSE/MAE and return predictions.
 
-    Expects X_test.npy and y_test.npy in *data_path*.
-
-    Returns
-    -------
-    predictions : NDArray of shape (n_test, OUTPUT_UNITS)
-        Raw (normalised-space) predictions.
+    Returns raw (normalised-space) model output of shape (n_test, OUTPUT_UNITS).
     """
     x_test = torch.tensor(np.load(data_path / "X_test.npy"), dtype=torch.float32)
     y_test = torch.tensor(np.load(data_path / "y_test.npy"), dtype=torch.float32)
@@ -305,8 +249,7 @@ def evaluate_on_test_set(
     print("\n" + "\n".join(log_lines))
 
     log_path = output_dir / "test_evaluation.log"
-    with open(log_path, "w") as log_file:
-        log_file.write("\n".join(log_lines) + "\n")
+    log_path.write_text("\n".join(log_lines) + "\n")
     print(f"Test evaluation log saved to '{log_path}'.")
 
     return predictions_tensor.numpy()
@@ -322,12 +265,11 @@ def plot_training_diagnostics(
     output_dir: Path | str,
     show_fig: bool = False,
 ) -> None:
-    """Plot MSE convergence and MAE generalisation gap."""
+    """Plot MSE convergence and MAE generalisation gap; save to output_dir."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     epoch_range = range(len(training_stats["train_mae"]))
-
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
     axes[0].plot(
@@ -360,7 +302,4 @@ def plot_training_diagnostics(
     save_path = output_dir / "training_diagnostics.png"
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     print(f"Saved training diagnostics to '{save_path}'.")
-
-    if show_fig:
-        plt.show()
-    plt.close(fig)
+    plt.show() if show_fig else plt.close(fig)

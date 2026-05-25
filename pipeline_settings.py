@@ -115,6 +115,7 @@ class RunPaths:
     """All output directories for a single pipeline run."""
 
     master: Path
+    solver_data: Path
     dns_data: Path
     les_a_data: Path
     les_nm_data: Path
@@ -128,6 +129,7 @@ class RunPaths:
         """Derive all subdirectories from the master run path."""
         return cls(
             master=master_path,
+            solver_data=master_path / SOLVER_DATA_FOLDER,
             dns_data=master_path / SOLVER_DATA_FOLDER / DNS_SAVE_PATH,
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,

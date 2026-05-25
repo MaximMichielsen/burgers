@@ -1,35 +1,22 @@
+"""Problem definitions for the 1D Burgers pipeline."""
+
 from typing import Callable
 
 from numpy.typing import NDArray
 
 from problems_and_configurations.forcing_types import (
+    compute_sine_forcing,
     none_forcing,
     uniform_steady_forcing,
-    sin_steady_forcing,
-    compute_sine_forcing,
 )
 from problems_and_configurations.initial_conditions import (
-    zero_initial_condition,
     uniform_initial_condition,
+    zero_initial_condition,
 )
-
-from problems_and_configurations.initial_conditions import uniform_initial_condition
-
-pipeline_test = {
-    "name": "pipeline_test",
-    "domain_length": 1.0,
-    "domain_timespan": 0.5,
-    "reynolds": 100.0,
-    "viscosity": 0.01,
-    "initial_condition": uniform_initial_condition,   # u(x,0) = 1
-    "external_forcing": uniform_steady_forcing,              # f = 1
-    "forcing_steady": True,
-    "boundary_condition_type": "fixed",
-    "boundary_condition_value": 1.0,
-}
 
 
 def create_problem_definition(
+    name: str,
     external_forcing: str | Callable | None,
     forcing_steady: bool,
     reynolds: float,
@@ -38,25 +25,36 @@ def create_problem_definition(
     initial_condition: Callable,
     boundary_condition_type: str,
     boundary_condition_value: float | NDArray | Callable | None = None,
-    name: str | None = None,
 ) -> dict:
-    """Create dictionary containing problem parameters."""
-    viscosity = 1 * domain_length / reynolds
+    """Assemble a problem parameter dict with derived viscosity."""
     return {
+        "name": name,
         "domain_timespan": domain_timespan,
         "domain_length": domain_length,
         "reynolds": reynolds,
-        "viscosity": viscosity,
+        "viscosity": domain_length / reynolds,
         "external_forcing": external_forcing,
         "forcing_steady": forcing_steady,
         "boundary_condition_type": boundary_condition_type,
         "boundary_condition_value": boundary_condition_value,
         "initial_condition": initial_condition,
-        "name": name,
     }
 
 
+pipeline_test = create_problem_definition(
+    name="pipeline_test",
+    external_forcing=uniform_steady_forcing,
+    forcing_steady=True,
+    domain_length=1.0,
+    domain_timespan=0.5,
+    reynolds=100,
+    boundary_condition_type="fixed",
+    boundary_condition_value=1.0,
+    initial_condition=uniform_initial_condition,
+)
+
 placeholder_problem = create_problem_definition(
+    name="placeholder",
     external_forcing=none_forcing,
     forcing_steady=True,
     domain_length=1,
@@ -65,11 +63,10 @@ placeholder_problem = create_problem_definition(
     boundary_condition_type="fixed",
     boundary_condition_value=0,
     initial_condition=zero_initial_condition,
-    name="placeholder",
 )
 
-
 robijns_one = create_problem_definition(
+    name="robijns_one",
     external_forcing=uniform_steady_forcing,
     forcing_steady=True,
     domain_length=1,
@@ -78,10 +75,10 @@ robijns_one = create_problem_definition(
     boundary_condition_type="dirichlet",
     boundary_condition_value=1,
     initial_condition=uniform_initial_condition,
-    name="robijns_one",
 )
 
 raj_one = create_problem_definition(
+    name="raj_one",
     external_forcing=uniform_steady_forcing,
     forcing_steady=True,
     domain_length=1,
@@ -90,10 +87,10 @@ raj_one = create_problem_definition(
     boundary_condition_type="dirichlet",
     boundary_condition_value=0,
     initial_condition=zero_initial_condition,
-    name="raj_one",
 )
 
 raj_two = create_problem_definition(
+    name="raj_two",
     external_forcing=compute_sine_forcing,
     forcing_steady=False,
     domain_length=1,
@@ -102,10 +99,10 @@ raj_two = create_problem_definition(
     boundary_condition_type="dirichlet",
     boundary_condition_value=1,
     initial_condition=uniform_initial_condition,
-    name="raj_two",
 )
 
 raj_three = create_problem_definition(
+    name="raj_three",
     external_forcing=uniform_steady_forcing,
     forcing_steady=True,
     domain_length=1,
@@ -114,10 +111,10 @@ raj_three = create_problem_definition(
     boundary_condition_type="dirichlet",
     boundary_condition_value=1,
     initial_condition=uniform_initial_condition,
-    name="raj_three",
 )
 
 periodic_steady_forcing_uniform = create_problem_definition(
+    name="psfu",
     external_forcing=uniform_steady_forcing,
     forcing_steady=True,
     domain_length=1,
@@ -125,5 +122,4 @@ periodic_steady_forcing_uniform = create_problem_definition(
     reynolds=100,
     boundary_condition_type="periodic",
     initial_condition=uniform_initial_condition,
-    name="psfu",
 )

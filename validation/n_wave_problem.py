@@ -1,6 +1,6 @@
 import numpy as np
 
-from solvers.burgers_pure import BurgersPure
+from solvers.burgers_base import BurgersBase
 from functions import set_extractions, plot_solutions_from_directory_animated
 
 
@@ -10,7 +10,7 @@ def initial_condition(nodes):
     return term_1 - term_2
 
 
-config = BurgersPure.create_config(
+config = BurgersBase.create_config(
     initial_condition=initial_condition,
     simulation_mode="dns",
     node_amount=2**6,
@@ -27,7 +27,7 @@ config = BurgersPure.create_config(
     ),
 )
 
-solver = BurgersPure(config)
+solver = BurgersBase(config)
 
 solver.run_simulation()
 

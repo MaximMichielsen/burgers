@@ -1,0 +1,207 @@
+"""Energy comparison plots: DNS vs LES-A vs LES-NM vs LES-ANN.
+
+Produces a 3-panel figure: total kinetic energy, energy spectrum at t_final,
+and viscous dissipation over time. Can be called from the pipeline or run
+as a standalone script.
+"""
+
+from pathlib import Path
+
+import numpy as np
+from matplotlib import pyplot as plt
+from matplotlib.gridspec import GridSpec
+from numpy.typing import NDArray
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _read_snapshots(
+    directory: Path,
+) -> tuple[list[float], list[NDArray], list[NDArray]]:
+    """Read all sol_t*.csv files; return (times, solutions, coords) sorted by time."""
+    files = sorted(directory.glob("sol_t*.csv"))
+    if not files:
+        raise FileNotFoundError(f"No sol_t*.csv found in {directory}")
+
+    times, solutions, coords = [], [], []
+    for file_path in files:
+        data = np.loadtxt(file_path, delimiter=",", skiprows=1)
+        times.append(float(file_path.stem.split("t")[-1]))
+        coords.append(data[:, 1])
+        solutions.append(data[:, 2])
+
+    order = np.argsort(times)
+    return (
+        [times[i] for i in order],
+        [solutions[i] for i in order],
+        [coords[i] for i in order],
+    )
+
+
+def _compute_energy_series(solutions: list[NDArray], coords: list[NDArray]) -> NDArray:
+    """Compute ½∫u² dx per snapshot via trapezoidal rule."""
+    return np.array([0.5 * np.trapezoid(u**2, x=x) for u, x in zip(solutions, coords)])
+
+
+def _compute_dissipation_series(
+    solutions: list[NDArray],
+    coords: list[NDArray],
+    viscosity: float,
+) -> NDArray:
+    """Compute ν∫(∂u/∂x)² dx per snapshot via central differences."""
+    return np.array(
+        [
+            viscosity * np.trapezoid(np.gradient(u, x[1] - x[0]) ** 2, x=x)
+            for u, x in zip(solutions, coords)
+        ]
+    )
+
+
+def _compute_energy_spectrum(
+    solution: NDArray, domain_length: float
+) -> tuple[NDArray, NDArray]:
+    """Return positive wavenumbers and spectral energy via rfft."""
+    n_pts = len(solution)
+    u_hat = np.fft.rfft(solution)
+    wavenumbers = 2.0 * np.pi * np.fft.rfftfreq(n_pts, d=domain_length / n_pts)
+    spectrum = 0.5 * np.abs(u_hat) ** 2 / n_pts
+    return wavenumbers, spectrum
+
+
+def _plot_series(
+    ax: plt.Axes,
+    data: dict,
+    x_key: str,
+    y_key: str,
+) -> None:
+    """Plot x_key vs y_key for all entries in data."""
+    for label, entry in data.items():
+        ax.plot(
+            entry[x_key],
+            entry[y_key],
+            color=entry["color"],
+            linestyle=entry["ls"],
+            linewidth=entry["lw"],
+            label=label,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Main plot function
+# ---------------------------------------------------------------------------
+
+
+def plot_energy_comparison(
+    dns_dir: Path,
+    les_a_dir: Path,
+    les_nm_dir: Path,
+    les_ann_dir: Path,
+    output_path: Path,
+    viscosity: float = 0.01,
+    domain_length: float = 1.0,
+) -> None:
+    """Read solver outputs and produce a 3-panel energy comparison figure."""
+    output_path = Path(output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    solver_configs = {
+        "DNS": (dns_dir, "dimgray", "-", 1.8),
+        "LES-A": (les_a_dir, "royalblue", "--", 1.4),
+        "LES-NM": (les_nm_dir, "tab:orange", "-.", 1.4),
+        "LES-ANN": (les_ann_dir, "crimson", ":", 1.8),
+    }
+
+    data: dict = {}
+    for label, (directory, color, ls, lw) in solver_configs.items():
+        directory = Path(directory)
+        if not directory.exists():
+            print(f"  Skipping {label}: directory not found at {directory}")
+            continue
+        try:
+            times_read, solutions_read, coords_read = _read_snapshots(directory)
+            data[label] = {
+                "times": np.array(times_read),
+                "solutions": solutions_read,
+                "coords": coords_read,
+                "color": color,
+                "ls": ls,
+                "lw": lw,
+            }
+            print(f"  Loaded {label}: {len(times_read)} snapshots")
+        except FileNotFoundError as err:
+            print(f"  Skipping {label}: {err}")
+
+    if len(data) < 2:
+        print("Not enough data to produce comparison plot.")
+        return
+
+    for label, entry in data.items():
+        entry["energy"] = _compute_energy_series(entry["solutions"], entry["coords"])
+        entry["dissipation"] = _compute_dissipation_series(
+            entry["solutions"], entry["coords"], viscosity
+        )
+        wn, sp = _compute_energy_spectrum(entry["solutions"][-1], domain_length)
+        mask = wn > 0
+        entry["wavenumbers"] = wn[mask]
+        entry["spectrum"] = sp[mask]
+
+    fig = plt.figure(figsize=(15, 5))
+    gs = GridSpec(1, 3, figure=fig, wspace=0.32)
+    ax_energy = fig.add_subplot(gs[0, 0])
+    ax_spectrum = fig.add_subplot(gs[0, 1])
+    ax_dissipation = fig.add_subplot(gs[0, 2])
+
+    _plot_series(ax_energy, data, "times", "energy")
+    ax_energy.set_xlabel("Time $t$")
+    ax_energy.set_ylabel(r"$\frac{1}{2}\int u^2\,dx$")
+    ax_energy.set_title("Total kinetic energy")
+    ax_energy.legend()
+    ax_energy.grid(True, alpha=0.25)
+
+    for label, entry in data.items():
+        ax_spectrum.loglog(
+            entry["wavenumbers"],
+            entry["spectrum"],
+            color=entry["color"],
+            linestyle=entry["ls"],
+            linewidth=entry["lw"],
+            label=label,
+        )
+    first_entry = data[next(iter(data))]
+    wn_ref = first_entry["wavenumbers"]
+    mid = len(wn_ref) // 3
+    slope_line = first_entry["spectrum"][mid] * (wn_ref / wn_ref[mid]) ** (-5 / 3)
+    ax_spectrum.loglog(
+        wn_ref,
+        slope_line,
+        color="lightgray",
+        linestyle="--",
+        linewidth=1.0,
+        label=r"$k^{-5/3}$",
+    )
+    ax_spectrum.set_xlabel("Wavenumber $k$")
+    ax_spectrum.set_ylabel("$E(k)$")
+    ax_spectrum.set_title("Energy spectrum at $t_{final}$")
+    ax_spectrum.legend()
+    ax_spectrum.grid(True, which="both", alpha=0.2)
+
+    _plot_series(ax_dissipation, data, "times", "dissipation")
+    ax_dissipation.set_xlabel("Time $t$")
+    ax_dissipation.set_ylabel(r"$\nu\int\left(\partial u/\partial x\right)^2\,dx$")
+    ax_dissipation.set_title("Viscous dissipation")
+    ax_dissipation.legend()
+    ax_dissipation.grid(True, alpha=0.25)
+
+    fig.suptitle(
+        "Energy diagnostics: DNS vs LES variants",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
+    save_path = output_path / "energy_comparison.png"
+    fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    print(f"Saved energy comparison plot to '{save_path}'.")
+    plt.close(fig)

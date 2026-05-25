@@ -1,11 +1,9 @@
 """Solver config builders for DNS, LES, and ANN-coupled Burgers simulations."""
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
-from numpy.typing import NDArray
 
 from constants import (
     LES_ANN_BLOWN_UP_FOLDER,
@@ -14,40 +12,12 @@ from constants import (
     LES_ANN_SAVE_PATH,
     LES_ANN_STABLE_FOLDER,
     LES_ANN_UNCLIPPED_FOLDER,
-    DNS_TO_LES_RATIO,
 )
-from functions import set_extractions
-from solvers.burgers_coupled import BurgersCoupled
-from solvers.burgers_pure import BurgersPure as Burgers
 
-
-@dataclass
-class DiscretisationConfig:
-    """Spatial and temporal discretisation parameters derived from LES element count."""
-
-    n_elements_les: int
-    temporal_refinement: int
-    courant_les: float
-    domain_length: float
-
-    def __post_init__(self) -> None:
-        self.n_nodes_les: int = self.n_elements_les + 1
-        self.n_elements_dns: int = self.n_elements_les * DNS_TO_LES_RATIO
-        self.n_nodes_dns: int = self.n_elements_dns + 1
-        self.h_les: float = self.domain_length / self.n_elements_les
-        self.dt_les: float = self.courant_les * self.h_les
-        self.dt_dns: float = self.dt_les / self.temporal_refinement
-
-
-@dataclass
-class MeshConfig:
-    """Resolved grid, time-step, and initial condition for one resolution level."""
-
-    n_nodes: int
-    mesh: NDArray
-    element_size: float
-    time_step: float
-    initial_solution: NDArray
+from problems_and_configurations.mesh_config import MeshConfig
+from solvers.burgers_sgsp import BurgersSGSP
+from solvers.burgers_base import BurgersBase as Burgers
+from utils.io_utils import set_extractions
 
 
 def build_mesh_config(
@@ -169,7 +139,7 @@ def create_ann_config(
     les_mesh: MeshConfig,
     ann_model_path: Path,
     normalisation_stats_path: Path,
-    les_ann_dir: Path | str | None = None,
+    data_dir: Path | str | None = None,
     clip_pusuluri: bool = False,
     clip_rajampeta: bool = False,
     blowup_threshold: float = 1e4,
@@ -187,11 +157,11 @@ def create_ann_config(
         duration, int(duration / les_mesh.time_step), les_mesh.time_step
     )
     stable_path, blown_up_path = _resolve_ann_output_paths(
-        solver_data_dir=Path(les_ann_dir),
+        solver_data_dir=Path(data_dir),
         clip_pusuluri=clip_pusuluri,
         clip_rajampeta=clip_rajampeta,
     )
-    config = BurgersCoupled.create_coupled_config(
+    config = BurgersSGSP.create_coupled_config(
         ann_model_path=ann_model_path,
         normalisation_stats_path=normalisation_stats_path,
         ann_warmup_steps=ann_warmup_steps,

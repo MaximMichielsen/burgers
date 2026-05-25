@@ -1,67 +1,43 @@
-"""Set initial conditions for a solver run, all are Callables passed using the configuration file."""
+"""Forcing function callables for Burgers solver configurations."""
 
 import numpy as np
 from numpy.typing import NDArray
 
 
-def uniform_steady_forcing(mesh: NDArray) -> NDArray:
-    """Return uniform steady forcing function to be used by x: mesh."""
-    return np.ones_like(mesh)
-
-
 def none_forcing(mesh: NDArray) -> NDArray:
-    """Return a zero array, used when forcing is set to 0."""
+    """Return zero forcing."""
     return np.zeros_like(mesh)
 
 
-def sin_cos_forcing(mesh: NDArray, time: float) -> NDArray:
-    """Return sin(x) * cos(t) unsteady forcing function."""
-    return np.sin(mesh) * np.cos(time)
+def uniform_steady_forcing(mesh: NDArray) -> NDArray:
+    """Return uniform steady forcing f = 1."""
+    return np.ones_like(mesh)
 
 
 def sin_steady_forcing(mesh: NDArray) -> NDArray:
-    """Return sin(x) steady forcing function."""
+    """Return sin(x) steady forcing."""
     return np.sin(mesh)
 
 
+def sin_cos_forcing(mesh: NDArray, time: float, omega: float = 2 * np.pi) -> NDArray:
+    """Return sin(x) * cos(omega * t) unsteady forcing."""
+    return np.sin(mesh) * np.cos(omega * time)
+
+
 def compute_sine_forcing(
-    x_coords: np.ndarray,
+    x_coords: NDArray,
     time: float,
     num_modes: int = 8,
-) -> np.ndarray:
-    """Harmonic forcing for the Burgers diagnostic test case (Case 2).
+) -> NDArray:
+    """Harmonic forcing: sum_{k=1}^{N} (N-k+1) sin(2πkx) sin(2πt).
 
-    Implements f_sine = sum_{k=1}^{8} (8 - k + 1) * sin(2*pi*k*x) * sin(2*pi*t),
-    as defined in Rajampeta (2022), Table 4.1.
-
-    Args:
-        x_coords: Spatial coordinates, shape (n_points,).
-        time: Current simulation time.
-        num_modes: Number of Fourier modes to sum (default 8).
-
-    Returns:
-        Forcing values at each spatial coordinate, shape (n_points,).
+    Implements the diagnostic test case forcing from Rajampeta (2022), Table 4.1.
     """
     forcing_values = np.zeros_like(x_coords)
-
     for k_mode in range(1, num_modes + 1):
-        amplitude = num_modes - k_mode + 1
         forcing_values += (
-            amplitude * np.sin(2 * np.pi * k_mode * x_coords) * np.sin(2 * np.pi * time)
+            (num_modes - k_mode + 1)
+            * np.sin(2 * np.pi * k_mode * x_coords)
+            * np.sin(2 * np.pi * time)
         )
-
     return forcing_values
-
-
-def sin_cos_unsteady_forcing(
-    mesh: NDArray, t: float, omega: float = 2 * np.pi
-) -> NDArray:
-    """Return sin(x) * cos(omega t) unsteady forcing function."""
-    return np.sin(mesh) * np.cos(omega * t)
-
-
-def sin_cos_unsteady_forcing_plus_uniform_steady(
-    mesh: NDArray, t: float, omega: float = 2 * np.pi, uniform_factor: float = 0.1
-) -> NDArray:
-    """Return sin(x) * cos(omega t) unsteady forcing function."""
-    return np.sin(mesh) * np.cos(omega * t) + uniform_factor * np.ones_like(mesh)
