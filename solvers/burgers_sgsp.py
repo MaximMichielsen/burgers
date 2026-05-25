@@ -284,6 +284,10 @@ class BurgersSGSP(BurgersBase):
         except RuntimeError as exc:
             if self.time_steps:
                 self.time_steps.pop()
+            if self.energy_history:
+                self.energy_history.pop()
+            if self.dissipation_history:
+                self.dissipation_history.pop()
             blowup_detected = True
             logger.warning("Blow-up termination: %s", exc)
 
@@ -311,12 +315,18 @@ class BurgersSGSP(BurgersBase):
         """Check for blow-up, advance one step, and update lagged history."""
         if self._detect_blowup(self.solution):
             raise RuntimeError(
-                f"Blow-up before NR step at t={self.simulation_time_elapsed:.6f}: "
-                f"max|u|={np.max(np.abs(self.solution)):.4e} "
-                f"> threshold {self._blowup_threshold:.4e}"
+                f"Blow-up detected at t={self.simulation_time_elapsed:.6f} (pre-step): "
+                f"max|u|={np.max(np.abs(self.solution)):.4e} > threshold {self._blowup_threshold:.4e}"
             )
 
         super().advance_time_step()
+
+        if self._detect_blowup(self.solution):
+            raise RuntimeError(
+                f"Blow-up detected at t={self.simulation_time_elapsed:.6f} (post-step): "
+                f"max|u|={np.max(np.abs(self.solution)):.4e} > threshold {self._blowup_threshold:.4e}"
+            )
+
         self._update_lagged_history()
         self._step_count += 1
         self._record_buffer_step()
