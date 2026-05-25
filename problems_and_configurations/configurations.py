@@ -13,10 +13,10 @@ from constants import (
     LES_ANN_STABLE_FOLDER,
     LES_ANN_UNCLIPPED_FOLDER,
 )
-
 from problems_and_configurations.mesh_config import MeshConfig
-from solvers.burgers_sgsp import BurgersSGSP
+from problems_and_configurations.problems import Problem
 from solvers.burgers_base import BurgersBase as Burgers
+from solvers.burgers_sgsp import BurgersSGSP
 from utils.io_utils import set_extractions
 
 
@@ -38,7 +38,7 @@ def build_mesh_config(
 
 
 def create_solver_configs(
-    problem_definition: dict,
+    problem_definition: Problem,
     dns_mesh: MeshConfig,
     les_mesh: MeshConfig,
     dns_dir: Path | str | None = None,
@@ -46,18 +46,15 @@ def create_solver_configs(
     les_nm_dir: Path | str | None = None,
 ) -> tuple[dict, dict, dict]:
     """Return (config_dns, config_les_analytical, config_les_no_model)."""
-    duration: float = problem_definition["domain_timespan"]
-    domain_length: float = problem_definition["domain_length"]
-    bc_type = problem_definition["boundary_condition_type"]
-    bc_value = problem_definition["boundary_condition_value"]
-    forcing = problem_definition["external_forcing"]
-    forcing_is_steady: bool = problem_definition["forcing_steady"]
-    viscosity: float = problem_definition["viscosity"]
-
-    n_dns_steps = int(round(duration / dns_mesh.time_step))
-    dns_extractions = set_extractions(duration, n_dns_steps, dns_mesh.time_step)
+    dns_extractions = set_extractions(
+        problem_definition.domain_timespan,
+        int(round(problem_definition.domain_timespan / dns_mesh.time_step)),
+        dns_mesh.time_step,
+    )
     les_extractions = set_extractions(
-        duration, int(duration / les_mesh.time_step), les_mesh.time_step
+        problem_definition.domain_timespan,
+        int(problem_definition.domain_timespan / les_mesh.time_step),
+        les_mesh.time_step,
     )
 
     config_dns = Burgers.create_config(
@@ -65,18 +62,18 @@ def create_solver_configs(
         simulation_mode="dns",
         run_objective="data_generation",
         node_amount=dns_mesh.n_nodes,
-        boundary_condition_type=bc_type,
-        boundary_condition_value=bc_value,
-        external_forcing=forcing,
-        forcing_steady=forcing_is_steady,
-        domain_timespan=duration,
+        boundary_condition_type=problem_definition.boundary_condition_type,
+        boundary_condition_value=problem_definition.boundary_condition_value,
+        external_forcing=problem_definition.external_forcing,
+        forcing_steady=problem_definition.forcing_steady,
+        domain_timespan=problem_definition.domain_timespan,
         time_step=dns_mesh.time_step,
-        domain_length=domain_length,
+        domain_length=problem_definition.domain_length,
         convergence_tol_residual=1e-6,
         convergence_tol_update=1e-6,
         max_iterations=100,
         relaxation=None,
-        viscosity=viscosity,
+        viscosity=problem_definition.viscosity,
         extract_at_times=dns_extractions,
         master_path=dns_dir,
     )
@@ -84,18 +81,18 @@ def create_solver_configs(
     shared_les_kwargs: dict = dict(
         initial_condition=les_mesh.initial_solution,
         node_amount=les_mesh.n_nodes,
-        boundary_condition_type=bc_type,
-        boundary_condition_value=bc_value,
-        external_forcing=forcing,
-        forcing_steady=forcing_is_steady,
-        domain_timespan=duration,
+        boundary_condition_type=problem_definition.boundary_condition_type,
+        boundary_condition_value=problem_definition.boundary_condition_value,
+        external_forcing=problem_definition.external_forcing,
+        forcing_steady=problem_definition.forcing_steady,
+        domain_timespan=problem_definition.domain_timespan,
         time_step=les_mesh.time_step,
-        domain_length=domain_length,
+        domain_length=problem_definition.domain_length,
         convergence_tol_residual=1e-4,
         convergence_tol_update=1e-4,
         max_iterations=20,
         relaxation=None,
-        viscosity=viscosity,
+        viscosity=problem_definition.viscosity,
         extract_at_times=les_extractions,
         run_objective="data_generation",
     )
@@ -135,7 +132,7 @@ def _resolve_ann_output_paths(
 
 
 def create_ann_config(
-    problem_definition: dict,
+    problem_definition: Problem,
     les_mesh: MeshConfig,
     ann_model_path: Path,
     normalisation_stats_path: Path,
@@ -150,11 +147,10 @@ def create_ann_config(
 
     Returns (config, stable_path, blown_up_path).
     """
-    duration: float = problem_definition["domain_timespan"]
-    viscosity: float = problem_definition["viscosity"]
-
     les_extractions = set_extractions(
-        duration, int(duration / les_mesh.time_step), les_mesh.time_step
+        problem_definition.domain_timespan,
+        int(problem_definition.domain_timespan / les_mesh.time_step),
+        les_mesh.time_step,
     )
     stable_path, blown_up_path = _resolve_ann_output_paths(
         solver_data_dir=Path(data_dir),
@@ -172,14 +168,14 @@ def create_ann_config(
         simulation_mode="ann",
         run_objective="data_generation",
         node_amount=les_mesh.n_nodes,
-        viscosity=viscosity,
+        viscosity=problem_definition.viscosity,
         time_step=les_mesh.time_step,
-        domain_timespan=duration,
-        domain_length=problem_definition["domain_length"],
-        boundary_condition_type=problem_definition["boundary_condition_type"],
-        boundary_condition_value=problem_definition["boundary_condition_value"],
-        external_forcing=problem_definition["external_forcing"],
-        forcing_steady=problem_definition["forcing_steady"],
+        domain_timespan=problem_definition.domain_timespan,
+        domain_length=problem_definition.domain_length,
+        boundary_condition_type=problem_definition.boundary_condition_type,
+        boundary_condition_value=problem_definition.boundary_condition_value,
+        external_forcing=problem_definition.external_forcing,
+        forcing_steady=problem_definition.forcing_steady,
         convergence_tol_residual=1e-4,
         convergence_tol_update=1e-4,
         max_iterations=20,
