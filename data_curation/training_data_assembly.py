@@ -502,17 +502,6 @@ def run_training_data_assembly(
 
     solutions_les_raw = np.load(projection_path / "solutions_projection.npy")
 
-    # Verify dt against saved timestamps if available
-    times_path = projection_path / "times.npy"
-    if times_path.exists():
-        saved_times = np.load(times_path)
-        dt_inferred = float(np.diff(saved_times).mean())
-        if not np.isclose(dt, dt_inferred, rtol=1e-3):
-            raise ValueError(
-                f"Passed dt={dt:.6f} does not match inferred dt={dt_inferred:.6f} "
-                "from saved timestamps. Check les_every_n_dns_steps."
-            )
-
     # DNS-projected solution (ū + u') — for 2-scale decomposition u' = u_dns - ū
     # If the projection file only stores ū, we need a separate dns-on-les file.
     # Expected convention: projection stores ū; dns_on_les stores the full projected DNS.

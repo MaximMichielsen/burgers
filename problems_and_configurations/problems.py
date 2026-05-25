@@ -13,6 +13,21 @@ from problems_and_configurations.initial_conditions import (
     uniform_initial_condition,
 )
 
+from problems_and_configurations.initial_conditions import uniform_initial_condition
+
+pipeline_test = {
+    "name": "pipeline_test",
+    "domain_length": 1.0,
+    "domain_timespan": 0.5,
+    "reynolds": 100.0,
+    "viscosity": 0.01,
+    "initial_condition": uniform_initial_condition,   # u(x,0) = 1
+    "external_forcing": uniform_steady_forcing,              # f = 1
+    "forcing_steady": True,
+    "boundary_condition_type": "fixed",
+    "boundary_condition_value": 1.0,
+}
+
 
 def create_problem_definition(
     external_forcing: str | Callable | None,

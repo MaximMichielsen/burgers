@@ -714,8 +714,7 @@ class BurgersPure:
             elif k == "extract_at_times":
                 if v is not None:
                     config_loggable[k] = (
-                        f"{len(v)} extractions, "
-                        f"first 5: {[float(t) for t in v[:5]]}"
+                        f"{len(v)} extractions, first 5: {[float(t) for t in v[:5]]}"
                     )
                 else:
                     config_loggable[k] = "None"
@@ -746,9 +745,12 @@ class BurgersPure:
             self.logger.info("Timings:")
             total = self.timings_performance.get("total_simulation")
             if total is None:
-                self.logger.warning("total_simulation timing not recorded (run may have been interrupted).")
+                self.logger.warning(
+                    "total_simulation timing not recorded (run may have been interrupted)."
+                )
                 total = sum(
-                    v for k, v in self.timings_performance.items()
+                    v
+                    for k, v in self.timings_performance.items()
                     if k != "total_simulation"
                 )
             for phase, t in sorted(self.timings_performance.items()):
@@ -819,15 +821,17 @@ class BurgersPure:
                 continue
             if k == "extract_at_times":
                 if v is not None:
-                    print(f"extract_at_times: {len(v)} extractions, "
-                          f"first 5 steps: {[float(t) for t in v[:5]]}")
+                    print(
+                        f"extract_at_times: {len(v)} extractions, "
+                        f"first 5 steps: {[float(t) for t in v[:5]]}"
+                    )
                 else:
                     print("extract_at_times: None")
             elif k == "convergence_tol_residual" or k == "convergence_tol_update":
                 print(f"{k}: {v:.2e}")
             elif k == "external_forcing":
                 if callable(v):
-                    module = getattr(v, '__module__', '')
+                    module = getattr(v, "__module__", "")
                     print(f"external_forcing: {v.__name__} (from {module})")
                 elif v is None:
                     print("external_forcing: None")

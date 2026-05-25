@@ -513,7 +513,9 @@ class BurgersCoupled(BurgersPure):
             time_val=self.simulation_time_elapsed,
             amplitudes=self.solution,
             energy_spectrum=positive_spectrum,
-            dissipation=self.dissipation_history[-1] if self.dissipation_history else 0.0,
+            dissipation=self.dissipation_history[-1]
+            if self.dissipation_history
+            else 0.0,
             artificial_viscosity=self._artificial_viscosity_prev,
             energy=self.energy_history[-1] if self.energy_history else 0.0,
             residual_norm_first=float(res_step[0]) if res_step else 0.0,
@@ -885,21 +887,25 @@ class BurgersCoupled(BurgersPure):
 
             with filepath.open("w", newline="") as csv_file:
                 writer = csv.writer(csv_file)
-                writer.writerow([
-                    "node_index",
-                    "x_coordinate",
-                    "velocity",
-                    "residual_norm_last",
-                    "energy",
-                ])
+                writer.writerow(
+                    [
+                        "node_index",
+                        "x_coordinate",
+                        "velocity",
+                        "residual_norm_last",
+                        "energy",
+                    ]
+                )
                 for node_idx in range(self.n_nodes):
-                    writer.writerow([
-                        node_idx,
-                        round(self.node_coords[node_idx], 8),
-                        amplitudes[node_idx],
-                        buf.residual_norms_last[buf_idx],
-                        buf.energy_values[buf_idx],
-                    ])
+                    writer.writerow(
+                        [
+                            node_idx,
+                            round(self.node_coords[node_idx], 8),
+                            amplitudes[node_idx],
+                            buf.residual_norms_last[buf_idx],
+                            buf.energy_values[buf_idx],
+                        ]
+                    )
 
         logger.info(
             "Saved %d final-step CSVs to %s (offset 00 = last recorded step)",
@@ -1035,12 +1041,19 @@ class BurgersCoupled(BurgersPure):
         # Panel 0 — solution snapshot at window end
         ax0 = fig.add_subplot(gs[0, :])
         ax0.plot(
-            self.node_coords, solution_snapshot,
-            color="royalblue", linestyle="-", marker="o", label="Resolved solution",
+            self.node_coords,
+            solution_snapshot,
+            color="royalblue",
+            linestyle="-",
+            marker="o",
+            label="Resolved solution",
         )
         ax0.plot(
-            self.node_coords, self.initial_condition,
-            color="grey", linestyle="--", label="Initial solution",
+            self.node_coords,
+            self.initial_condition,
+            color="grey",
+            linestyle="--",
+            label="Initial solution",
         )
         ax0.set_xlabel(r"$x \in [0, 2\pi]$")
         ax0.set_ylabel("Velocity")
@@ -1056,13 +1069,23 @@ class BurgersCoupled(BurgersPure):
         # Panel 1 — global convergence (smoothed)
         ax1 = fig.add_subplot(gs[1, 0])
         ax1.plot(t_axis, fr_mean, color="royalblue", label="Residual (first)")
-        ax1.fill_between(t_axis, fr_mean - fr_std, fr_mean + fr_std, color="royalblue", alpha=0.15)
+        ax1.fill_between(
+            t_axis, fr_mean - fr_std, fr_mean + fr_std, color="royalblue", alpha=0.15
+        )
         ax1.plot(t_axis, lr_mean, color="navy", linestyle="--", label="Residual (last)")
-        ax1.fill_between(t_axis, lr_mean - lr_std, lr_mean + lr_std, color="navy", alpha=0.15)
+        ax1.fill_between(
+            t_axis, lr_mean - lr_std, lr_mean + lr_std, color="navy", alpha=0.15
+        )
         ax1.plot(t_axis, fu_mean, color="tab:orange", label="Update (first)")
-        ax1.fill_between(t_axis, fu_mean - fu_std, fu_mean + fu_std, color="tab:orange", alpha=0.15)
-        ax1.plot(t_axis, lu_mean, color="darkorange", linestyle="--", label="Update (last)")
-        ax1.fill_between(t_axis, lu_mean - lu_std, lu_mean + lu_std, color="darkorange", alpha=0.15)
+        ax1.fill_between(
+            t_axis, fu_mean - fu_std, fu_mean + fu_std, color="tab:orange", alpha=0.15
+        )
+        ax1.plot(
+            t_axis, lu_mean, color="darkorange", linestyle="--", label="Update (last)"
+        )
+        ax1.fill_between(
+            t_axis, lu_mean - lu_std, lu_mean + lu_std, color="darkorange", alpha=0.15
+        )
         tol_r = self.configuration["convergence_tol_residual"]
         tol_u = self.configuration["convergence_tol_update"]
         ax1.axhline(y=tol_r, color="lightskyblue", linestyle="--")
@@ -1089,7 +1112,9 @@ class BurgersCoupled(BurgersPure):
         # Panel 3 — energy & dissipation in window
         ax3 = fig.add_subplot(gs[2, 0])
         ax3.plot(time_steps_sliced, energy_sliced, color="red", label="Total energy")
-        ax3.plot(time_steps_sliced, dissipation_sliced, color="purple", label="Dissipation")
+        ax3.plot(
+            time_steps_sliced, dissipation_sliced, color="purple", label="Dissipation"
+        )
         ax3.set_xlabel("Time step")
         ax3.set_title("Energy and dissipation (window)")
         ax3.grid(True)

@@ -153,7 +153,11 @@ def run_projection(
     # --- read DNS snapshots ---------------------------------------------------
     mesh_dns, times, solutions_dns, forcings_dns = read_dns_data(directory)
 
-    N_les = n_nodes_les if n_nodes_les is not None else (len(mesh_dns) - 1) // DNS_TO_LES_RATIO + 1
+    N_les = (
+        n_nodes_les
+        if n_nodes_les is not None
+        else (len(mesh_dns) - 1) // DNS_TO_LES_RATIO + 1
+    )
     les_indices = np.round(np.linspace(0, len(mesh_dns) - 1, N_les)).astype(int)
     mesh_les = mesh_dns[les_indices]
     h_les = float(abs(mesh_les[1] - mesh_les[0]))

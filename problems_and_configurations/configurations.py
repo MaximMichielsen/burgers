@@ -1,3 +1,6 @@
+"""Solver config builders for DNS, LES, and ANN-coupled Burgers simulations."""
+
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -5,213 +8,100 @@ import numpy as np
 from numpy.typing import NDArray
 
 from constants import (
-    DNS_SPATIAL_FACTOR,
-    DNS_POINTS_FACTOR,
-    DNS_SNAPSHOT_AMOUNT,
-    DNS_TO_LES_RATIO,
-    LES_ANN_RAJAMPETA_FOLDER,
-    LES_ANN_PUSULURI_FOLDER,
-    LES_ANN_UNCLIPPED_FOLDER,
-    LES_ANN_STABLE_FOLDER,
-    LES_ANN_SAVE_PATH,
     LES_ANN_BLOWN_UP_FOLDER,
+    LES_ANN_PUSULURI_FOLDER,
+    LES_ANN_RAJAMPETA_FOLDER,
+    LES_ANN_SAVE_PATH,
+    LES_ANN_STABLE_FOLDER,
+    LES_ANN_UNCLIPPED_FOLDER,
+    DNS_TO_LES_RATIO,
 )
-from functions import calc_required_grid_points, compute_time_step, set_extractions
-from problems_and_configurations.forcing_types import sin_cos_forcing
-from problems_and_configurations.initial_conditions import uniform_initial_condition
-
-from solvers.burgers_pure import BurgersPure as Burgers
+from functions import set_extractions
 from solvers.burgers_coupled import BurgersCoupled
+from solvers.burgers_pure import BurgersPure as Burgers
 
 
-def create_placeholder_config(
-    problem_definition: dict, master_dir: Path | str | None
-) -> dict:
-    """Placeholder configuration for code development, to be used with placeholder_problem."""
-    simulation_length: float = problem_definition["domain_length"]
-    reynolds: float = problem_definition["reynolds"]
-    viscosity: float = problem_definition["viscosity"]
-    initial_condition: NDArray | Callable = problem_definition["initial_condition"]
+@dataclass
+class DiscretisationConfig:
+    """Spatial and temporal discretisation parameters derived from LES element count."""
 
-    grid_points_dns = calc_required_grid_points(
-        length=simulation_length,
-        reynolds=reynolds,
-        factor_spatial=DNS_SPATIAL_FACTOR,
-        factor_points=DNS_POINTS_FACTOR,
-    )
-    print(simulation_length)
-    print(grid_points_dns)
-    mesh_dns, h_dns = np.linspace(
-        start=0, stop=simulation_length, num=grid_points_dns, retstep=True
-    )
-    initial_solution_dns = initial_condition(mesh_dns)
-    time_step_dns = compute_time_step(
-        h=h_dns,
-        max_velocity=max(initial_solution_dns),
-        viscosity=viscosity,
-        do_round_down=True,
-    )
-    master_path = master_dir if master_dir is not None else "runs"
-    config = Burgers.create_config(
-        initial_condition=initial_condition,
-        simulation_mode="dns",
-        run_objective="PLACEHOLDER",
-        node_amount=grid_points_dns,
-        boundary_condition_type=problem_definition["boundary_condition_type"],
-        boundary_condition_value=problem_definition["boundary_condition_value"],
-        external_forcing=problem_definition["external_forcing"],
-        forcing_steady=problem_definition["forcing_steady"],
-        domain_timespan=problem_definition["domain_timespan"],
-        time_step=time_step_dns,
-        domain_length=problem_definition["domain_length"],
-        max_iterations=20,
-        relaxation=None,
-        viscosity=problem_definition["viscosity"],
-        extract_at_times=[0.1, 0.2, 0.3, 0.4, 0.5],
-        master_path=master_path,
-    )
-    return config
+    n_elements_les: int
+    temporal_refinement: int
+    courant_les: float
+    domain_length: float
+
+    def __post_init__(self) -> None:
+        self.n_nodes_les: int = self.n_elements_les + 1
+        self.n_elements_dns: int = self.n_elements_les * DNS_TO_LES_RATIO
+        self.n_nodes_dns: int = self.n_elements_dns + 1
+        self.h_les: float = self.domain_length / self.n_elements_les
+        self.dt_les: float = self.courant_les * self.h_les
+        self.dt_dns: float = self.dt_les / self.temporal_refinement
 
 
-def create_dns_config(
-    problem_definition: dict,
-    master_dir: Path | str | None,
-) -> dict:
-    """DNS configuration file."""
-    simulation_length: float = problem_definition["domain_length"]
-    simulation_duration: float = problem_definition["domain_timespan"]
-    reynolds: float = problem_definition["reynolds"]
-    viscosity: float = problem_definition["viscosity"]
-    initial_condition: NDArray | Callable = problem_definition["initial_condition"]
+@dataclass
+class MeshConfig:
+    """Resolved grid, time-step, and initial condition for one resolution level."""
 
-    grid_points_dns = calc_required_grid_points(
-        length=simulation_length,
-        reynolds=reynolds,
-        factor_spatial=DNS_SPATIAL_FACTOR,
-        factor_points=DNS_POINTS_FACTOR,
+    n_nodes: int
+    mesh: NDArray
+    element_size: float
+    time_step: float
+    initial_solution: NDArray
+
+
+def build_mesh_config(
+    n_nodes: int,
+    domain_length: float,
+    time_step: float,
+    initial_condition_fn: Callable,
+) -> MeshConfig:
+    """Build a MeshConfig from node count, domain length, time step, and IC function."""
+    mesh, element_size = np.linspace(0, domain_length, n_nodes, retstep=True)
+    return MeshConfig(
+        n_nodes=n_nodes,
+        mesh=mesh,
+        element_size=float(element_size),
+        time_step=time_step,
+        initial_solution=initial_condition_fn(mesh),
     )
-    mesh_dns, h_dns = np.linspace(
-        start=0, stop=simulation_length, num=grid_points_dns, retstep=True
-    )
-    initial_solution_dns = initial_condition(mesh_dns)
-    time_step_dns = compute_time_step(
-        h=h_dns,
-        max_velocity=max(initial_solution_dns),
-        viscosity=viscosity,
-        do_round_down=True,
-    )
-    master_path = master_dir if master_dir is not None else "runs"
-    extractions = set_extractions(
-        simulation_duration, DNS_SNAPSHOT_AMOUNT, time_step_dns
-    )
-    config = Burgers.create_config(
-        initial_condition=initial_condition,
-        simulation_mode="dns",
-        run_objective="data_generation",
-        node_amount=grid_points_dns,
-        boundary_condition_type=problem_definition["boundary_condition_type"],
-        boundary_condition_value=problem_definition["boundary_condition_value"],
-        external_forcing=problem_definition["external_forcing"],
-        forcing_steady=problem_definition["forcing_steady"],
-        domain_timespan=problem_definition["domain_timespan"],
-        time_step=time_step_dns,
-        domain_length=problem_definition["domain_length"],
-        max_iterations=100,
-        relaxation=None,
-        viscosity=problem_definition["viscosity"],
-        extract_at_times=extractions,
-        master_path=master_path,
-    )
-    return config
 
 
 def create_solver_configs(
     problem_definition: dict,
+    dns_mesh: MeshConfig,
+    les_mesh: MeshConfig,
     dns_dir: Path | str | None = None,
     les_a_dir: Path | str | None = None,
     les_nm_dir: Path | str | None = None,
-    dns_time_step: float | None = None,
-    les_time_step: float | None = None,
-    n_nodes_dns: int | None = None,
-    n_nodes_les: int | None = None,
 ) -> tuple[dict, dict, dict]:
-    """Create configuration for Burgers solver for a DNS simulation."""
-    simulation_length: float = problem_definition["domain_length"]
-    simulation_duration: float = problem_definition["domain_timespan"]
-    reynolds: float = problem_definition["reynolds"]
-    viscosity: float = problem_definition["viscosity"]
-    initial_condition: NDArray | Callable = problem_definition["initial_condition"]
-    boundary_condition_type = problem_definition["boundary_condition_type"]
-    boundary_condition_value = problem_definition["boundary_condition_value"]
+    """Return (config_dns, config_les_analytical, config_les_no_model)."""
+    duration: float = problem_definition["domain_timespan"]
+    domain_length: float = problem_definition["domain_length"]
+    bc_type = problem_definition["boundary_condition_type"]
+    bc_value = problem_definition["boundary_condition_value"]
     forcing = problem_definition["external_forcing"]
-    forcing_is_steady = problem_definition["forcing_steady"]
+    forcing_is_steady: bool = problem_definition["forcing_steady"]
+    viscosity: float = problem_definition["viscosity"]
 
-    if n_nodes_dns is not None and n_nodes_les is not None:
-        grid_points_dns = n_nodes_dns
-        grid_points_les = n_nodes_les
-    else:
-        grid_points_dns = calc_required_grid_points(
-            length=simulation_length,
-            reynolds=reynolds,
-            factor_spatial=DNS_SPATIAL_FACTOR,
-            factor_points=DNS_POINTS_FACTOR,
-        )
-        grid_points_les = (grid_points_dns - 1) // DNS_TO_LES_RATIO + 1
-
-    mesh_dns, h_dns = np.linspace(
-        start=0, stop=simulation_length, num=grid_points_dns, retstep=True
-    )
-    mesh_les, h_les = np.linspace(
-        start=0, stop=simulation_length, num=grid_points_les, retstep=True
-    )
-
-    initial_solution_dns = initial_condition(mesh_dns)
-    initial_solution_les = initial_condition(mesh_les)
-
-    max_velocity = max(max(initial_solution_dns), max(initial_solution_les))
-
-    time_step_dns = (
-        dns_time_step
-        if dns_time_step is not None
-        else compute_time_step(
-            h=h_dns,
-            max_velocity=max(initial_solution_dns),
-            viscosity=viscosity,
-            do_round_down=True,
-        )
-    )
-    time_step_les = (
-        les_time_step
-        if les_time_step is not None
-        else compute_time_step(
-            h=h_les, max_velocity=max_velocity, viscosity=viscosity, do_round_down=True
-        )
-    )
-
-    n_dns_steps = int(round(simulation_duration / time_step_dns))
-    dns_extractions = set_extractions(
-        duration=simulation_duration,
-        extraction_amount=n_dns_steps,
-        time_step=time_step_dns,
-    )
+    n_dns_steps = int(round(duration / dns_mesh.time_step))
+    dns_extractions = set_extractions(duration, n_dns_steps, dns_mesh.time_step)
     les_extractions = set_extractions(
-        duration=simulation_duration,
-        extraction_amount=int(simulation_duration / time_step_les),
-        time_step=time_step_les,
+        duration, int(duration / les_mesh.time_step), les_mesh.time_step
     )
 
     config_dns = Burgers.create_config(
-        initial_condition=initial_solution_dns,
+        initial_condition=dns_mesh.initial_solution,
         simulation_mode="dns",
-        run_objective="data generation",
-        node_amount=grid_points_dns,
-        boundary_condition_type=boundary_condition_type,
-        boundary_condition_value=boundary_condition_value,
+        run_objective="data_generation",
+        node_amount=dns_mesh.n_nodes,
+        boundary_condition_type=bc_type,
+        boundary_condition_value=bc_value,
         external_forcing=forcing,
         forcing_steady=forcing_is_steady,
-        domain_timespan=simulation_duration,
-        time_step=time_step_dns,
-        domain_length=simulation_length,
+        domain_timespan=duration,
+        time_step=dns_mesh.time_step,
+        domain_length=domain_length,
         convergence_tol_residual=1e-6,
         convergence_tol_update=1e-6,
         max_iterations=100,
@@ -220,70 +110,43 @@ def create_solver_configs(
         extract_at_times=dns_extractions,
         master_path=dns_dir,
     )
-    config_les_analytical = Burgers.create_config(
-        initial_condition=initial_solution_les,
-        simulation_mode="les",
-        run_objective="data_generation",
-        node_amount=grid_points_les,
-        boundary_condition_type=boundary_condition_type,
-        boundary_condition_value=boundary_condition_value,
+
+    shared_les_kwargs: dict = dict(
+        initial_condition=les_mesh.initial_solution,
+        node_amount=les_mesh.n_nodes,
+        boundary_condition_type=bc_type,
+        boundary_condition_value=bc_value,
         external_forcing=forcing,
         forcing_steady=forcing_is_steady,
-        domain_timespan=simulation_duration,
-        time_step=time_step_les,
-        domain_length=simulation_length,
+        domain_timespan=duration,
+        time_step=les_mesh.time_step,
+        domain_length=domain_length,
         convergence_tol_residual=1e-4,
         convergence_tol_update=1e-4,
         max_iterations=20,
         relaxation=None,
         viscosity=viscosity,
         extract_at_times=les_extractions,
-        master_path=les_a_dir,
+        run_objective="data_generation",
+    )
+    config_les_analytical = Burgers.create_config(
+        **shared_les_kwargs, simulation_mode="les", master_path=les_a_dir
     )
     config_les_no_model = Burgers.create_config(
-        initial_condition=initial_solution_les,
-        simulation_mode="no_model",
-        run_objective="data_generation",
-        node_amount=grid_points_les,
-        boundary_condition_type=boundary_condition_type,
-        boundary_condition_value=boundary_condition_value,
-        external_forcing=forcing,
-        forcing_steady=forcing_is_steady,
-        domain_timespan=simulation_duration,
-        time_step=time_step_les,
-        domain_length=simulation_length,
-        convergence_tol_residual=1e-4,
-        convergence_tol_update=1e-4,
-        max_iterations=20,
-        relaxation=None,
-        viscosity=viscosity,
-        extract_at_times=les_extractions,
-        master_path=les_nm_dir,
+        **shared_les_kwargs, simulation_mode="no_model", master_path=les_nm_dir
     )
     return config_dns, config_les_analytical, config_les_no_model
 
 
-def resolve_ann_run_path(
+def _resolve_ann_output_paths(
     solver_data_dir: Path,
     clip_pusuluri: bool,
     clip_rajampeta: bool,
 ) -> tuple[Path, Path]:
-    """Return (stable_path, blown_up_path) for the given clipping variant.
+    """Resolve and create (stable_path, blown_up_path) for the clipping variant."""
+    if clip_rajampeta and not clip_pusuluri:
+        raise ValueError("clip_rajampeta requires clip_pusuluri to be enabled.")
 
-    Parameters
-    ----------
-    solver_data_dir:
-        ``master_path / SOLVER_DATA_FOLDER`` — must exist at call time.
-    clip_pusuluri:
-        Whether Pusuluri μ ± 3σ clipping is active.
-    clip_rajampeta:
-        Whether Rajampeta backscatter limiting is active (implies Pusuluri).
-
-    Returns
-    -------
-    stable_path, blown_up_path : Path
-        Both directories are created before returning.
-    """
     if clip_rajampeta:
         clip_variant_folder = LES_ANN_RAJAMPETA_FOLDER
     elif clip_pusuluri:
@@ -303,111 +166,31 @@ def resolve_ann_run_path(
 
 def create_ann_config(
     problem_definition: dict,
+    les_mesh: MeshConfig,
     ann_model_path: Path,
     normalisation_stats_path: Path,
     les_ann_dir: Path | str | None = None,
-    time_step_override: float | None = None,
-    n_nodes_les: int | None = None,
     clip_pusuluri: bool = False,
     clip_rajampeta: bool = False,
     blowup_threshold: float = 1e4,
     blowup_buffer_size: int = 5_000,
     ann_warmup_steps: int = 2,
 ) -> tuple[dict, Path, Path]:
-    """ANN-coupled LES configuration, matching LES grid and time step.
+    """ANN-coupled LES config built from a pre-resolved MeshConfig.
 
-    Mirrors the structure of the other config builders: resolves the initial
-    condition to an array, computes extractions via ``set_extractions``, and
-    uses explicit convergence tolerances and iteration caps.
-
-    Parameters
-    ----------
-    problem_definition:
-        Standard problem dict (same format as DNS/LES builders).
-    ann_model_path:
-        Path to ``sgs_predictor.pt``.
-    normalisation_stats_path:
-        Path to ``normalisation_stats.npz``.
-    les_ann_dir:
-        Base solver-data directory (``master_path / SOLVER_DATA_FOLDER``).
-        Sub-directories are resolved here; do not pre-append clipping or
-        stability sub-folders.
-    time_step_override:
-        If given, bypasses the CFL-based time-step computation.
-    n_nodes_les:
-        If given, bypasses the DNS-ratio-based node count.
-    clip_pusuluri:
-        Enable Pusuluri μ ± 3σ output clipping.
-    clip_rajampeta:
-        Enable Rajampeta backscatter limiting (implies Pusuluri).
-    blowup_threshold:
-        Amplitude magnitude above which blow-up is declared.
-    blowup_buffer_size:
-        Number of past steps retained in the blow-up buffer.
-    ann_warmup_steps:
-        Pure-Galerkin steps before activating the ANN.
-
-    Returns
-    -------
-    config : dict
-        Ready to pass to ``BurgersCoupled(...)``.
-    stable_path : Path
-        Output directory for a clean run.
-    blown_up_path : Path
-        Output directory for a blown-up run.
+    Returns (config, stable_path, blown_up_path).
     """
-    simulation_length: float = problem_definition["domain_length"]
-    simulation_duration: float = problem_definition["domain_timespan"]
-    reynolds: float = problem_definition["reynolds"]
+    duration: float = problem_definition["domain_timespan"]
     viscosity: float = problem_definition["viscosity"]
-    initial_condition: NDArray | Callable = problem_definition["initial_condition"]
-    boundary_condition_type = problem_definition["boundary_condition_type"]
-    boundary_condition_value = problem_definition["boundary_condition_value"]
-    forcing = problem_definition["external_forcing"]
-    forcing_is_steady = problem_definition["forcing_steady"]
 
-    grid_points_les = (
-        n_nodes_les
-        if n_nodes_les is not None
-        else (
-            calc_required_grid_points(
-                length=simulation_length,
-                reynolds=reynolds,
-                factor_spatial=DNS_SPATIAL_FACTOR,
-                factor_points=DNS_POINTS_FACTOR,
-            )
-            - 1
-        )
-        // DNS_TO_LES_RATIO
-        + 1
-    )
-    mesh_les, h_les = np.linspace(
-        start=0, stop=simulation_length, num=grid_points_les, retstep=True
-    )
-    initial_solution_les: NDArray = initial_condition(mesh_les)
-
-    time_step_les = (
-        time_step_override
-        if time_step_override is not None
-        else compute_time_step(
-            h=h_les,
-            max_velocity=max(initial_solution_les),
-            viscosity=viscosity,
-            do_round_down=True,
-        )
-    )
     les_extractions = set_extractions(
-        duration=simulation_duration,
-        extraction_amount=DNS_SNAPSHOT_AMOUNT // DNS_TO_LES_RATIO,
-        time_step=time_step_les,
+        duration, int(duration / les_mesh.time_step), les_mesh.time_step
     )
-
-    stable_path, blown_up_path = resolve_ann_run_path(
+    stable_path, blown_up_path = _resolve_ann_output_paths(
         solver_data_dir=Path(les_ann_dir),
         clip_pusuluri=clip_pusuluri,
         clip_rajampeta=clip_rajampeta,
     )
-
     config = BurgersCoupled.create_coupled_config(
         ann_model_path=ann_model_path,
         normalisation_stats_path=normalisation_stats_path,
@@ -415,19 +198,18 @@ def create_ann_config(
         blowup_threshold=blowup_threshold,
         blowup_buffer_size=blowup_buffer_size,
         blown_up_path=str(blown_up_path),
-        # --- BurgersPure base keys ---
-        initial_condition=initial_solution_les,
+        initial_condition=les_mesh.initial_solution,
         simulation_mode="ann",
         run_objective="data_generation",
-        node_amount=grid_points_les,
+        node_amount=les_mesh.n_nodes,
         viscosity=viscosity,
-        time_step=time_step_les,
-        domain_timespan=simulation_duration,
-        domain_length=simulation_length,
-        boundary_condition_type=boundary_condition_type,
-        boundary_condition_value=boundary_condition_value,
-        external_forcing=forcing,
-        forcing_steady=forcing_is_steady,
+        time_step=les_mesh.time_step,
+        domain_timespan=duration,
+        domain_length=problem_definition["domain_length"],
+        boundary_condition_type=problem_definition["boundary_condition_type"],
+        boundary_condition_value=problem_definition["boundary_condition_value"],
+        external_forcing=problem_definition["external_forcing"],
+        forcing_steady=problem_definition["forcing_steady"],
         convergence_tol_residual=1e-4,
         convergence_tol_update=1e-4,
         max_iterations=20,
@@ -435,34 +217,4 @@ def create_ann_config(
         extract_at_times=les_extractions,
         master_path=stable_path,
     )
-
     return config, stable_path, blown_up_path
-
-
-def create_code_test_config() -> dict:
-    """Quick test run to check code behavior."""
-    grid_points_dns = calc_required_grid_points(
-        length=1,
-        reynolds=100,
-        factor_spatial=DNS_SPATIAL_FACTOR,
-        factor_points=DNS_POINTS_FACTOR,
-    )
-    config_test = Burgers.create_config(
-        initial_condition=uniform_initial_condition,
-        simulation_mode="dns",
-        run_objective="code test",
-        node_amount=grid_points_dns,
-        boundary_condition_type="fixed",
-        boundary_condition_value=0,
-        external_forcing=sin_cos_forcing,
-        forcing_steady=False,
-        domain_timespan=0.5,
-        time_step=0.05,
-        domain_length=1,
-        max_iterations=20,
-        relaxation=None,
-        viscosity=1,
-        extract_at_times=[0.1, 0.2, 0.3, 0.4, 0.5],
-        master_path="runs/pipeline_test",
-    )
-    return config_test
