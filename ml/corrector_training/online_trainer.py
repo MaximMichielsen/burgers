@@ -1,0 +1,646 @@
+"""Online RL training for the AVCorrector using SAC.
+
+The BurgersAVC solver acts as the environment.  At each control step n the
+corrector policy πθ observes the MDP state
+
+    sₙ = (Ê₁, …, Êₖ, ε⁻ⁿ, αₙ₋₁)  ∈ ℝ^(K+2)
+
+and returns a scalar action αₙ ∈ [0, αₘₐₓ].  The solver is then advanced
+Nₛₖᵢₚ LES timesteps under fixed αₙ (written directly into
+solver.av_correction before each advance_time_step call), after which the
+reward is computed from eq. (2.10) and a SAC gradient step is taken.
+
+The environment wrapper bypasses BurgersAVC's own policy inference by using
+correction_is_fixed=True and setting solver.av_correction externally before
+each advance_time_step call.
+
+SAC is chosen for online training because its entropy regularisation
+promotes exploration without manual noise schedules, and its off-policy
+replay buffer makes sample use efficient (Haarnoja et al., 2018).
+
+References
+----------
+Haarnoja et al. (2018) "Soft Actor–Critic: Off-Policy Maximum Entropy Deep
+    Reinforcement Learning with a Stochastic Actor."  arXiv:1801.01290.
+Research Proposal §2.3.2, §3.1.
+"""
+
+from __future__ import annotations
+
+import copy
+import logging
+from collections import deque
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import NamedTuple
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from numpy.typing import NDArray
+from torch import Tensor
+
+from ml_agents.av_corrector import AVCorrector, save_corrector
+from solvers.burgers_avc import BurgersAVC
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Hyperparameter config
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SACConfig:
+    """Hyperparameters for online SAC training.
+
+    Attributes
+    ----------
+    gamma:
+        Discount factor γ for the Bellman target.
+    tau:
+        Polyak soft target-network update coefficient.
+    lr_actor, lr_critic, lr_alpha_temp:
+        Learning rates for policy, twin Q-networks, and temperature.
+    replay_capacity:
+        Maximum transitions stored in the replay buffer.
+    batch_size:
+        Minibatch size for gradient updates.
+    warmup_steps:
+        Random-action steps before policy gradient updates begin.
+    update_every:
+        Gradient update frequency (every N control steps).
+    updates_per_step:
+        Number of gradient steps taken each time an update is triggered.
+    target_entropy:
+        Desired policy entropy; -1.0 = -dim(A) for scalar action.
+    n_skip_steps:
+        LES timesteps per control interval Δtc = Nₛₖᵢₚ·Δt_LES.
+    reward_weight_energy:
+        w_E in eq. (2.10).
+    reward_weight_dissipation:
+        w_ε in eq. (2.10).
+    reward_spectral_exponent:
+        γ exponent per wavenumber in eq. (2.10); 5/3 for inertial range.
+    critic_hidden_dim:
+        Hidden layer width for the twin Q-networks.
+    """
+
+    gamma: float = 0.99
+    tau: float = 0.005
+    lr_actor: float = 3e-4
+    lr_critic: float = 3e-4
+    lr_alpha_temp: float = 3e-4
+    replay_capacity: int = 100_000
+    batch_size: int = 256
+    warmup_steps: int = 1_000
+    update_every: int = 1
+    updates_per_step: int = 1
+    target_entropy: float = -1.0
+    n_skip_steps: int = 10
+    reward_weight_energy: float = 1.0
+    reward_weight_dissipation: float = 0.1
+    reward_spectral_exponent: float = 5.0 / 3.0
+    critic_hidden_dim: int = 256
+
+
+# ---------------------------------------------------------------------------
+# Replay buffer
+# ---------------------------------------------------------------------------
+
+
+class Transition(NamedTuple):
+    """Single MDP transition (sₙ, αₙ, rₙ, sₙ₊₁, done)."""
+
+    state: NDArray
+    action: float
+    reward: float
+    next_state: NDArray
+    done: bool
+
+
+class ReplayBuffer:
+    """Uniform-random experience replay buffer."""
+
+    def __init__(self, capacity: int) -> None:
+        self._buffer: deque[Transition] = deque(maxlen=capacity)
+
+    def push(self, transition: Transition) -> None:
+        """Add one transition."""
+        self._buffer.append(transition)
+
+    def sample(
+        self, batch_size: int
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        """Return a random minibatch as float32 tensors."""
+        indices = np.random.choice(len(self._buffer), size=batch_size, replace=False)
+        batch = [self._buffer[idx] for idx in indices]
+
+        states_tensor = torch.tensor(
+            np.array([t.state for t in batch]), dtype=torch.float32
+        )
+        actions_tensor = torch.tensor(
+            np.array([[t.action] for t in batch]), dtype=torch.float32
+        )
+        rewards_tensor = torch.tensor(
+            np.array([[t.reward] for t in batch]), dtype=torch.float32
+        )
+        next_states_tensor = torch.tensor(
+            np.array([t.next_state for t in batch]), dtype=torch.float32
+        )
+        dones_tensor = torch.tensor(
+            np.array([[float(t.done)] for t in batch]), dtype=torch.float32
+        )
+        return (
+            states_tensor,
+            actions_tensor,
+            rewards_tensor,
+            next_states_tensor,
+            dones_tensor,
+        )
+
+    def __len__(self) -> int:
+        return len(self._buffer)
+
+
+# ---------------------------------------------------------------------------
+# Twin Q-network (critic)
+# ---------------------------------------------------------------------------
+
+
+class _QNetwork(nn.Module):
+    """Single Q(s, a) MLP approximator."""
+
+    def __init__(self, state_dim: int, hidden_dim: int) -> None:
+        super().__init__()
+        # Input is (s ‖ a): state_dim + 1 for scalar action.
+        self.network = nn.Sequential(
+            nn.Linear(state_dim + 1, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, state_input: Tensor, action_input: Tensor) -> Tensor:
+        """Concatenate (s, a) and return Q-value."""
+        sa_input = torch.cat([state_input, action_input], dim=-1)
+        return self.network(sa_input)
+
+
+class TwinQNetwork(nn.Module):
+    """Twin Q-networks Q₁, Q₂ to reduce overestimation bias."""
+
+    def __init__(self, state_dim: int, hidden_dim: int) -> None:
+        super().__init__()
+        self.q1_network = _QNetwork(state_dim, hidden_dim)
+        self.q2_network = _QNetwork(state_dim, hidden_dim)
+
+    def forward(
+        self, state_input: Tensor, action_input: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        """Return (Q₁(s,a), Q₂(s,a))."""
+        return (
+            self.q1_network(state_input, action_input),
+            self.q2_network(state_input, action_input),
+        )
+
+    def q1_only(self, state_input: Tensor, action_input: Tensor) -> Tensor:
+        """Return Q₁(s,a) only (used in actor update)."""
+        return self.q1_network(state_input, action_input)
+
+
+# ---------------------------------------------------------------------------
+# MDP environment wrapper around BurgersAVC
+# ---------------------------------------------------------------------------
+
+
+class BurgersAVCEnvironment:
+    """MDP wrapper around BurgersAVC for the AV corrector control problem.
+
+    Exposes reset() / step() so the trainer drives the solver without
+    knowing about its internal structure.
+
+    The trainer sets solver.av_correction externally before calling
+    advance_time_step, bypassing BurgersAVC._add_avc_correction so the
+    policy is not called twice during training.
+
+    Parameters
+    ----------
+    solver_config:
+        Config dict from BurgersAVC.create_avc_config.
+    sac_config:
+        SACConfig with Nₛₖᵢₚ and reward weights.
+    clip_pusuluri, clip_rajampeta, exclude_visc:
+        SGS clipping flags forwarded to BurgersAVC.
+    """
+
+    def __init__(
+        self,
+        solver_config: dict,
+        sac_config: SACConfig,
+        clip_pusuluri: bool = False,
+        clip_rajampeta: bool = False,
+        exclude_visc: bool = True,
+    ) -> None:
+        self._solver_config = solver_config
+        self._sac_config = sac_config
+        self._clip_pusuluri = clip_pusuluri
+        self._clip_rajampeta = clip_rajampeta
+        self._exclude_visc = exclude_visc
+
+        self._solver: BurgersAVC | None = None
+        self._total_les_steps: int = 0
+        self._max_les_steps: int = int(
+            solver_config["domain_timespan"] / solver_config["time_step"]
+        )
+
+        dns_spectrum = np.asarray(solver_config["dns_energy_spectrum"])
+        self.n_wavenumber_bins: int = len(dns_spectrum)
+        self.state_dim: int = self.n_wavenumber_bins + 2
+
+    def reset(self) -> NDArray:
+        """Instantiate a fresh BurgersAVC solver and return initial state sₙ."""
+        self._solver = BurgersAVC(
+            configuration=self._solver_config,
+            correction_is_fixed=True,  # trainer controls av_correction externally
+            clip_pusuluri=self._clip_pusuluri,
+            clip_rajampeta=self._clip_rajampeta,
+            exclude_visc=self._exclude_visc,
+        )
+        self._total_les_steps = 0
+        return self._solver._create_avc_input_stencil()
+
+    def step(self, alpha_action: float) -> tuple[NDArray, float, bool]:
+        """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done).
+
+        Parameters
+        ----------
+        alpha_action:
+            Scalar AV value αₙ ∈ [0, αₘₐₓ] chosen by the policy.
+
+        Returns
+        -------
+        next_state:
+            sₙ₊₁ built from the resolved field after Nₛₖᵢₚ steps.
+        reward:
+            Scalar rₙ from eq. (2.10); large negative on blow-up.
+        done:
+            True when the episode ends (time horizon or blow-up).
+        """
+        assert self._solver is not None, "Call reset() before step()."
+
+        # Inject αₙ — _residual_integrand reads self.av_correction at assembly.
+        self._solver.av_correction = float(alpha_action)
+
+        blown_up = False
+        for _ in range(self._sac_config.n_skip_steps):
+            try:
+                self._solver.advance_time_step()
+                self._total_les_steps += 1
+            except RuntimeError:
+                blown_up = True
+                break
+
+        reward_val = self._compute_reward(blown_up=blown_up)
+        done_flag = blown_up or self._total_les_steps >= self._max_les_steps
+        next_state_array = self._solver._create_avc_input_stencil()
+
+        return next_state_array, reward_val, done_flag
+
+    def _compute_reward(self, blown_up: bool) -> float:
+        """Compute rₙ from eq. (2.10); large terminal penalty on blow-up."""
+        if blown_up:
+            return -1e4
+
+        assert self._solver is not None
+
+        wavenumbers_all, raw_spectrum_all = self._solver.compute_energy_spectrum(
+            self._solver.solution
+        )
+        _, positive_spectrum = self._solver.get_positive_spectrum(
+            wavenumbers_all, raw_spectrum_all
+        )
+        spectrum_k = positive_spectrum[: self.n_wavenumber_bins].astype(np.float64)
+        dns_spectrum = np.asarray(
+            self._solver_config["dns_energy_spectrum"], dtype=np.float64
+        )
+
+        # Integer wavenumber indices k = 1, …, K (skip DC component k=0).
+        wavenumber_indices = np.arange(1, self.n_wavenumber_bins + 1, dtype=np.float64)
+
+        w_e = self._sac_config.reward_weight_energy
+        w_eps = self._sac_config.reward_weight_dissipation
+        gamma_exp = self._sac_config.reward_spectral_exponent
+
+        compensated_les = wavenumber_indices**gamma_exp * spectrum_k
+        compensated_dns = wavenumber_indices**gamma_exp * dns_spectrum
+        spectral_penalty = float(
+            w_e * np.sum(wavenumber_indices * (compensated_les - compensated_dns) ** 2)
+        )
+
+        current_dissipation = (
+            self._solver.dissipation_history[-1]
+            if self._solver.dissipation_history
+            else 0.0
+        )
+        dns_dissipation = float(self._solver_config["dns_dissipation"])
+        dissipation_penalty = float(
+            w_eps * (current_dissipation - dns_dissipation) ** 2
+        )
+
+        return -(spectral_penalty + dissipation_penalty)
+
+
+# ---------------------------------------------------------------------------
+# SAC agent
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TrainingStats:
+    """Per-episode and per-update diagnostics."""
+
+    episode_rewards: list[float] = field(default_factory=list)
+    episode_lengths: list[int] = field(default_factory=list)
+    critic_losses: list[float] = field(default_factory=list)
+    actor_losses: list[float] = field(default_factory=list)
+    alpha_temp_values: list[float] = field(default_factory=list)
+    total_env_steps: int = 0
+
+
+class SACAgent:
+    """Soft Actor–Critic agent for scalar continuous AV action.
+
+    Actor  : AVCorrector policy (sigmoid-bounded → αₙ ∈ [0, αₘₐₓ]).
+    Critic : TwinQNetwork (Q₁, Q₂) with soft target networks.
+    Temp.  : Auto-tuned log-temperature to maintain target entropy.
+
+    Parameters
+    ----------
+    av_corrector:
+        The policy network πθ.
+    state_dim:
+        Dimension of sₙ (= K + 2).
+    sac_config:
+        Hyperparameter container.
+    """
+
+    def __init__(
+        self,
+        av_corrector: AVCorrector,
+        state_dim: int,
+        sac_config: SACConfig,
+    ) -> None:
+        self._policy = av_corrector
+        self._config = sac_config
+
+        self._critic = TwinQNetwork(state_dim, sac_config.critic_hidden_dim)
+        self._critic_target = copy.deepcopy(self._critic)
+        for param_tensor in self._critic_target.parameters():
+            param_tensor.requires_grad = False
+
+        self._actor_optimizer = optim.Adam(
+            self._policy.parameters(), lr=sac_config.lr_actor
+        )
+        self._critic_optimizer = optim.Adam(
+            self._critic.parameters(), lr=sac_config.lr_critic
+        )
+
+        self._log_alpha_temp: Tensor = torch.zeros(1, requires_grad=True)
+        self._alpha_temp_optimizer = optim.Adam(
+            [self._log_alpha_temp], lr=sac_config.lr_alpha_temp
+        )
+
+    @property
+    def alpha_temp(self) -> Tensor:
+        """Temperature scalar (always positive via exp)."""
+        return self._log_alpha_temp.exp()
+
+    def select_action(
+        self, state_array: NDArray, *, deterministic: bool = False
+    ) -> float:
+        """Return αₙ for the given state sₙ.
+
+        Exploration noise (~5 % of αₘₐₓ Gaussian) added during training;
+        suppressed when deterministic=True.
+        """
+        state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
+        with torch.no_grad():
+            mean_action_val = self._policy(state_tensor).squeeze().item()
+
+        if deterministic:
+            return float(mean_action_val)
+
+        noise_std = 0.05 * self._policy.alpha_max
+        noisy_action = float(mean_action_val) + float(np.random.normal(0.0, noise_std))
+        return float(np.clip(noisy_action, 0.0, self._policy.alpha_max))
+
+    def update(self, replay_buffer: ReplayBuffer) -> tuple[float, float, float]:
+        """One SAC gradient step on critic, actor, and temperature.
+
+        Returns
+        -------
+        critic_loss, actor_loss, alpha_temp : floats for logging.
+        """
+        (
+            states_batch,
+            actions_batch,
+            rewards_batch,
+            next_states_batch,
+            dones_batch,
+        ) = replay_buffer.sample(self._config.batch_size)
+
+        # ---- Critic update ----
+        with torch.no_grad():
+            next_actions_batch = self._policy(next_states_batch)
+            target_noise = (
+                torch.randn_like(next_actions_batch) * 0.05 * self._policy.alpha_max
+            )
+            next_actions_batch = (next_actions_batch + target_noise).clamp(
+                0.0, self._policy.alpha_max
+            )
+            q1_next_val, q2_next_val = self._critic_target(
+                next_states_batch, next_actions_batch
+            )
+            q_next_min = torch.min(q1_next_val, q2_next_val)
+            bellman_target = (
+                rewards_batch + (1.0 - dones_batch) * self._config.gamma * q_next_min
+            )
+
+        q1_pred_val, q2_pred_val = self._critic(states_batch, actions_batch)
+        critic_loss_val = nn.functional.mse_loss(
+            q1_pred_val, bellman_target
+        ) + nn.functional.mse_loss(q2_pred_val, bellman_target)
+
+        self._critic_optimizer.zero_grad()
+        critic_loss_val.backward()
+        self._critic_optimizer.step()
+
+        # ---- Actor update ----
+        predicted_actions_batch = self._policy(states_batch)
+        q1_policy_val = self._critic.q1_only(states_batch, predicted_actions_batch)
+        actor_loss_val = -q1_policy_val.mean()
+
+        self._actor_optimizer.zero_grad()
+        actor_loss_val.backward()
+        self._actor_optimizer.step()
+
+        # ---- Temperature update ----
+        alpha_loss_val = -(
+            self._log_alpha_temp
+            * (actor_loss_val.detach() + self._config.target_entropy)
+        )
+        self._alpha_temp_optimizer.zero_grad()
+        alpha_loss_val.backward()
+        self._alpha_temp_optimizer.step()
+
+        # ---- Polyak soft update of target networks ----
+        tau_val = self._config.tau
+        for param_online, param_target in zip(
+            self._critic.parameters(), self._critic_target.parameters()
+        ):
+            param_target.data.mul_(1.0 - tau_val)
+            param_target.data.add_(tau_val * param_online.data)
+
+        return (
+            float(critic_loss_val.item()),
+            float(actor_loss_val.item()),
+            float(self.alpha_temp.item()),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Online trainer
+# ---------------------------------------------------------------------------
+
+
+class OnlineAVTrainer:
+    """Online SAC training loop for the AV corrector.
+
+    Drives BurgersAVCEnvironment episode-by-episode: collects transitions
+    into a replay buffer and triggers SAC updates after each control step.
+
+    Parameters
+    ----------
+    environment:
+        The wrapped BurgersAVC solver environment.
+    sac_agent:
+        Initialised SACAgent (policy + critics).
+    sac_config:
+        Shared hyperparameter config.
+    output_dir:
+        Directory for policy checkpoints.
+    """
+
+    def __init__(
+        self,
+        environment: BurgersAVCEnvironment,
+        sac_agent: SACAgent,
+        sac_config: SACConfig,
+        output_dir: Path,
+    ) -> None:
+        self._env = environment
+        self._agent = sac_agent
+        self._config = sac_config
+        self._output_dir = Path(output_dir)
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+
+        self._replay_buffer = ReplayBuffer(capacity=sac_config.replay_capacity)
+        self._stats = TrainingStats()
+
+    def train(self, n_episodes: int, checkpoint_every: int = 50) -> TrainingStats:
+        """Run n_episodes of online SAC training.
+
+        Parameters
+        ----------
+        n_episodes:
+            Total solver episodes (each resets to a fresh simulation).
+        checkpoint_every:
+            Save a policy checkpoint every this many episodes.
+
+        Returns
+        -------
+        TrainingStats with per-episode and per-update diagnostics.
+        """
+        print(
+            f"\nOnline SAC training — {n_episodes} episodes "
+            f"| warmup: {self._config.warmup_steps} steps "
+            f"| Nₛₖᵢₚ: {self._config.n_skip_steps}"
+        )
+        print("-" * 64)
+
+        for episode_idx in range(n_episodes):
+            state_current = self._env.reset()
+            episode_reward_total = 0.0
+            episode_step_count = 0
+            done_flag = False
+
+            while not done_flag:
+                if self._stats.total_env_steps < self._config.warmup_steps:
+                    alpha_action_val = float(
+                        np.random.uniform(0.0, self._agent._policy.alpha_max)
+                    )
+                else:
+                    alpha_action_val = self._agent.select_action(state_current)
+
+                next_state_array, reward_val, done_flag = self._env.step(
+                    alpha_action_val
+                )
+
+                self._replay_buffer.push(
+                    Transition(
+                        state=state_current,
+                        action=alpha_action_val,
+                        reward=reward_val,
+                        next_state=next_state_array,
+                        done=done_flag,
+                    )
+                )
+
+                state_current = next_state_array
+                episode_reward_total += reward_val
+                episode_step_count += 1
+                self._stats.total_env_steps += 1
+
+                enough_samples = len(self._replay_buffer) >= self._config.batch_size
+                past_warmup = self._stats.total_env_steps >= self._config.warmup_steps
+                update_due = self._stats.total_env_steps % self._config.update_every == 0
+
+                if enough_samples and past_warmup and update_due:
+                    for _ in range(self._config.updates_per_step):
+                        critic_loss_val, actor_loss_val, alpha_temp_val = (
+                            self._agent.update(self._replay_buffer)
+                        )
+                        self._stats.critic_losses.append(critic_loss_val)
+                        self._stats.actor_losses.append(actor_loss_val)
+                        self._stats.alpha_temp_values.append(alpha_temp_val)
+
+            self._stats.episode_rewards.append(episode_reward_total)
+            self._stats.episode_lengths.append(episode_step_count)
+
+            if episode_idx % 10 == 0 or episode_idx == n_episodes - 1:
+                recent_mean = float(np.mean(self._stats.episode_rewards[-10:]))
+                print(
+                    f"Episode {episode_idx:04d} | "
+                    f"Return: {episode_reward_total:+.2f} | "
+                    f"Mean(10): {recent_mean:+.2f} | "
+                    f"Control steps: {episode_step_count} | "
+                    f"Buffer: {len(self._replay_buffer)}"
+                )
+
+            if (episode_idx + 1) % checkpoint_every == 0:
+                self._save_checkpoint(episode_idx=episode_idx)
+
+        self._save_checkpoint(episode_idx=n_episodes - 1, tag="final")
+        print(f"\nTraining complete. Checkpoints saved to '{self._output_dir}'.")
+        return self._stats
+
+    def _save_checkpoint(self, episode_idx: int, tag: str | None = None) -> None:
+        """Save policy weights to a .pt file."""
+        suffix = tag if tag else f"ep{episode_idx:04d}"
+        checkpoint_path = self._output_dir / f"av_corrector_{suffix}.pt"
+        save_corrector(self._agent._policy, checkpoint_path)
+        logger.info("Checkpoint saved to %s", checkpoint_path)

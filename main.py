@@ -6,10 +6,10 @@ import numpy as np
 import torch
 
 from constants import RUNS_FOLDER
-from data_curation.a_priori_verificiation import run_apriori_verification
-from data_curation.projection import run_projection
-from data_curation.training_data_assembly import run_training_data_assembly
-from ml_agents.predictor import plot_training_diagnostics, train_predictor
+from ml.data_curation.a_priori_verificiation import run_apriori_verification
+from ml.data_curation.projection import run_projection
+from ml.data_curation.training_data_assembly import run_training_data_assembly
+from ml.ml_agents.predictor import plot_training_diagnostics, train_predictor
 from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.configurations import (
     build_mesh_config,

@@ -225,7 +225,7 @@ def evaluate_on_test_set(
 ) -> NDArray:
     """Evaluate on held-out test data; log MSE/MAE and return predictions.
 
-    Returns raw (normalised-space) model output of shape (n_test, OUTPUT_UNITS).
+    Returns raw (normalized-space) model output of shape (n_test, OUTPUT_UNITS).
     """
     x_test = torch.tensor(np.load(data_path / "X_test.npy"), dtype=torch.float32)
     y_test = torch.tensor(np.load(data_path / "y_test.npy"), dtype=torch.float32)

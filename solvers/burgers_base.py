@@ -108,8 +108,8 @@ class BurgersBase:
             if self.extract_at_times is not None
             else None
         )
-        self.extracted_solutions: list[NDArray] | None = None
-        self.extracted_forcings: list[NDArray] | None = None
+        self.extracted_solutions: list[NDArray] = []
+        self.extracted_forcings: list[NDArray] = []
 
         self.master_path: Path = Path(configuration["master_path"])
         self.master_path.mkdir(parents=True, exist_ok=True)

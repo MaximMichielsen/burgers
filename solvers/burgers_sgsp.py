@@ -45,11 +45,11 @@ from numpy.typing import NDArray
 from tqdm import tqdm
 
 from constants import OUTPUT_UNITS
-from data_curation.training_data_assembly import (
+from ml.data_curation.training_data_assembly import (
     _gradient_basis_functions,
     build_input_stencil,
 )
-from ml_agents.predictor import SGSPredictor, load_predictor
+from ml.ml_agents.predictor import SGSPredictor, load_predictor
 from solvers.burgers_base import BurgersBase
 
 logger = logging.getLogger(__name__)
@@ -205,7 +205,7 @@ class BurgersSGSP(BurgersBase):
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def create_coupled_config(
+    def create_sgsp_config(
         ann_model_path: str | Path,
         normalisation_stats_path: str | Path,
         ann_warmup_steps: int = 2,
@@ -388,7 +388,7 @@ class BurgersSGSP(BurgersBase):
 
     def nr_iteration(self, solution: NDArray) -> NDArray:
         """NR iteration with frozen ANN correction added to the global residual."""
-        ann_correction: NDArray | None = self._compute_ann_correction()
+        ann_correction: NDArray | None = self._compute_ann_contribution()
 
         solution_n = solution.copy()
         solution_k = solution.copy()
@@ -419,7 +419,7 @@ class BurgersSGSP(BurgersBase):
                 )
 
             if ann_correction is not None:
-                global_residual = self._add_ann_correction_to_residual(
+                global_residual = self._add_ann_contribution_to_residual(
                     global_residual, ann_correction
                 )
 
@@ -456,10 +456,10 @@ class BurgersSGSP(BurgersBase):
         return solution_k
 
     # ------------------------------------------------------------------ #
-    #  ANN helpers
+    #  SGS_ANN helpers
     # ------------------------------------------------------------------ #
 
-    def _compute_ann_correction(self) -> NDArray | None:
+    def _compute_ann_contribution(self) -> NDArray | None:
         """Build element input stencils and run a batched ANN forward pass.
 
         Returns (n_elements, 5) array of interaction terms, or None during warm-up.
@@ -521,7 +521,7 @@ class BurgersSGSP(BurgersBase):
 
         return ann_correction_all
 
-    def _add_ann_correction_to_residual(
+    def _add_ann_contribution_to_residual(
         self,
         global_residual: NDArray,
         ann_correction: NDArray,

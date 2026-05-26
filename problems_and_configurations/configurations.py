@@ -157,7 +157,7 @@ def create_ann_config(
         clip_pusuluri=clip_pusuluri,
         clip_rajampeta=clip_rajampeta,
     )
-    config = BurgersSGSP.create_coupled_config(
+    config = BurgersSGSP.create_sgsp_config(
         ann_model_path=ann_model_path,
         normalisation_stats_path=normalisation_stats_path,
         ann_warmup_steps=ann_warmup_steps,
