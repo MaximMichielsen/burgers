@@ -5,8 +5,7 @@ import torch.nn as nn
 from torch import Tensor
 from typing_extensions import Literal
 
-from constants import HIDDEN_UNITS, N_LES_MODES
-
+from constants import HIDDEN_UNITS
 
 # ---------------------------------------------------------------------------
 # Data loading (if offline training)
@@ -39,7 +38,7 @@ class AVCorrector(nn.Module):
     def __init__(
         self,
         alpha_max: float,
-        n_wavenumber_bins: int = N_LES_MODES // 2,
+        n_wavenumber_bins: int,
         hidden_dim: int = HIDDEN_UNITS,
         correction_mode: Literal["global", "local"] = "global",
         n_output_nodes: int = 1,  # ignored for global; N_LES for local.
@@ -60,6 +59,8 @@ class AVCorrector(nn.Module):
             raise ValueError(
                 f"Local correction mode requires n_output_nodes > 1, got {n_output_nodes}."
             )
+
+        self.correction_mode = correction_mode
 
         # State dim: K energy bins + dissipation rate + previous action
         input_dim: int = n_wavenumber_bins + 2

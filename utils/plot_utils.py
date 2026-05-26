@@ -35,6 +35,7 @@ def build_plot_configs(
     dns_solution: NDArray,
     projected_solution: NDArray,
     les_ann_data_path: Path,
+    les_avc_data_path: Path,
 ) -> list[SolutionConfig]:
     """Build the five standard solution plot configs for a pipeline run."""
     return [
@@ -75,6 +76,13 @@ def build_plot_configs(
             label="LES - ANN",
             color="salmon",
             marker="d",
+            mesh=les_mesh.mesh,
+        ),
+        SolutionConfig(
+            data_path=les_avc_data_path,
+            label="LES - AVC",
+            color="mediumorchid",
+            marker="*",
             mesh=les_mesh.mesh,
         ),
     ]

@@ -6,12 +6,13 @@ from typing import Callable
 import numpy as np
 
 from constants import (
-    LES_ANN_BLOWN_UP_FOLDER,
+    BLOWN_UP_FOLDER,
     LES_ANN_PUSULURI_FOLDER,
     LES_ANN_RAJAMPETA_FOLDER,
     LES_ANN_SAVE_PATH,
-    LES_ANN_STABLE_FOLDER,
+    STABLE_FOLDER,
     LES_ANN_UNCLIPPED_FOLDER,
+    LES_AVC_SAVE_PATH,
 )
 from problems_and_configurations.mesh_config import MeshConfig
 from problems_and_configurations.problems import Problem
@@ -122,12 +123,22 @@ def _resolve_ann_output_paths(
         clip_variant_folder = LES_ANN_UNCLIPPED_FOLDER
 
     base_ann_dir = solver_data_dir / LES_ANN_SAVE_PATH / clip_variant_folder
-    stable_path = base_ann_dir / LES_ANN_STABLE_FOLDER
-    blown_up_path = base_ann_dir / LES_ANN_BLOWN_UP_FOLDER
+    stable_path = base_ann_dir / STABLE_FOLDER
+    blown_up_path = base_ann_dir / BLOWN_UP_FOLDER
 
     stable_path.mkdir(parents=True, exist_ok=True)
     blown_up_path.mkdir(parents=True, exist_ok=True)
 
+    return stable_path, blown_up_path
+
+
+def _resolve_avc_output_paths(solver_data_dir: Path) -> tuple[Path, Path]:
+    """Resolve and create (stable_path, blown_up_path) for the AVC solver."""
+    base_avc_dir = solver_data_dir / LES_AVC_SAVE_PATH
+    stable_path = base_avc_dir / STABLE_FOLDER
+    blown_up_path = base_avc_dir / BLOWN_UP_FOLDER
+    stable_path.mkdir(parents=True, exist_ok=True)
+    blown_up_path.mkdir(parents=True, exist_ok=True)
     return stable_path, blown_up_path
 
 

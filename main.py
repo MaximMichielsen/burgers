@@ -9,18 +9,21 @@ from constants import RUNS_FOLDER
 from ml.data_curation.a_priori_verificiation import run_apriori_verification
 from ml.data_curation.projection import run_projection
 from ml.data_curation.training_data_assembly import run_training_data_assembly
+from ml.ml_agents.corrector import AVCorrector, save_corrector
 from ml.ml_agents.predictor import plot_training_diagnostics, train_predictor
 from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.configurations import (
     build_mesh_config,
     create_ann_config,
     create_solver_configs,
+    _resolve_avc_output_paths,
 )
 from problems_and_configurations.mesh_config import DiscretisationConfig
 from problems_and_configurations.problems import (
     Problem,
     Problems,
 )
+from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_sgsp import BurgersSGSP
 from utils.enegy_evolution_utils import plot_energy_comparison
 from utils.io_utils import read_data
@@ -135,6 +138,11 @@ if pipeline.run_training:
 # ---------------------------------------------------------------------------
 
 if pipeline.run_apriori:
+    if not pipeline.run_training:
+        from ml.ml_agents.predictor import load_predictor
+
+        trained_model = load_predictor(paths.model_output / "sgs_predictor.pt")
+
     trained_model.eval()
 
     def model_predict_fn(x_array: np.ndarray) -> np.ndarray:
@@ -168,7 +176,7 @@ config_ann, les_ann_stable_path, les_ann_blown_up_path = create_ann_config(
     blowup_buffer_size=5_000,
 )
 
-if pipeline.run_coupled:
+if pipeline.run_sgsp:
     solver_ann = BurgersSGSP(
         configuration=config_ann,
         clip_pusuluri=pipeline.clip_pusuluri,
@@ -179,11 +187,119 @@ if pipeline.run_coupled:
     solver_ann.post_processing()
 
 les_ann_data_path = (
-    solver_ann.master_path if pipeline.run_coupled else les_ann_stable_path
+    solver_ann.master_path if pipeline.run_sgsp else les_ann_stable_path
 )
 
 # ---------------------------------------------------------------------------
-# Step 7: Plots
+# Step 7: AVC Training
+# ---------------------------------------------------------------------------
+
+if pipeline.run_sgsp:
+    _, dns_positive_spectrum = solver_ann.get_positive_spectrum(
+        *solver_ann.compute_energy_spectrum(solver_ann.solution)
+    )
+    dns_dissipation_ref = solver_ann.dissipation_history[-1]
+else:
+    buf = np.load(les_ann_stable_path / "buffer_clean_*.npz")
+    dns_positive_spectrum = buf["energy_spectra"][-1]
+    dns_dissipation_ref = float(buf["dissipation_values"][-1])
+
+avc_stable_path, avc_blown_up_path = _resolve_avc_output_paths(paths.solver_data)
+
+n_wavenumber_bins = len(dns_positive_spectrum)
+model = AVCorrector(
+    alpha_max=10 * problem.viscosity,
+    n_wavenumber_bins=n_wavenumber_bins,
+)
+save_corrector(model, paths.model_output / "av_corrector.pt")
+
+config_avc = BurgersAVC.create_avc_config(
+    avc_model_path=paths.model_output / "av_corrector.pt",
+    dns_energy_spectrum=dns_positive_spectrum,
+    dns_dissipation=dns_dissipation_ref,
+    ann_model_path=paths.model_output / "sgs_predictor.pt",
+    normalisation_stats_path=paths.training / "normalisation_stats.npz",
+    blown_up_path=str(avc_blown_up_path),
+    run_objective="avc_run",
+    simulation_mode="avc",
+    **{
+        k: v
+        for k, v in config_ann.items()
+        if k
+        not in (
+            "simulation_mode",
+            "ann_model_path",
+            "normalisation_stats_path",
+            "blown_up_path",
+            "objective",
+            "ann_warmup_steps",
+            "blowup_threshold",
+            "blowup_buffer_size",
+            "run_objective",
+            "master_path",
+        )
+    },
+    master_path=avc_stable_path,
+)
+
+if pipeline.run_avc_online_training:
+    from ml.corrector_training.online_trainer import OnlineAVTrainer, SACConfig, SACAgent, BurgersAVCEnvironment
+
+    sac_config = SACConfig(
+        n_skip_steps=5,
+        warmup_steps=500,
+        batch_size=64,
+    )
+    environment = BurgersAVCEnvironment(
+        solver_config=config_avc,
+        sac_config=sac_config,
+    )
+    sac_agent = SACAgent(
+        av_corrector=model,
+        state_dim=environment.state_dim,
+        sac_config=sac_config,
+    )
+    trainer = OnlineAVTrainer(
+        environment=environment,
+        sac_agent=sac_agent,
+        sac_config=sac_config,
+        output_dir=paths.model_output / "avc_checkpoints",
+    )
+    trainer.train(n_episodes=100)
+
+elif pipeline.run_avc_offline_training:
+    print("offline training not implement!")
+else:
+    print("hello no training")
+
+if pipeline.run_avc_eval:
+    config_avc_trained = {
+        **config_avc,
+        "avc_model_path": str(
+            paths.model_output / "avc_checkpoints" / "av_corrector_final.pt"
+        ),
+    }
+    solver_avc = BurgersAVC(configuration=config_avc_trained)
+    solver_avc.run_simulation()
+    solver_avc.post_processing()
+
+# ---------------------------------------------------------------------------
+# Step 8: AVC Run
+# ---------------------------------------------------------------------------
+
+if pipeline.run_avc:
+    solver_avc = BurgersAVC(configuration=config_avc)
+    solver_avc.run_simulation()
+    solver_avc.post_processing()
+
+les_avc_data_path = (
+    solver_avc.master_path
+    if (pipeline.run_avc or pipeline.run_avc_eval)
+    else avc_stable_path
+)
+
+# ---------------------------------------------------------------------------
+# Step 8: Plots
 # ---------------------------------------------------------------------------
 
 if pipeline.run_plotting:
@@ -198,6 +314,7 @@ if pipeline.run_plotting:
             dns_solution=dns_solution,
             projected_solution=projected_solution,
             les_ann_data_path=les_ann_data_path,
+            les_avc_data_path=les_avc_data_path,
         ),
         output_path=paths.master,
     )

@@ -69,7 +69,6 @@ class BurgersAVC(BurgersSGSP):
     def __init__(
         self,
         configuration: dict,
-        correction_is_global: bool = True,
         correction_is_fixed: bool = False,
         clip_pusuluri: bool = False,
         clip_rajampeta: bool = False,
@@ -103,6 +102,8 @@ class BurgersAVC(BurgersSGSP):
 
         # K = number of positive wavenumber bins used in the MDP state.
         self._n_wavenumber_bins: int = len(self._dns_energy_spectrum)
+
+        self._current_element: tuple[int, int] = (0, 1)  # overwritten each element loop
 
     # ------------------------------------------------------------------ #
     #  Configuration
@@ -188,7 +189,6 @@ class BurgersAVC(BurgersSGSP):
         _, positive_spectrum = self.get_positive_spectrum(
             wavenumbers_all, raw_spectrum_all
         )
-
         # Trim to K bins to match DNS target length.
         spectrum_k = positive_spectrum[: self._n_wavenumber_bins].astype(np.float32)
 
@@ -227,10 +227,10 @@ class BurgersAVC(BurgersSGSP):
         _jacobian_integrand at element-assembly time, so it must be set before
         super().advance_time_step() is called.
         """
-        alpha_output = self._calc_avc_correction()  # shape (1,) or (N,)
+        alpha_output = self._calc_avc_correction()
 
         if self._corrector.correction_mode == "global":
-            self.av_correction = float(alpha_output[0])  # scalar float
+            self.av_correction = float(alpha_output)  # scalar float
         else:
             self.av_correction = alpha_output  # NDArray shape (N,)
 
@@ -255,9 +255,9 @@ class BurgersAVC(BurgersSGSP):
     ) -> float:
         """Weak-form residual integrand with effective viscosity νeff = ν + α."""
         if self._corrector.correction_mode == "global":
-            av_local = self.av_correction  # scalar
+            av_local = self.av_correction
         else:
-            av_local = float(basis @ self.av_correction[i])  # interpolated
+            av_local = float(basis @ self.av_correction[list(self._current_element)])
         time_derivative = basis[i] * (f["u_k"] - f["u_n"]) / self.dt
         diffusion = (self.viscosity + av_local) * mid["du_mid"] * gradient_basis[i]
         advection = basis[i] * mid["u_mid"] * mid["du_mid"]
@@ -273,14 +273,29 @@ class BurgersAVC(BurgersSGSP):
         f: dict[str, float],
     ) -> float:
         """Jacobian integrand with effective viscosity νeff = ν + α."""
+        if self._corrector.correction_mode == "global":
+            av_local = self.av_correction
+        else:
+            av_local = float(basis @ self.av_correction[list(self._current_element)])
         mass = basis[i] * basis[j] / self.dt
-        stiffness = (
-            (self.viscosity + self.av_correction)
-            * gradient_basis[i]
-            * gradient_basis[j]
-        )
+        stiffness = (self.viscosity + av_local) * gradient_basis[i] * gradient_basis[j]
         advection = basis[i] * (basis[j] * f["du_k"] + f["u_k"] * gradient_basis[j])
         return mass + 0.5 * (stiffness + advection)
+
+    # ------------------------------------------------------------------ #
+    #  Element context (needed for local AV interpolation)
+    # ------------------------------------------------------------------ #
+
+    def calculate_elemental_residual_jacobian(
+        self,
+        element: tuple[int, int],
+        u_k: NDArray,
+        u_n: NDArray,
+        f_e: NDArray | None = None,
+    ) -> tuple[NDArray, NDArray]:
+        """Store current element for local AV interpolation, then delegate to super."""
+        self._current_element = element
+        return super().calculate_elemental_residual_jacobian(element, u_k, u_n, f_e)
 
     # ------------------------------------------------------------------ #
     #  Energy drain

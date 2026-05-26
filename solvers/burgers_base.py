@@ -39,7 +39,7 @@ class BurgersBase:
     """
 
     _VALID_SIMULATION_MODES: frozenset[str] = frozenset(
-        {"dns", "no_model", "les", "ann"}
+        {"dns", "no_model", "les", "ann", "avc"}
     )
     _VALID_BC_TYPES: frozenset[str] = frozenset({"dirichlet", "fixed", "periodic"})
 
@@ -49,7 +49,7 @@ class BurgersBase:
         self.simulation_time_elapsed: float = 0.0
         self.domain_length: float = configuration["domain_length"]
         self.dt: float = configuration["time_step"]
-        self.relaxation_factor: float | None = configuration["relax"]
+        self.relaxation_factor: float | None = configuration["relaxation"]
         self.viscosity: float = configuration["viscosity"]
         self.simulation_mode: str = configuration["simulation_mode"]
         self.max_iterations: int = configuration["max_iterations"]
@@ -143,7 +143,7 @@ class BurgersBase:
         """Build and return a solver configuration dictionary."""
         return {
             "simulation_mode": str(simulation_mode),
-            "objective": str(run_objective),
+            "run_objective": str(run_objective),
             "boundary_condition_type": boundary_condition_type,
             "boundary_condition_value": boundary_condition_value,
             "extract_at_times": extract_at_times,
@@ -157,7 +157,7 @@ class BurgersBase:
             "external_forcing": external_forcing,
             "forcing_steady": forcing_steady,
             "max_iterations": max_iterations,
-            "relax": relaxation,
+            "relaxation": relaxation,
             "viscosity": viscosity,
             "master_path": master_path,
         }
@@ -791,9 +791,12 @@ class BurgersBase:
         fu_mean, fu_std = self.moving_stats(first_upd)
         lu_mean, lu_std = self.moving_stats(last_upd)
 
-        sgs_label = {"dns": "DNS", "les": "LES-VMS", "ann": "LES-ANN"}.get(
-            self.simulation_mode, self.simulation_mode
-        )
+        sgs_label = {
+            "dns": "DNS",
+            "les": "LES-VMS",
+            "ann": "LES-ANN",
+            "avc": "LES-AVC",
+        }.get(self.simulation_mode, self.simulation_mode)
 
         fig = plt.figure(figsize=(12, 8))
         gs = fig.add_gridspec(3, 2)

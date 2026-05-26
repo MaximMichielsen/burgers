@@ -12,7 +12,7 @@ from constants import (
     PRE_SPLIT_FOLDER,
     TRAINING_DATA_FOLDER,
     POST_SPLIT_FOLDER,
-    PREDICTOR_AGENT_FOLDER,
+    AGENT_FOLDER,
     A_PRIORI_FOLDER,
 )
 
@@ -27,7 +27,11 @@ class PipelineConfig:
     run_training_assembly: bool = True
     run_training: bool = True
     run_apriori: bool = True
-    run_coupled: bool = True
+    run_sgsp: bool = True
+    run_avc_online_training: bool = True
+    run_avc_offline_training: bool = False if run_avc_online_training else True
+    run_avc_eval: bool = False if not run_avc_offline_training or not run_avc_online_training else True
+    run_avc: bool = True
     run_plotting: bool = True
     clip_pusuluri: bool = False
     clip_rajampeta: bool = False
@@ -74,7 +78,7 @@ class PipelineConfig:
             run_training_assembly=False,
             run_training=False,
             run_apriori=False,
-            run_coupled=True,
+            run_sgsp=True,
             run_plotting=True,
             manual_path=manual_path,
         )
@@ -88,7 +92,7 @@ class PipelineConfig:
             run_training_assembly=False,
             run_training=False,
             run_apriori=False,
-            run_coupled=True,
+            run_sgsp=True,
             run_plotting=True,
             manual_path=manual_path,
             clip_pusuluri=True,
@@ -104,7 +108,7 @@ class PipelineConfig:
             run_training_assembly=False,
             run_training=False,
             run_apriori=False,
-            run_coupled=False,
+            run_sgsp=False,
             run_plotting=True,
             manual_path=manual_path,
         )
@@ -135,7 +139,7 @@ class RunPaths:
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
             projection=master_path / TRAINING_DATA_FOLDER / PRE_SPLIT_FOLDER,
             training=master_path / TRAINING_DATA_FOLDER / POST_SPLIT_FOLDER,
-            model_output=master_path / PREDICTOR_AGENT_FOLDER,
+            model_output=master_path / AGENT_FOLDER,
             apriori=master_path / A_PRIORI_FOLDER,
         )
 

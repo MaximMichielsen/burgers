@@ -14,7 +14,7 @@ The environment wrapper bypasses BurgersAVC's own policy inference by using
 correction_is_fixed=True and setting solver.av_correction externally before
 each advance_time_step call.
 
-SAC is chosen for online training because its entropy regularisation
+SAC is chosen for online training because its entropy regularization
 promotes exploration without manual noise schedules, and its off-policy
 replay buffer makes sample use efficient (Haarnoja et al., 2018).
 
@@ -41,7 +41,7 @@ import torch.optim as optim
 from numpy.typing import NDArray
 from torch import Tensor
 
-from ml_agents.av_corrector import AVCorrector, save_corrector
+from ml.ml_agents.corrector import AVCorrector, save_corrector
 from solvers.burgers_avc import BurgersAVC
 
 logger = logging.getLogger(__name__)
@@ -131,9 +131,7 @@ class ReplayBuffer:
         """Add one transition."""
         self._buffer.append(transition)
 
-    def sample(
-        self, batch_size: int
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def sample(self, batch_size: int) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Return a random minibatch as float32 tensors."""
         indices = np.random.choice(len(self._buffer), size=batch_size, replace=False)
         batch = [self._buffer[idx] for idx in indices]
@@ -607,7 +605,9 @@ class OnlineAVTrainer:
 
                 enough_samples = len(self._replay_buffer) >= self._config.batch_size
                 past_warmup = self._stats.total_env_steps >= self._config.warmup_steps
-                update_due = self._stats.total_env_steps % self._config.update_every == 0
+                update_due = (
+                    self._stats.total_env_steps % self._config.update_every == 0
+                )
 
                 if enough_samples and past_warmup and update_due:
                     for _ in range(self._config.updates_per_step):
