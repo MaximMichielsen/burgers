@@ -42,10 +42,10 @@ pipeline = PipelineConfig.all_stages(manual_path="")
 # Problem and discretisation
 # ---------------------------------------------------------------------------
 
-problem: Problem = Problems.pipeline_test
+problem: Problem = Problems.raj_one
 
 disc_cfg = DiscretisationConfig(
-    n_elements_les=4,
+    n_elements_les=8,
     temporal_refinement=1,
     courant_les=0.01,
     domain_length=problem.domain_length,
@@ -323,6 +323,7 @@ if pipeline.run_plotting:
         les_a_dir=paths.les_a_data,
         les_nm_dir=paths.les_nm_data,
         les_ann_dir=les_ann_data_path,
+        les_avc_dir=les_avc_data_path,
         output_path=paths.master,
         viscosity=problem.viscosity,
         domain_length=problem.domain_length,

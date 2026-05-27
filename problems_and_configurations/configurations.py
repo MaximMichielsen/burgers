@@ -89,8 +89,8 @@ def create_solver_configs(
         domain_timespan=problem_definition.domain_timespan,
         time_step=les_mesh.time_step,
         domain_length=problem_definition.domain_length,
-        convergence_tol_residual=1e-4,
-        convergence_tol_update=1e-4,
+        convergence_tol_residual=1e-3,
+        convergence_tol_update=1e-3,
         max_iterations=20,
         relaxation=None,
         viscosity=problem_definition.viscosity,
@@ -151,7 +151,7 @@ def create_ann_config(
     clip_pusuluri: bool = False,
     clip_rajampeta: bool = False,
     blowup_threshold: float = 1e4,
-    blowup_buffer_size: int = 5_000,
+    blowup_buffer_size: int = 5000,
     ann_warmup_steps: int = 2,
 ) -> tuple[dict, Path, Path]:
     """ANN-coupled LES config built from a pre-resolved MeshConfig.
