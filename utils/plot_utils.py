@@ -8,6 +8,7 @@ import numpy as np
 from matplotlib import animation, pyplot as plt
 from matplotlib.animation import FuncAnimation
 from numpy.typing import NDArray
+from packaging import markers
 
 from pipeline_settings import RunPaths
 from problems_and_configurations.mesh_config import MeshConfig
@@ -36,6 +37,7 @@ def build_plot_configs(
     projected_solution: NDArray,
     les_ann_data_path: Path,
     les_avc_data_path: Path,
+    les_avc_fixed_mean_path: Path,
 ) -> list[SolutionConfig]:
     """Build the five standard solution plot configs for a pipeline run."""
     return [
@@ -84,6 +86,15 @@ def build_plot_configs(
             color="mediumorchid",
             marker="*",
             mesh=les_mesh.mesh,
+        ),
+        SolutionConfig(
+            data_path=les_avc_fixed_mean_path,
+            label="LES - fm-AVC",
+            color="plum",
+            linestyle="--",
+            marker="*",
+            mesh=les_mesh.mesh,
+            alpha=0.6,
         ),
     ]
 

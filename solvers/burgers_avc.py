@@ -337,6 +337,7 @@ class BurgersAVC(BurgersSGSP):
     def post_processing(self) -> None:
         """Standard post-processing plus AVC contribution plots."""
         super().post_processing()
+        print("AV history:", self.av_history)
         if self.av_history:
             self.plot_avc_contributions()
 

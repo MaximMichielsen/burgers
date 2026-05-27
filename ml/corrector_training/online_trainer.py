@@ -18,6 +18,16 @@ SAC is chosen for online training because its entropy regularization
 promotes exploration without manual noise schedules, and its off-policy
 replay buffer makes sample use efficient (Haarnoja et al., 2018).
 
+DNS reference targets
+---------------------
+By default the reward uses a single static DNS spectrum / dissipation value
+(the terminal snapshot, as in the original implementation).  Passing a
+``DNSReferenceSchedule`` via ``BurgersAVCEnvironment.dns_reference_schedule``
+switches to a time-varying reference: the reward at control step n compares
+the LES state against the DNS state at the same physical simulation time,
+which is more meaningful for transient problems where energy decays
+significantly over the simulation window.
+
 References
 ----------
 Haarnoja et al. (2018) "Soft Actor–Critic: Off-Policy Maximum Entropy Deep
@@ -41,6 +51,7 @@ import torch.optim as optim
 from numpy.typing import NDArray
 from torch import Tensor
 
+from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.ml_agents.corrector import AVCorrector, save_corrector
 from solvers.burgers_avc import BurgersAVC
 
@@ -225,12 +236,24 @@ class BurgersAVCEnvironment:
     advance_time_step, bypassing BurgersAVC._add_avc_correction so the
     policy is not called twice during training.
 
+    DNS reference
+    -------------
+    When *dns_reference_schedule* is provided the reward compares the LES
+    state against the DNS spectrum/dissipation interpolated to the *current*
+    solver time.  This is more faithful for transient problems than the
+    default static terminal snapshot.  When ``None``, the original behaviour
+    is preserved: the fixed ``dns_energy_spectrum`` and ``dns_dissipation``
+    values baked into *solver_config* are used.
+
     Parameters
     ----------
     solver_config:
         Config dict from BurgersAVC.create_avc_config.
     sac_config:
         SACConfig with Nₛₖᵢₚ and reward weights.
+    dns_reference_schedule:
+        Optional pre-built DNSReferenceSchedule.  If supplied it overrides
+        the static DNS targets in *solver_config* for reward computation.
     clip_pusuluri, clip_rajampeta, exclude_visc:
         SGS clipping flags forwarded to BurgersAVC.
     """
@@ -239,12 +262,14 @@ class BurgersAVCEnvironment:
         self,
         solver_config: dict,
         sac_config: SACConfig,
+        dns_reference_schedule: DNSReferenceSchedule | None = None,
         clip_pusuluri: bool = False,
         clip_rajampeta: bool = False,
         exclude_visc: bool = True,
     ) -> None:
         self._solver_config = solver_config
         self._sac_config = sac_config
+        self._dns_reference_schedule = dns_reference_schedule
         self._clip_pusuluri = clip_pusuluri
         self._clip_rajampeta = clip_rajampeta
         self._exclude_visc = exclude_visc
@@ -255,8 +280,8 @@ class BurgersAVCEnvironment:
             solver_config["domain_timespan"] / solver_config["time_step"]
         )
 
-        dns_spectrum = np.asarray(solver_config["dns_energy_spectrum"])
-        self.n_wavenumber_bins: int = len(dns_spectrum)
+        dns_spectrum_static = np.asarray(solver_config["dns_energy_spectrum"])
+        self.n_wavenumber_bins: int = len(dns_spectrum_static)
         self.state_dim: int = self.n_wavenumber_bins + 2
 
     def reset(self) -> NDArray:
@@ -308,6 +333,25 @@ class BurgersAVCEnvironment:
 
         return next_state_array, reward_val, done_flag
 
+    def _get_dns_targets(self) -> tuple[NDArray, float]:
+        """Return (dns_spectrum_k, dns_dissipation) for the current solver time.
+
+        Uses the time-varying DNSReferenceSchedule when available, otherwise
+        falls back to the static values stored in the solver config.
+        """
+        assert self._solver is not None
+
+        if self._dns_reference_schedule is not None:
+            current_time = self._solver.simulation_time_elapsed
+            return self._dns_reference_schedule.query(current_time)
+
+        # Static fallback: original terminal-snapshot behaviour.
+        dns_spectrum_static = np.asarray(
+            self._solver_config["dns_energy_spectrum"], dtype=np.float64
+        )
+        dns_dissipation_static = float(self._solver_config["dns_dissipation"])
+        return dns_spectrum_static, dns_dissipation_static
+
     def _compute_reward(self, blown_up: bool) -> float:
         """Compute rₙ from eq. (2.10); large terminal penalty on blow-up."""
         if blown_up:
@@ -322,9 +366,8 @@ class BurgersAVCEnvironment:
             wavenumbers_all, raw_spectrum_all
         )
         spectrum_k = positive_spectrum[: self.n_wavenumber_bins].astype(np.float64)
-        dns_spectrum = np.asarray(
-            self._solver_config["dns_energy_spectrum"], dtype=np.float64
-        )
+
+        dns_spectrum_k, dns_dissipation = self._get_dns_targets()
 
         # Integer wavenumber indices k = 1, …, K (skip DC component k=0).
         wavenumber_indices = np.arange(1, self.n_wavenumber_bins + 1, dtype=np.float64)
@@ -334,7 +377,7 @@ class BurgersAVCEnvironment:
         gamma_exp = self._sac_config.reward_spectral_exponent
 
         compensated_les = wavenumber_indices**gamma_exp * spectrum_k
-        compensated_dns = wavenumber_indices**gamma_exp * dns_spectrum
+        compensated_dns = wavenumber_indices**gamma_exp * dns_spectrum_k
         spectral_penalty = float(
             w_e * np.sum(wavenumber_indices * (compensated_les - compensated_dns) ** 2)
         )
@@ -344,7 +387,6 @@ class BurgersAVCEnvironment:
             if self._solver.dissipation_history
             else 0.0
         )
-        dns_dissipation = float(self._solver_config["dns_dissipation"])
         dissipation_penalty = float(
             w_eps * (current_dissipation - dns_dissipation) ** 2
         )
@@ -563,10 +605,12 @@ class OnlineAVTrainer:
         -------
         TrainingStats with per-episode and per-update diagnostics.
         """
+        using_schedule = self._env._dns_reference_schedule is not None
         print(
             f"\nOnline SAC training — {n_episodes} episodes "
             f"| warmup: {self._config.warmup_steps} steps "
-            f"| Nₛₖᵢₚ: {self._config.n_skip_steps}"
+            f"| Nₛₖᵢₚ: {self._config.n_skip_steps} "
+            f"| DNS ref: {'time-varying' if using_schedule else 'static terminal'}"
         )
         print("-" * 64)
 

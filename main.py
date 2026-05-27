@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from constants import RUNS_FOLDER
+from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.data_curation.a_priori_verificiation import run_apriori_verification
 from ml.data_curation.projection import run_projection
 from ml.data_curation.training_data_assembly import run_training_data_assembly
@@ -42,12 +43,12 @@ pipeline = PipelineConfig.all_stages(manual_path="")
 # Problem and discretisation
 # ---------------------------------------------------------------------------
 
-problem: Problem = Problems.raj_one
+problem: Problem = Problems.raj_three
 
 disc_cfg = DiscretisationConfig(
-    n_elements_les=8,
+    n_elements_les=16,
     temporal_refinement=1,
-    courant_les=0.01,
+    courant_les=0.5,
     domain_length=problem.domain_length,
 )
 
@@ -186,9 +187,7 @@ if pipeline.run_sgsp:
     solver_ann.run_simulation()
     solver_ann.post_processing()
 
-les_ann_data_path = (
-    solver_ann.master_path if pipeline.run_sgsp else les_ann_stable_path
-)
+les_ann_data_path = solver_ann.master_path if pipeline.run_sgsp else les_ann_stable_path
 
 # ---------------------------------------------------------------------------
 # Step 7: AVC Training
@@ -243,16 +242,38 @@ config_avc = BurgersAVC.create_avc_config(
 )
 
 if pipeline.run_avc_online_training:
-    from ml.corrector_training.online_trainer import OnlineAVTrainer, SACConfig, SACAgent, BurgersAVCEnvironment
+    from ml.corrector_training.online_trainer import (
+        BurgersAVCEnvironment,
+        OnlineAVTrainer,
+        SACAgent,
+        SACConfig,
+    )
 
     sac_config = SACConfig(
         n_skip_steps=5,
         warmup_steps=500,
         batch_size=64,
     )
+
+    # Build time-varying DNS reference from the stored DNS snapshot CSVs.
+    # This ensures the reward at control step n compares against the DNS
+    # state at the same physical time, not just the terminal snapshot.
+    dns_reference_schedule = DNSReferenceSchedule.from_directory(
+        dns_dir=paths.dns_data,
+        domain_length=problem.domain_length,
+        viscosity=problem.viscosity,
+        n_wavenumber_bins=n_wavenumber_bins,
+    )
+
+    # dns_reference_schedule.plot_schedule(
+    #     query_times=np.linspace(0, problem.domain_timespan, 10),
+    #     output_path=paths.master / "dns_schedule_preview.png",
+    # )
+
     environment = BurgersAVCEnvironment(
         solver_config=config_avc,
         sac_config=sac_config,
+        dns_reference_schedule=dns_reference_schedule,  # time-varying reference
     )
     sac_agent = SACAgent(
         av_corrector=model,
@@ -265,7 +286,7 @@ if pipeline.run_avc_online_training:
         sac_config=sac_config,
         output_dir=paths.model_output / "avc_checkpoints",
     )
-    trainer.train(n_episodes=100)
+    trainer.train(n_episodes=250)
 
 elif pipeline.run_avc_offline_training:
     print("offline training not implement!")
@@ -284,7 +305,7 @@ if pipeline.run_avc_eval:
     solver_avc.post_processing()
 
 # ---------------------------------------------------------------------------
-# Step 8: AVC Run
+# Step 8a: AVC Run
 # ---------------------------------------------------------------------------
 
 if pipeline.run_avc:
@@ -299,7 +320,36 @@ les_avc_data_path = (
 )
 
 # ---------------------------------------------------------------------------
-# Step 8: Plots
+# Step 8b: Fixed-mean-AV baseline run
+# ---------------------------------------------------------------------------
+
+av_history_values = solver_avc.av_history
+av_mean_value = float(np.mean(av_history_values))
+print(f"Fixed AV baseline: α = {av_mean_value:.6e}  (mean of {len(av_history_values)} steps)")
+
+fixed_av_stable_path = paths.solver_data / "LES_AVC_fixed_mean" / "stable"
+fixed_av_stable_path.mkdir(parents=True, exist_ok=True)
+
+config_avc_fixed_mean = {
+    **config_avc,
+    "master_path": str(fixed_av_stable_path),
+    "run_objective": "avc_fixed_mean_baseline",
+}
+
+solver_avc_fixed_mean = BurgersAVC(
+    configuration=config_avc_fixed_mean,
+    correction_is_fixed=True,   # bypasses policy; holds av_correction constant
+    clip_pusuluri=pipeline.clip_pusuluri,
+    clip_rajampeta=pipeline.clip_rajampeta,
+)
+solver_avc_fixed_mean.av_correction = av_mean_value  # inject mean α before run
+solver_avc_fixed_mean.run_simulation()
+solver_avc_fixed_mean.post_processing()
+
+les_avc_fixed_mean_path = solver_avc_fixed_mean.master_path
+
+# ---------------------------------------------------------------------------
+# Step 9: Plots
 # ---------------------------------------------------------------------------
 
 if pipeline.run_plotting:
@@ -315,6 +365,7 @@ if pipeline.run_plotting:
             projected_solution=projected_solution,
             les_ann_data_path=les_ann_data_path,
             les_avc_data_path=les_avc_data_path,
+            les_avc_fixed_mean_path=les_avc_fixed_mean_path,
         ),
         output_path=paths.master,
     )

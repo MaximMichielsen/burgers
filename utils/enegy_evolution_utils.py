@@ -113,7 +113,7 @@ def plot_energy_comparison(
         "LES-A": (les_a_dir, "royalblue", "--", 1.4),
         "LES-NM": (les_nm_dir, "tab:orange", "-.", 1.4),
         "LES-ANN": (les_ann_dir, "crimson", ":", 1.8),
-        "LES-AVC": (les_avc_dir, "mediumorchid", ":", 1.8)
+        "LES-AVC": (les_avc_dir, "mediumorchid", ":", 1.8),
     }
 
     data: dict = {}

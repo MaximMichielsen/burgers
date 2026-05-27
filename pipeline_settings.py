@@ -30,7 +30,9 @@ class PipelineConfig:
     run_sgsp: bool = True
     run_avc_online_training: bool = True
     run_avc_offline_training: bool = False if run_avc_online_training else True
-    run_avc_eval: bool = False if not run_avc_offline_training or not run_avc_online_training else True
+    run_avc_eval: bool = (
+        False if not run_avc_offline_training or not run_avc_online_training else True
+    )
     run_avc: bool = True
     run_plotting: bool = True
     clip_pusuluri: bool = False
