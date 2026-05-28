@@ -118,7 +118,7 @@ def verify_global_projection(
 def run_projection(
     directory: str | Path,
     bc_mode: str,
-    bc_values: float | tuple[float, float],
+    bc_values: float | int | tuple[float | int, float | int] | None,
     output_dir: str | Path | None = None,
     verify: bool = True,
     les_snapshot_indices: np.ndarray | None = None,
@@ -153,7 +153,7 @@ def run_projection(
     for i, (solution_dns, forcing_dns) in enumerate(zip(solutions_dns, forcings_dns)):
         u_bar, uu_bar = box_filter(solution_dns, ratio=DNS_TO_LES_RATIO, n_les=n_les)
 
-        if enforce_bcs:
+        if enforce_bcs and bc_values is not None:
             u_bar, uu_bar = _enforce_dirichlet_bcs(u_bar, uu_bar, bc_values)
 
         du_dt_bar = (

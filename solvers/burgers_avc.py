@@ -72,7 +72,7 @@ class BurgersAVC(BurgersSGSP):
         correction_is_fixed: bool = False,
         clip_pusuluri: bool = False,
         clip_rajampeta: bool = False,
-        exclude_visc: bool = True,
+        exclude_visc: bool = False,
     ) -> None:
         super().__init__(
             configuration,

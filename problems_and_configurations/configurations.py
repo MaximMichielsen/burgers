@@ -106,7 +106,7 @@ def create_solver_configs(
     return config_dns, config_les_analytical, config_les_no_model
 
 
-def _resolve_ann_output_paths(
+def _resolve_sgsp_output_paths(
     solver_data_dir: Path,
     clip_pusuluri: bool,
     clip_rajampeta: bool,
@@ -122,9 +122,9 @@ def _resolve_ann_output_paths(
     else:
         clip_variant_folder = LES_ANN_UNCLIPPED_FOLDER
 
-    base_ann_dir = solver_data_dir / LES_ANN_SAVE_PATH / clip_variant_folder
-    stable_path = base_ann_dir / STABLE_FOLDER
-    blown_up_path = base_ann_dir / BLOWN_UP_FOLDER
+    base_sgsp_dir = solver_data_dir / LES_ANN_SAVE_PATH / clip_variant_folder
+    stable_path = base_sgsp_dir / STABLE_FOLDER
+    blown_up_path = base_sgsp_dir / BLOWN_UP_FOLDER
 
     stable_path.mkdir(parents=True, exist_ok=True)
     blown_up_path.mkdir(parents=True, exist_ok=True)
@@ -142,17 +142,17 @@ def _resolve_avc_output_paths(solver_data_dir: Path) -> tuple[Path, Path]:
     return stable_path, blown_up_path
 
 
-def create_ann_config(
+def create_sgsp_config(
     problem_definition: Problem,
     les_mesh: MeshConfig,
-    ann_model_path: Path,
+    sgsp_model_path: Path,
     normalisation_stats_path: Path,
     data_dir: Path | str | None = None,
     clip_pusuluri: bool = False,
     clip_rajampeta: bool = False,
     blowup_threshold: float = 1e4,
     blowup_buffer_size: int = 5000,
-    ann_warmup_steps: int = 2,
+    sgsp_warmup_steps: int = 2,
 ) -> tuple[dict, Path, Path]:
     """ANN-coupled LES config built from a pre-resolved MeshConfig.
 
@@ -163,20 +163,20 @@ def create_ann_config(
         int(problem_definition.domain_timespan / les_mesh.time_step),
         les_mesh.time_step,
     )
-    stable_path, blown_up_path = _resolve_ann_output_paths(
+    stable_path, blown_up_path = _resolve_sgsp_output_paths(
         solver_data_dir=Path(data_dir),
         clip_pusuluri=clip_pusuluri,
         clip_rajampeta=clip_rajampeta,
     )
     config = BurgersSGSP.create_sgsp_config(
-        ann_model_path=ann_model_path,
+        sgsp_model_path=sgsp_model_path,
         normalisation_stats_path=normalisation_stats_path,
-        ann_warmup_steps=ann_warmup_steps,
+        sgsp_warmup_steps=sgsp_warmup_steps,
         blowup_threshold=blowup_threshold,
         blowup_buffer_size=blowup_buffer_size,
         blown_up_path=str(blown_up_path),
         initial_condition=les_mesh.initial_solution,
-        simulation_mode="ann",
+        simulation_mode="sgsp",
         run_objective="data_generation",
         node_amount=les_mesh.n_nodes,
         viscosity=problem_definition.viscosity,

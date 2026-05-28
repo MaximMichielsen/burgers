@@ -28,7 +28,9 @@ class Problem:
     external_forcing: Callable | None
     forcing_steady: bool
     boundary_condition_type: str
-    boundary_condition_value: float | NDArray | Callable | None = None
+    boundary_condition_value: float | int | tuple[float | int, float | int] | None = (
+        None
+    )
 
     @property
     def viscosity(self) -> float:

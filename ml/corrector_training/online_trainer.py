@@ -265,7 +265,7 @@ class BurgersAVCEnvironment:
         dns_reference_schedule: DNSReferenceSchedule | None = None,
         clip_pusuluri: bool = False,
         clip_rajampeta: bool = False,
-        exclude_visc: bool = True,
+        exclude_visc: bool = False,
     ) -> None:
         self._solver_config = solver_config
         self._sac_config = sac_config

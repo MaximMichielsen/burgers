@@ -1,8 +1,12 @@
 """Pipeline stage flags and run-ID generation for the Burgers LES pipeline."""
 
 import datetime
-from dataclasses import dataclass
+import time
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from functools import wraps
 from pathlib import Path
+from typing import Callable
 
 from constants import (
     SOLVER_DATA_FOLDER,
@@ -25,9 +29,10 @@ class PipelineConfig:
     run_solvers: bool = True
     run_projection: bool = True
     run_training_assembly: bool = True
-    run_training: bool = True
-    run_apriori: bool = True
+    run_training_sgsp: bool = True
+    verify_apriori: bool = True
     run_sgsp: bool = True
+    debug_sgsp: bool = False
     run_avc_online_training: bool = True
     run_avc_offline_training: bool = False if run_avc_online_training else True
     run_avc_eval: bool = (
@@ -38,6 +43,9 @@ class PipelineConfig:
     clip_pusuluri: bool = False
     clip_rajampeta: bool = False
     manual_path: str = ""
+    _stage_timings: OrderedDict[str, float] = field(
+        default_factory=OrderedDict, init=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         """Validate flag combinations."""
@@ -78,8 +86,8 @@ class PipelineConfig:
             run_solvers=False,
             run_projection=False,
             run_training_assembly=False,
-            run_training=False,
-            run_apriori=False,
+            run_training_sgsp=False,
+            verify_apriori=False,
             run_sgsp=True,
             run_plotting=True,
             manual_path=manual_path,
@@ -92,8 +100,8 @@ class PipelineConfig:
             run_solvers=False,
             run_projection=False,
             run_training_assembly=False,
-            run_training=False,
-            run_apriori=False,
+            run_training_sgsp=False,
+            verify_apriori=False,
             run_sgsp=True,
             run_plotting=True,
             manual_path=manual_path,
@@ -108,12 +116,51 @@ class PipelineConfig:
             run_solvers=False,
             run_projection=False,
             run_training_assembly=False,
-            run_training=False,
-            run_apriori=False,
+            run_training_sgsp=False,
+            verify_apriori=False,
             run_sgsp=False,
             run_plotting=True,
             manual_path=manual_path,
         )
+
+    def stage(self, stage_name: str, enabled: bool = True) -> Callable:
+        """Decorator that times a pipeline stage and stores elapsed seconds.
+
+        Args:
+            stage_name: Human-readable label stored in timing report.
+            enabled: If False, the decorated function is a no-op (skipped stage).
+        """
+
+        def decorator(func: Callable) -> Callable:
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                if not enabled:
+                    print(f"[pipeline] Skipping: {stage_name}")
+                    return None
+                print(f"[pipeline] Starting: {stage_name}")
+                t_start = time.perf_counter()
+                result = func(*args, **kwargs)
+                elapsed_seconds = time.perf_counter() - t_start
+                self._stage_timings[stage_name] = elapsed_seconds
+                print(f"[pipeline] Done:     {stage_name}  ({elapsed_seconds:.2f}s)")
+                return result
+
+            return wrapper
+
+        return decorator
+
+    def report_timings(self) -> None:
+        """Print a formatted timing summary for all completed stages."""
+        total_elapsed = sum(self._stage_timings.values())
+        print("\n" + "=" * 52)
+        print(f"{'Pipeline Stage':<32} {'Time (s)':>10}  {'%':>6}")
+        print("=" * 52)
+        for stage_name, elapsed_seconds in self._stage_timings.items():
+            pct = 100 * elapsed_seconds / total_elapsed if total_elapsed > 0 else 0.0
+            print(f"  {stage_name:<30} {elapsed_seconds:>10.2f}  {pct:>5.1f}%")
+        print("-" * 52)
+        print(f"  {'TOTAL':<30} {total_elapsed:>10.2f}  100.0%")
+        print("=" * 52)
 
 
 @dataclass

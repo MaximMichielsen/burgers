@@ -54,7 +54,7 @@ from solvers.burgers_base import BurgersBase
 
 logger = logging.getLogger(__name__)
 
-_BLOWUP_AMP_THRESHOLD: float = 1e4
+_BLOWUP_AMP_THRESHOLD: float = 1e3
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +127,36 @@ class _BlowupBuffer:
         return len(self.time_values)
 
 
+def diagnose_sgsp_predictions(
+    solver: BurgersSGSP,
+    n_steps: int = 10,
+) -> None:
+    """Run n_steps and print ANN correction statistics per step."""
+    import numpy as np
+
+    for step_idx in range(n_steps):
+        solver.advance_time_step()
+        sgsp_output = solver._compute_sgsp_contribution()
+
+        if sgsp_output is None:
+            print(f"Step {step_idx:03d}: correction=None (warmup)")
+            continue
+
+        col_names = ["cross", "reynolds", "temporal_L", "temporal_R", "viscous"]
+        col_norms = np.abs(sgsp_output).mean(axis=0)  # mean over elements
+        global_norm = np.linalg.norm(sgsp_output)
+
+        print(
+            f"Step {step_idx:03d}: "
+            f"||correction||={global_norm:.3e} | "
+            + " | ".join(f"{name}={val:.3e}" for name, val in zip(col_names, col_norms))
+        )
+
+    # Also print normalisation stats for context
+    print(f"\ny_mean: {solver._y_mean}")
+    print(f"y_std:  {solver._y_std}")
+
+
 # ---------------------------------------------------------------------------
 # Coupled solver
 # ---------------------------------------------------------------------------
@@ -140,9 +170,9 @@ class BurgersSGSP(BurgersBase):
 
     Additional configuration keys
     ------------------------------
-    ann_model_path             : Path to sgs_predictor.pt.
+    sgsp_model_path             : Path to sgs_predictor.pt.
     normalisation_stats_path   : Path to normalisation_stats.npz.
-    ann_warmup_steps           : Pure-Galerkin steps before ANN activation (default 2).
+    sgsp_warmup_steps           : Pure-Galerkin steps before ANN activation (default 2).
     blowup_threshold           : Amplitude above which blow-up is declared (default 1e4).
     blowup_buffer_size         : Rolling window size for history buffer (default 5000).
     blown_up_path              : Output directory on blow-up; falls back to master_path.
@@ -153,7 +183,7 @@ class BurgersSGSP(BurgersBase):
         configuration: dict,
         clip_pusuluri: bool = False,
         clip_rajampeta: bool = False,
-        exclude_visc: bool = True,
+        exclude_visc: bool = False,
         sigma_multiplier: float = 3.0,
     ) -> None:
         super().__init__(configuration)
@@ -161,8 +191,8 @@ class BurgersSGSP(BurgersBase):
         if clip_rajampeta and not clip_pusuluri:
             raise ValueError("clip_rajampeta requires clip_pusuluri to be enabled.")
 
-        ann_model_path = Path(configuration["ann_model_path"])
-        self._predictor: SGSPredictor = load_predictor(ann_model_path)
+        sgsp_model_path = Path(configuration["sgsp_model_path"])
+        self._predictor: SGSPredictor = load_predictor(sgsp_model_path)
         self._predictor.eval()
 
         norm_data = np.load(Path(configuration["normalisation_stats_path"]))
@@ -175,7 +205,7 @@ class BurgersSGSP(BurgersBase):
         self._du_bar_dt_history: list[NDArray] = []
         self._forcing_history: list[NDArray] = []
 
-        self._ann_warmup_steps: int = int(configuration.get("ann_warmup_steps", 2))
+        self._sgsp_warmup_steps: int = int(configuration.get("sgsp_warmup_steps", 2))
         self._step_count: int = 0
         self._grad_basis: NDArray = _gradient_basis_functions(self.element_size)
 
@@ -206,9 +236,9 @@ class BurgersSGSP(BurgersBase):
 
     @staticmethod
     def create_sgsp_config(
-        ann_model_path: str | Path,
+        sgsp_model_path: str | Path,
         normalisation_stats_path: str | Path,
-        ann_warmup_steps: int = 2,
+        sgsp_warmup_steps: int = 2,
         blowup_threshold: float = _BLOWUP_AMP_THRESHOLD,
         blowup_buffer_size: int = 5_000,
         blown_up_path: str | None = None,
@@ -218,10 +248,10 @@ class BurgersSGSP(BurgersBase):
         base_config = BurgersBase.create_config(**base_config_kwargs)
         base_config.update(
             {
-                "simulation_mode": "ann",
-                "ann_model_path": str(ann_model_path),
+                "simulation_mode": "sgsp",
+                "sgsp_model_path": str(sgsp_model_path),
                 "normalisation_stats_path": str(normalisation_stats_path),
-                "ann_warmup_steps": ann_warmup_steps,
+                "sgsp_warmup_steps": sgsp_warmup_steps,
                 "blowup_threshold": blowup_threshold,
                 "blowup_buffer_size": blowup_buffer_size,
             }
@@ -388,7 +418,7 @@ class BurgersSGSP(BurgersBase):
 
     def nr_iteration(self, solution: NDArray) -> NDArray:
         """NR iteration with frozen ANN correction added to the global residual."""
-        ann_correction: NDArray | None = self._compute_ann_contribution()
+        sgsp_correction: NDArray | None = self._compute_sgsp_contribution()
 
         solution_n = solution.copy()
         solution_k = solution.copy()
@@ -418,9 +448,9 @@ class BurgersSGSP(BurgersBase):
                     elemental_residuals, elemental_jacobians
                 )
 
-            if ann_correction is not None:
-                global_residual = self._add_ann_contribution_to_residual(
-                    global_residual, ann_correction
+            if sgsp_correction is not None:
+                global_residual = self._add_sgsp_contribution_to_residual(
+                    global_residual, sgsp_correction
                 )
 
             global_residual, global_jacobian = self._apply_boundary_conditions(
@@ -459,13 +489,13 @@ class BurgersSGSP(BurgersBase):
     #  SGS_ANN helpers
     # ------------------------------------------------------------------ #
 
-    def _compute_ann_contribution(self) -> NDArray | None:
+    def _compute_sgsp_contribution(self) -> NDArray | None:
         """Build element input stencils and run a batched ANN forward pass.
 
         Returns (n_elements, 5) array of interaction terms, or None during warm-up.
         Columns: [cross, Reynolds, temporal_L, temporal_R, viscous].
         """
-        if self._step_count < self._ann_warmup_steps or len(self._u_bar_history) < 3:
+        if self._step_count < self._sgsp_warmup_steps or len(self._u_bar_history) < 3:
             return None
 
         input_rows: list[NDArray] = []
@@ -497,7 +527,9 @@ class BurgersSGSP(BurgersBase):
         if self.clip_pusuluri:
             y_phys = np.clip(y_phys, self._y_lower_bound, self._y_upper_bound)
 
-        ann_correction_all = np.zeros((self.n_elements, OUTPUT_UNITS), dtype=np.float64)
+        sgsp_correction_all = np.zeros(
+            (self.n_elements, OUTPUT_UNITS), dtype=np.float64
+        )
         for local_idx, elem_idx in enumerate(valid_element_indices):
             y_elem = y_phys[local_idx].copy()
 
@@ -517,14 +549,14 @@ class BurgersSGSP(BurgersBase):
             if self.exclude_visc:
                 y_elem[4] = 0.0
 
-            ann_correction_all[elem_idx] = y_elem
+            sgsp_correction_all[elem_idx] = y_elem
 
-        return ann_correction_all
+        return sgsp_correction_all
 
-    def _add_ann_contribution_to_residual(
+    def _add_sgsp_contribution_to_residual(
         self,
         global_residual: NDArray,
-        ann_correction: NDArray,
+        sgsp_correction: NDArray,
     ) -> NDArray:
         """Scatter per-element ANN predictions into the global residual.
 
@@ -533,17 +565,17 @@ class BurgersSGSP(BurgersBase):
         magnitude, opposite sign at left/right nodes). Temporal terms
         integrate against their respective shape functions directly.
         """
-        if not np.all(np.isfinite(ann_correction)):
+        if not np.all(np.isfinite(sgsp_correction)):
             return global_residual
 
         residual_modified = global_residual.copy()
         for elem_idx, element in enumerate(self.elements):
             node_left, node_right = int(element[0]), int(element[1])
-            cross_val = ann_correction[elem_idx, 0]
-            reynolds_val = ann_correction[elem_idx, 1]
-            temporal_left_val = ann_correction[elem_idx, 2]
-            temporal_right_val = ann_correction[elem_idx, 3]
-            viscous_val = ann_correction[elem_idx, 4]
+            cross_val = sgsp_correction[elem_idx, 0]
+            reynolds_val = sgsp_correction[elem_idx, 1]
+            temporal_left_val = sgsp_correction[elem_idx, 2]
+            temporal_right_val = sgsp_correction[elem_idx, 3]
+            viscous_val = sgsp_correction[elem_idx, 4]
 
             spatial_sum = cross_val + reynolds_val + viscous_val
             residual_modified[node_left] += spatial_sum - temporal_left_val

@@ -82,6 +82,8 @@ class AVCorrector(nn.Module):
             nn.Linear(hidden_dim, output_dim),
         )
 
+        # TODO: rethink this whole alpha max thing
+
     def forward(self, state_input: Tensor) -> Tensor:
         """Returns shape (batch, 1) for global or (batch, N) for local."""
         return self.alpha_max * torch.sigmoid(self.network(state_input))

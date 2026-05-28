@@ -35,7 +35,7 @@ def build_plot_configs(
     les_mesh: MeshConfig,
     dns_solution: NDArray,
     projected_solution: NDArray,
-    les_ann_data_path: Path,
+    les_sgsp_data_path: Path,
     les_avc_data_path: Path,
     les_avc_fixed_mean_path: Path,
 ) -> list[SolutionConfig]:
@@ -74,8 +74,8 @@ def build_plot_configs(
             solution=projected_solution,
         ),
         SolutionConfig(
-            data_path=les_ann_data_path,
-            label="LES - ANN",
+            data_path=les_sgsp_data_path,
+            label="LES - SGSP",
             color="salmon",
             marker="d",
             mesh=les_mesh.mesh,

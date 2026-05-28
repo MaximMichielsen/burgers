@@ -5,7 +5,7 @@ Simulation modes
 dns      - Pure Galerkin, no SGS model.
 no_model - Same as dns; use when solver settings are coarse (LES-like).
 les      - Galerkin + analytic VMS/SGS stabilisation (τ-based).
-ann      - Galerkin + ANN-predicted SGS corrections; analytic VMS disabled.
+sgsp      - Galerkin + ANN-predicted SGS corrections; analytic VMS disabled.
 """
 
 import csv
@@ -39,7 +39,7 @@ class BurgersBase:
     """
 
     _VALID_SIMULATION_MODES: frozenset[str] = frozenset(
-        {"dns", "no_model", "les", "ann", "avc"}
+        {"dns", "no_model", "les", "sgsp", "avc"}
     )
     _VALID_BC_TYPES: frozenset[str] = frozenset({"dirichlet", "fixed", "periodic"})
 
@@ -566,9 +566,9 @@ class BurgersBase:
         return self.simulation_mode == "les"
 
     @property
-    def _use_ann(self) -> bool:
-        """True only for ANN-coupled mode (ann)."""
-        return self.simulation_mode == "ann"
+    def _use_sgsp(self) -> bool:
+        """True only for ANN-coupled mode (sgsp)."""
+        return self.simulation_mode == "sgsp"
 
     @property
     def total_convergence_history(self) -> tuple[NDArray, NDArray]:
@@ -794,7 +794,7 @@ class BurgersBase:
         sgs_label = {
             "dns": "DNS",
             "les": "LES-VMS",
-            "ann": "LES-ANN",
+            "sgsp": "LES-SGSP",
             "avc": "LES-AVC",
         }.get(self.simulation_mode, self.simulation_mode)
 

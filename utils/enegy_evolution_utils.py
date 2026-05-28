@@ -98,7 +98,7 @@ def plot_energy_comparison(
     dns_dir: Path,
     les_a_dir: Path,
     les_nm_dir: Path,
-    les_ann_dir: Path,
+    les_sgsp_dir: Path,
     les_avc_dir: Path,
     output_path: Path,
     viscosity: float = 0.01,
@@ -112,7 +112,7 @@ def plot_energy_comparison(
         "DNS": (dns_dir, "dimgray", "-", 1.8),
         "LES-A": (les_a_dir, "royalblue", "--", 1.4),
         "LES-NM": (les_nm_dir, "tab:orange", "-.", 1.4),
-        "LES-ANN": (les_ann_dir, "crimson", ":", 1.8),
+        "LES-SGSP": (les_sgsp_dir, "crimson", ":", 1.8),
         "LES-AVC": (les_avc_dir, "mediumorchid", ":", 1.8),
     }
 
