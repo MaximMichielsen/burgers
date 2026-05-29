@@ -14,6 +14,8 @@ from pipeline_settings import RunPaths
 from problems_and_configurations.mesh_config import MeshConfig
 from utils.io_utils import read_data
 
+import re
+
 
 @dataclass
 class SolutionConfig:
@@ -99,6 +101,34 @@ def build_plot_configs(
     ]
 
 
+def _infer_final_time_from_directory(data_path: Path | None) -> float | None:
+    """Parse the highest t-value from sol_t*.csv filenames in data_path."""
+    if data_path is None or not data_path.exists():
+        return None
+    time_values: list[float] = []
+    for csv_file in data_path.glob("sol_t*.csv"):
+        match = re.search(r"sol_t([\d.]+)\.csv", csv_file.name)
+        if match:
+            time_values.append(float(match.group(1)))
+    return max(time_values) if time_values else None
+
+
+# Labels for which a final-time annotation is appended.
+_TIME_ANNOTATED_LABEL_SUBSTRINGS: frozenset[str] = frozenset(
+    {"LES - A", "LES - SGSP", "LES - AVC", "LES - fm-AVC"}
+)
+
+
+def _build_legend_label(base_label: str, final_time: float | None) -> str:
+    """Append (t=…) to labels that benefit from a final-time annotation."""
+    should_annotate = any(
+        substring in base_label for substring in _TIME_ANNOTATED_LABEL_SUBSTRINGS
+    )
+    if should_annotate and final_time is not None:
+        return f"{base_label} (t={final_time:.4f})"
+    return base_label
+
+
 def plot_solution_comparison(
     configs: list[SolutionConfig],
     output_path: Path,
@@ -112,23 +142,47 @@ def plot_solution_comparison(
     """Plot and save a comparison of multiple solver solutions."""
     fig, ax = plt.subplots(figsize=figsize)
 
+    # node_count → first cfg label at that size, for subtitle construction.
+    node_count_labels: dict[int, str] = {}
+
     for cfg in configs:
         mesh = cfg.mesh
         solution = cfg.solution
         if mesh is None or solution is None:
             solution, mesh = read_data(directory=cfg.data_path, final_only=True)
 
+        node_count_labels.setdefault(len(mesh), cfg.label)
+
+        final_time = _infer_final_time_from_directory(cfg.data_path)
+        legend_label = _build_legend_label(cfg.label, final_time)
+
+        should_annotate = any(
+            substring in cfg.label for substring in _TIME_ANNOTATED_LABEL_SUBSTRINGS
+        )
+        legend_label = (
+            f"{cfg.label} (t={final_time:.4f})"
+            if should_annotate and final_time is not None
+            else cfg.label
+        )
+
         ax.plot(
             mesh,
             solution,
-            label=f"{cfg.label} ({len(mesh)})",
+            label=legend_label,
             color=cfg.color,
             linestyle=cfg.linestyle,
             marker=cfg.marker,
             alpha=cfg.alpha,
         )
 
-    ax.set_title(title)
+    # Subtitle: "DNS: 1025 nodes  |  LES: 17 nodes" (sorted large → small).
+    subtitle_parts = [
+        f"{'DNS' if count == max(node_count_labels) else 'LES'}: {count} nodes"
+        for count in sorted(node_count_labels, reverse=True)
+    ]
+    full_title = f"{title}\n{'  |  '.join(subtitle_parts)}"
+
+    ax.set_title(full_title, linespacing=1.5)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.grid(True, which="both", linestyle=":", alpha=0.5)

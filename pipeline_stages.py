@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
+from constants import AVC_EPOCHS
 from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.data_curation.a_priori_verificiation import run_apriori_verification
 from ml.data_curation.projection import run_projection
@@ -256,7 +257,7 @@ def register_stages(
             sac_config=sac_config,
             output_dir=paths.model_output / "avc_checkpoints",
         )
-        trainer.train(n_episodes=250)
+        trainer.train(n_episodes=AVC_EPOCHS)
 
         if pipeline.run_avc_eval:
             config_avc_trained = {

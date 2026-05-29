@@ -103,7 +103,9 @@ paths.projection.mkdir(parents=True, exist_ok=True)
 
 pipeline.run_solvers_stage()  # DNS data is created here
 
-if pipeline.run_projection and not paths.dns_data.exists():  # ← after solvers, gated on projection
+if (
+    pipeline.run_projection and not paths.dns_data.exists()
+):  # ← after solvers, gated on projection
     raise FileNotFoundError(f"DNS data not found at: {paths.dns_data}")
 
 pipeline.run_projection_stage()
@@ -154,7 +156,7 @@ if pipeline.run_sgsp and pipeline.debug_sgsp:
 # Step 7
 # ---------------------------------------------------------------------------
 
-config_avc, avc_stable_path = pipeline.run_avc_training(solver_sgsp)
+config_avc, avc_stable_path = pipeline.run_avc_training(solver_sgsp=solver_sgsp)
 
 # ---------------------------------------------------------------------------
 # Step 8a
@@ -186,7 +188,11 @@ fixed_av_stable_path = paths.solver_data / "LES_AVC_fixed_mean" / "stable"
 fixed_av_stable_path.mkdir(parents=True, exist_ok=True)
 
 config_avc_fixed_mean: dict | None = (
-    {**config_avc, "master_path": str(fixed_av_stable_path), "run_objective": "avc_fixed_mean_baseline"}
+    {
+        **config_avc,
+        "master_path": str(fixed_av_stable_path),
+        "run_objective": "avc_fixed_mean_baseline",
+    }
     if pipeline.run_avc and config_avc is not None
     else None
 )
@@ -201,6 +207,10 @@ les_avc_fixed_mean_path = (
 )
 
 # ---------------------------------------------------------------------------
+# Save timings to txt.
+# ---------------------------------------------------------------------------
+pipeline.report_timings(output_path=master_path)
+# ---------------------------------------------------------------------------
 # Step 9: Plots
 # ---------------------------------------------------------------------------
 
@@ -208,19 +218,37 @@ if pipeline.run_plotting:
     dns_solution, _ = read_data(directory=paths.dns_data, final_only=True)
     projected_solution = np.load(paths.projection / "solutions_projection.npy")[-1]
 
-    plot_solution_comparison(
-        configs=build_plot_configs(
-            paths=paths,
-            dns_mesh=dns_mesh_cfg,
-            les_mesh=les_mesh_cfg,
-            dns_solution=dns_solution,
-            projected_solution=projected_solution,
-            les_sgsp_data_path=les_sgsp_data_path,
-            les_avc_data_path=les_avc_data_path,
-            les_avc_fixed_mean_path=les_avc_fixed_mean_path,
-        ),
-        output_path=paths.master,
+    plot_configs_all = build_plot_configs(
+        paths=paths,
+        dns_mesh=dns_mesh_cfg,
+        les_mesh=les_mesh_cfg,
+        dns_solution=dns_solution,
+        projected_solution=projected_solution,
+        les_sgsp_data_path=les_sgsp_data_path,
+        les_avc_data_path=les_avc_data_path,
+        les_avc_fixed_mean_path=les_avc_fixed_mean_path,
     )
+
+    # Full comparison including SGSP (may be unreadable if blown up).
+    plot_solution_comparison(
+        configs=plot_configs_all,
+        output_path=paths.master,
+        filename="comparison_solvers.png",
+    )
+
+    # SGSP-excluded comparison for readability when SGSP has blown up.
+    plot_configs_no_sgsp = [
+        cfg
+        for cfg in plot_configs_all
+        if "SGSP" not in cfg.label and "ANN" not in cfg.label
+    ]
+    plot_solution_comparison(
+        configs=plot_configs_no_sgsp,
+        output_path=paths.master,
+        filename="comparison_solvers_no_sgsp.png",
+        title="Comparison of DNS and LES Solutions (excl. SGSP)",
+    )
+
     plot_energy_comparison(
         dns_dir=paths.dns_data,
         les_a_dir=paths.les_a_data,
@@ -231,5 +259,3 @@ if pipeline.run_plotting:
         viscosity=problem.viscosity,
         domain_length=problem.domain_length,
     )
-
-pipeline.report_timings()

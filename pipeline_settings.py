@@ -20,6 +20,13 @@ from constants import (
     A_PRIORI_FOLDER,
 )
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ml.ml_agents.predictor import SGSPredictor
+    from solvers.burgers_avc import BurgersAVC
+    from solvers.burgers_sgsp import BurgersSGSP
+
 
 @dataclass
 class PipelineConfig:
@@ -45,6 +52,34 @@ class PipelineConfig:
     manual_path: str = ""
     _stage_timings: OrderedDict[str, float] = field(
         default_factory=OrderedDict, init=False, repr=False
+    )
+
+    run_solvers_stage: Callable[[], None] | None = field(
+        default=None, init=False, repr=False
+    )
+    run_projection_stage: Callable[[], None] | None = field(
+        default=None, init=False, repr=False
+    )
+    run_sgsp_training_assembly: Callable[[], None] | None = field(
+        default=None, init=False, repr=False
+    )
+    run_sgsp_training: Callable[[], SGSPredictor | None] | None = field(
+        default=None, init=False, repr=False
+    )
+    verify_sgsp_apriori: Callable[[SGSPredictor | None], None] | None = field(
+        default=None, init=False, repr=False
+    )
+    run_sgsp_model: Callable[[], BurgersSGSP | None] | None = field(
+        default=None, init=False, repr=False
+    )
+    run_avc_training: Callable[[BurgersSGSP], tuple[dict, Path] | None] | None = field(
+        default=None, init=False, repr=False
+    )
+    run_avc_model: Callable[[dict], BurgersAVC | None] | None = field(
+        default=None, init=False, repr=False
+    )
+    run_fixed_av_baseline: Callable[[dict, float], BurgersAVC | None] | None = field(
+        default=None, init=False, repr=False
     )
 
     def __post_init__(self) -> None:
@@ -149,18 +184,31 @@ class PipelineConfig:
 
         return decorator
 
-    def report_timings(self) -> None:
-        """Print a formatted timing summary for all completed stages."""
+    def report_timings(self, output_path: Path | None = None) -> None:
+        """Write a formatted timing summary to a .txt file (and print to stdout)."""
         total_elapsed = sum(self._stage_timings.values())
-        print("\n" + "=" * 52)
-        print(f"{'Pipeline Stage':<32} {'Time (s)':>10}  {'%':>6}")
-        print("=" * 52)
+
+        lines: list[str] = [
+            "=" * 52,
+            f"{'Pipeline Stage':<32} {'Time (s)':>10}  {'%':>6}",
+            "=" * 52,
+        ]
         for stage_name, elapsed_seconds in self._stage_timings.items():
             pct = 100 * elapsed_seconds / total_elapsed if total_elapsed > 0 else 0.0
-            print(f"  {stage_name:<30} {elapsed_seconds:>10.2f}  {pct:>5.1f}%")
-        print("-" * 52)
-        print(f"  {'TOTAL':<30} {total_elapsed:>10.2f}  100.0%")
-        print("=" * 52)
+            lines.append(f"  {stage_name:<30} {elapsed_seconds:>10.2f}  {pct:>5.1f}%")
+        lines += [
+            "-" * 52,
+            f"  {'TOTAL':<30} {total_elapsed:>10.2f}  100.0%",
+            "=" * 52,
+        ]
+
+        report_text = "\n".join(lines)
+        print("\n" + report_text)
+
+        resolved_path: Path | None = output_path or getattr(self, "_master_path", None)
+        if resolved_path is not None:
+            timing_file_path = Path(resolved_path) / "pipeline_timings.txt"
+            timing_file_path.write_text(report_text + "\n", encoding="utf-8")
 
 
 @dataclass
