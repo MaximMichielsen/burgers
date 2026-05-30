@@ -19,7 +19,7 @@ from ml.ml_agents.predictor import (
 )
 from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.configurations import _resolve_avc_output_paths
-from problems_and_configurations.mesh_config import MeshConfig
+from problems_and_configurations.mesh_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
 from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_sgsp import BurgersSGSP
@@ -30,8 +30,7 @@ def register_stages(
     pipeline: PipelineConfig,
     paths: RunPaths,
     problem: Problem,
-    disc_cfg,
-    les_mesh_cfg: MeshConfig,
+    disc_cfg: DiscretisationConfig,
     config_dns: dict,
     config_les: dict,
     config_les_no_model: dict,
@@ -92,8 +91,8 @@ def register_stages(
         run_training_data_assembly(
             projection_path=paths.projection,
             output_dir=paths.training,
-            dt=les_mesh_cfg.time_step,
-            element_size=les_mesh_cfg.element_size,
+            dt=disc_cfg.dt_les,
+            element_size=disc_cfg.element_size_les,
         )
 
     pipeline.run_sgsp_training_assembly = run_sgsp_training_assembly
@@ -147,9 +146,9 @@ def register_stages(
             data_dir=paths.training,
             output_dir=paths.apriori,
             domain_length=problem.domain_length,
-            dt=les_mesh_cfg.time_step,
+            dt=disc_cfg.dt_les,
             dataset_label="Validation",
-            n_elements=les_mesh_cfg.n_nodes - 1,
+            n_elements=disc_cfg.n_elements_les,
         )
 
     pipeline.verify_sgsp_apriori = verify_sgsp_apriori
@@ -234,7 +233,7 @@ def register_stages(
             master_path=avc_stable_path_local,
         )
 
-        sac_config = SACConfig(n_skip_steps=5, warmup_steps=500, batch_size=64)
+        sac_config = SACConfig(n_skip_steps=5, warmup_steps=100, batch_size=64)
         dns_reference_schedule = DNSReferenceSchedule.from_directory(
             dns_dir=paths.dns_data,
             domain_length=problem.domain_length,

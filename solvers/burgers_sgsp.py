@@ -44,7 +44,7 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
 
-from constants import OUTPUT_UNITS
+from constants import OUTPUT_UNITS, BLOWUP_BUFFER_SIZE, BLOWUP_THRESHOLD
 from ml.data_curation.training_data_assembly import (
     _gradient_basis_functions,
     build_input_stencil,
@@ -53,8 +53,6 @@ from ml.ml_agents.predictor import SGSPredictor, load_predictor
 from solvers.burgers_base import BurgersBase
 
 logger = logging.getLogger(__name__)
-
-_BLOWUP_AMP_THRESHOLD: float = 1e3
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +130,6 @@ def diagnose_sgsp_predictions(
     n_steps: int = 10,
 ) -> None:
     """Run n_steps and print ANN correction statistics per step."""
-    import numpy as np
 
     for step_idx in range(n_steps):
         solver.advance_time_step()
@@ -152,7 +149,7 @@ def diagnose_sgsp_predictions(
             + " | ".join(f"{name}={val:.3e}" for name, val in zip(col_names, col_norms))
         )
 
-    # Also print normalisation stats for context
+    # Also print normalization stats for context
     print(f"\ny_mean: {solver._y_mean}")
     print(f"y_std:  {solver._y_std}")
 
@@ -218,11 +215,12 @@ class BurgersSGSP(BurgersBase):
             self._y_upper_bound: NDArray = self._y_mean + sigma_multiplier * self._y_std
 
         self._blowup_threshold: float = float(
-            configuration.get("blowup_threshold", _BLOWUP_AMP_THRESHOLD)
+            configuration.get("blowup_threshold", BLOWUP_THRESHOLD)
         )
         self._blowup_buffer: _BlowupBuffer = _BlowupBuffer(
-            max_steps=int(configuration.get("blowup_buffer_size", 5_000))
+            max_steps=int(configuration.get("blowup_buffer_size", BLOWUP_BUFFER_SIZE))
         )
+
         self._artificial_viscosity_prev: float = 0.0
 
         blown_up_str: str | None = configuration.get("blown_up_path")
@@ -239,7 +237,7 @@ class BurgersSGSP(BurgersBase):
         sgsp_model_path: str | Path,
         normalisation_stats_path: str | Path,
         sgsp_warmup_steps: int = 2,
-        blowup_threshold: float = _BLOWUP_AMP_THRESHOLD,
+        blowup_threshold: float = BLOWUP_THRESHOLD,
         blowup_buffer_size: int = 5_000,
         blown_up_path: str | None = None,
         **base_config_kwargs,
@@ -283,7 +281,22 @@ class BurgersSGSP(BurgersBase):
                     for time_step_idx in range(total_steps):
                         self.time_steps.append(time_step_idx)
                         step_start = perf_counter()
-                        self.advance_time_step()
+
+                        step_ok = self.advance_time_step()
+                        if not step_ok:
+                            blowup_detected = True
+                            logger.warning(
+                                "Blow-up termination at t=%.6f",
+                                self.simulation_time_elapsed,
+                            )
+                            if self.time_steps:
+                                self.time_steps.pop()
+                            if self.energy_history:
+                                self.energy_history.pop()
+                            if self.dissipation_history:
+                                self.dissipation_history.pop()
+                            break
+
                         idx_extract = self._maybe_extract_solution(idx_extract)
                         pbar.set_description(
                             f"Eating Burgers | {self.throbber(time_step_idx)}"
@@ -297,7 +310,7 @@ class BurgersSGSP(BurgersBase):
                             }
                         )
 
-                if self.extract_at_times is not None:
+                if not blowup_detected and self.extract_at_times is not None:
                     while idx_extract < len(self.extract_at_times):
                         self.extracted_solutions.append(self.solution.copy())
                         self.extracted_forcings.append(
@@ -333,7 +346,10 @@ class BurgersSGSP(BurgersBase):
                 self.master_path = self._blown_up_path
             if self.write_solutions:
                 self.write_config_to_json()
-                self.write_solution_to_csv()
+                if not blowup_detected:
+                    self.write_solution_to_csv()
+                else:
+                    self._write_blowup_solutions_to_csv()
             if len(self._blowup_buffer) > 0:
                 self._save_blowup_buffer(label="blowup" if blowup_detected else "clean")
 
@@ -341,25 +357,38 @@ class BurgersSGSP(BurgersBase):
     #  advance_time_step — lagged history + blow-up detection
     # ------------------------------------------------------------------ #
 
-    def advance_time_step(self) -> None:
-        """Check for blow-up, advance one step, and update lagged history."""
+    def advance_time_step(self) -> bool:
+        """Advance one step; return False if blow-up detected, True otherwise.
+
+        Replaces RuntimeError raises so direct callers (e.g. diagnostics) don't crash.
+        """
         if self._detect_blowup(self.solution):
-            raise RuntimeError(
-                f"Blow-up detected at t={self.simulation_time_elapsed:.6f} (pre-step): "
-                f"max|u|={np.max(np.abs(self.solution)):.4e} > threshold {self._blowup_threshold:.4e}"
+            logger.warning(
+                "Blow-up detected at t=%.6f (pre-step): max|u|=%.4e > threshold %.4e",
+                self.simulation_time_elapsed,
+                np.max(np.abs(self.solution)),
+                self._blowup_threshold,
             )
+            return False
 
         super().advance_time_step()
 
         if self._detect_blowup(self.solution):
-            raise RuntimeError(
-                f"Blow-up detected at t={self.simulation_time_elapsed:.6f} (post-step): "
-                f"max|u|={np.max(np.abs(self.solution)):.4e} > threshold {self._blowup_threshold:.4e}"
+            logger.warning(
+                "Blow-up detected at t=%.6f (post-step): max|u|=%.4e > threshold %.4e",
+                self.simulation_time_elapsed,
+                np.max(np.abs(self.solution)),
+                self._blowup_threshold,
             )
+            self._update_lagged_history()
+            self._step_count += 1
+            self._record_buffer_step()
+            return False
 
         self._update_lagged_history()
         self._step_count += 1
         self._record_buffer_step()
+        return True
 
     def _update_lagged_history(self) -> None:
         """Maintain the 3-level (t^n, t^{n-1}, t^{n-2}) solution history."""
@@ -699,6 +728,18 @@ class BurgersSGSP(BurgersBase):
                     )
 
         logger.info("Saved %d final-step CSVs to %s", n_to_write, self.master_path)
+
+    def _write_blowup_solutions_to_csv(self) -> None:
+        """Write only the snapshots collected before blow-up, skipping NaN padding."""
+        if not self.extracted_solutions:
+            print(
+                f"wrote 0 snapshots (blown up before first extraction) at {self.master_path}"
+            )
+            return
+        self.write_solution_to_csv()
+        print(
+            f"wrote {len(self.extracted_solutions)} pre-blowup snapshots at {self.master_path}"
+        )
 
     # ------------------------------------------------------------------ #
     #  Post-processing

@@ -106,7 +106,7 @@ class SACConfig:
     lr_alpha_temp: float = 3e-4
     replay_capacity: int = 100_000
     batch_size: int = 256
-    warmup_steps: int = 1_000
+    warmup_steps: int = 100
     update_every: int = 1
     updates_per_step: int = 1
     target_entropy: float = -1.0
@@ -297,33 +297,16 @@ class BurgersAVCEnvironment:
         return self._solver._create_avc_input_stencil()
 
     def step(self, alpha_action: float) -> tuple[NDArray, float, bool]:
-        """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done).
-
-        Parameters
-        ----------
-        alpha_action:
-            Scalar AV value αₙ ∈ [0, αₘₐₓ] chosen by the policy.
-
-        Returns
-        -------
-        next_state:
-            sₙ₊₁ built from the resolved field after Nₛₖᵢₚ steps.
-        reward:
-            Scalar rₙ from eq. (2.10); large negative on blow-up.
-        done:
-            True when the episode ends (time horizon or blow-up).
-        """
+        """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done)."""
         assert self._solver is not None, "Call reset() before step()."
 
-        # Inject αₙ — _residual_integrand reads self.av_correction at assembly.
         self._solver.av_correction = float(alpha_action)
 
         blown_up = False
         for _ in range(self._sac_config.n_skip_steps):
-            try:
-                self._solver.advance_time_step()
-                self._total_les_steps += 1
-            except RuntimeError:
+            step_ok = self._solver.advance_time_step()
+            self._total_les_steps += 1
+            if not step_ok:
                 blown_up = True
                 break
 
@@ -355,7 +338,7 @@ class BurgersAVCEnvironment:
     def _compute_reward(self, blown_up: bool) -> float:
         """Compute rₙ from eq. (2.10); large terminal penalty on blow-up."""
         if blown_up:
-            return -1e4
+            return -1e8
 
         assert self._solver is not None
 

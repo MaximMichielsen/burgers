@@ -147,7 +147,7 @@ class BurgersAVC(BurgersSGSP):
     #  advance_time_step
     # ------------------------------------------------------------------ #
 
-    def advance_time_step(self) -> None:
+    def advance_time_step(self) -> bool:
         """Compute αₙ, inject into diffusion term, advance one LES step.
 
         Order of operations:
@@ -159,8 +159,9 @@ class BurgersAVC(BurgersSGSP):
         if not self.correction_is_fixed:
             self._add_avc_correction()
 
-        super().advance_time_step()
+        step_ok = super().advance_time_step()  # returns bool from BurgersSGSP
         self.update_av_history()
+        return step_ok
 
     # ------------------------------------------------------------------ #
     #  History update
@@ -185,6 +186,9 @@ class BurgersAVC(BurgersSGSP):
         -------
         state_vector : float32 array of shape (K+2,).
         """
+        if not np.all(np.isfinite(self.solution)):
+            return np.zeros(self._n_wavenumber_bins + 2, dtype=np.float32)
+
         wavenumbers_all, raw_spectrum_all = self.compute_energy_spectrum(self.solution)
         _, positive_spectrum = self.get_positive_spectrum(
             wavenumbers_all, raw_spectrum_all
@@ -344,25 +348,21 @@ class BurgersAVC(BurgersSGSP):
     def plot_avc_contributions(self) -> None:
         """Plot applied viscosity α(t) and accumulated energy drain over time."""
         if not self.av_history:
-            logger.warning("No AV history to plot.")
+            logger.warning("plot_avc_contributions: no AV history to plot, skipping.")
             return
 
-        time_axis = (
-            np.array(self.time_steps[: len(self.av_history)], dtype=float) * self.dt
-        )
-        av_array = np.array(self.av_history)
-        drain_array = np.cumsum(self.energy_drain_history)
+        n_plot_points = min(len(self.time_steps), len(self.av_history))
+        if n_plot_points == 0:
+            logger.warning("plot_avc_contributions: no data points to plot, skipping.")
+            return
+
+        time_axis = np.array(self.time_steps[:n_plot_points], dtype=float) * self.dt
+        av_array = np.array(self.av_history[:n_plot_points])
+        drain_array = np.cumsum(self.energy_drain_history[:n_plot_points])
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
         axes[0].plot(time_axis, av_array, color="tab:orange", linewidth=1.5)
-        axes[0].axhline(
-            y=self._corrector.alpha_max,
-            color="tab:red",
-            linestyle="--",
-            linewidth=1.0,
-            label=r"$\alpha_\mathrm{max}$",
-        )
         axes[0].set_xlabel("Time")
         axes[0].set_ylabel(r"$\alpha(t)$")
         axes[0].set_title("AV correction applied by corrector policy")

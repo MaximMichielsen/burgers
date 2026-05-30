@@ -4,11 +4,10 @@ from pathlib import Path
 
 import numpy as np
 
-from constants import RUNS_FOLDER
+from constants import RUNS_FOLDER, BLOWUP_THRESHOLD, BLOWUP_BUFFER_SIZE
 from pipeline_settings import PipelineConfig, RunPaths
 from pipeline_stages import register_stages
 from problems_and_configurations.configurations import (
-    build_mesh_config,
     create_sgsp_config,
     create_solver_configs,
 )
@@ -18,7 +17,11 @@ from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_sgsp import BurgersSGSP
 from utils.enegy_evolution_utils import plot_energy_comparison
 from utils.io_utils import read_data
-from utils.plot_utils import build_plot_configs, plot_solution_comparison
+from utils.plot_utils import (
+    build_plot_configs,
+    plot_solution_comparison,
+    _is_viable_solution_path,
+)
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 
@@ -28,30 +31,16 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 
 pipeline = PipelineConfig.all_stages(manual_path="")
 pipeline.debug_sgsp = True
+pipeline.clip_pusuluri = True
 
-# ---------------------------------------------------------------------------
-# Problem and discretisation
-# ---------------------------------------------------------------------------
-
-problem: Problem = Problems.pipeline_test
+problem: Problem = Problems.raj_two
 
 disc_cfg = DiscretisationConfig(
     n_elements_les=16,
     temporal_refinement=1,
-    courant_les=0.01,
+    courant_les=0.04,
     domain_length=problem.domain_length,
-)
-dns_mesh_cfg = build_mesh_config(
-    disc_cfg.n_nodes_dns,
-    disc_cfg.domain_length,
-    disc_cfg.dt_dns,
-    problem.initial_condition,
-)
-les_mesh_cfg = build_mesh_config(
-    disc_cfg.n_nodes_les,
-    disc_cfg.domain_length,
-    disc_cfg.dt_les,
-    problem.initial_condition,
+    initial_condition_fn=problem.initial_condition,
 )
 
 master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
@@ -64,22 +53,22 @@ paths.create_master()
 
 config_dns, config_les, config_les_no_model = create_solver_configs(
     problem_definition=problem,
-    dns_mesh=dns_mesh_cfg,
-    les_mesh=les_mesh_cfg,
+    disc_cfg=disc_cfg,
     dns_dir=paths.dns_data,
     les_a_dir=paths.les_a_data,
     les_nm_dir=paths.les_nm_data,
 )
+
 config_sgsp, les_sgsp_stable_path, _ = create_sgsp_config(
     problem_definition=problem,
-    les_mesh=les_mesh_cfg,
+    disc_cfg=disc_cfg,
     sgsp_model_path=paths.model_output / "sgs_predictor.pt",
     normalisation_stats_path=paths.training / "normalisation_stats.npz",
     data_dir=paths.solver_data,
     clip_pusuluri=pipeline.clip_pusuluri,
     clip_rajampeta=pipeline.clip_rajampeta,
-    blowup_threshold=1e4,
-    blowup_buffer_size=5_000,
+    blowup_threshold=BLOWUP_THRESHOLD,
+    blowup_buffer_size=BLOWUP_BUFFER_SIZE,
 )
 
 register_stages(
@@ -87,21 +76,19 @@ register_stages(
     paths=paths,
     problem=problem,
     disc_cfg=disc_cfg,
-    les_mesh_cfg=les_mesh_cfg,
     config_dns=config_dns,
     config_les=config_les,
     config_les_no_model=config_les_no_model,
     config_sgsp=config_sgsp,
     les_sgsp_stable_path=les_sgsp_stable_path,
 )
-
 # ---------------------------------------------------------------------------
 # Step 1 · Step 2 · Step 3 · Step 4
 # ---------------------------------------------------------------------------
 
 paths.projection.mkdir(parents=True, exist_ok=True)
 
-pipeline.run_solvers_stage()  # DNS data is created here
+pipeline.run_solvers_stage()
 
 if (
     pipeline.run_projection and not paths.dns_data.exists()
@@ -126,7 +113,7 @@ solver_sgsp: BurgersSGSP | None = pipeline.run_sgsp_model()
 
 if pipeline.run_avc_online_training and solver_sgsp is None:
     raise RuntimeError(
-        "Step 7 requires solver_sgsp — enable pipeline.run_sgsp before run_avc_online_training."
+        "Step 6 requires solver_sgsp — enable pipeline.run_sgsp before run_avc_online_training."
     )
 
 les_sgsp_data_path = (
@@ -209,7 +196,9 @@ les_avc_fixed_mean_path = (
 # ---------------------------------------------------------------------------
 # Save timings to txt.
 # ---------------------------------------------------------------------------
+
 pipeline.report_timings(output_path=master_path)
+
 # ---------------------------------------------------------------------------
 # Step 9: Plots
 # ---------------------------------------------------------------------------
@@ -220,8 +209,7 @@ if pipeline.run_plotting:
 
     plot_configs_all = build_plot_configs(
         paths=paths,
-        dns_mesh=dns_mesh_cfg,
-        les_mesh=les_mesh_cfg,
+        disc_cfg=disc_cfg,
         dns_solution=dns_solution,
         projected_solution=projected_solution,
         les_sgsp_data_path=les_sgsp_data_path,
@@ -229,32 +217,42 @@ if pipeline.run_plotting:
         les_avc_fixed_mean_path=les_avc_fixed_mean_path,
     )
 
-    # Full comparison including SGSP (may be unreadable if blown up).
+    # Drop any solver that blew up without producing usable output.
+    plot_configs_viable = [
+        cfg
+        for cfg in plot_configs_all
+        if cfg.solution is not None or _is_viable_solution_path(cfg.data_path)
+    ]
+
     plot_solution_comparison(
-        configs=plot_configs_all,
+        configs=plot_configs_viable,
         output_path=paths.master,
         filename="comparison_solvers.png",
     )
 
-    # SGSP-excluded comparison for readability when SGSP has blown up.
     plot_configs_no_sgsp = [
         cfg
-        for cfg in plot_configs_all
+        for cfg in plot_configs_viable
         if "SGSP" not in cfg.label and "ANN" not in cfg.label
     ]
-    plot_solution_comparison(
-        configs=plot_configs_no_sgsp,
-        output_path=paths.master,
-        filename="comparison_solvers_no_sgsp.png",
-        title="Comparison of DNS and LES Solutions (excl. SGSP)",
-    )
+    if plot_configs_no_sgsp:
+        plot_solution_comparison(
+            configs=plot_configs_no_sgsp,
+            output_path=paths.master,
+            filename="comparison_solvers_no_sgsp.png",
+            title="Comparison of DNS and LES Solutions (excl. SGSP)",
+        )
 
     plot_energy_comparison(
         dns_dir=paths.dns_data,
         les_a_dir=paths.les_a_data,
         les_nm_dir=paths.les_nm_data,
-        les_sgsp_dir=les_sgsp_data_path,
-        les_avc_dir=les_avc_data_path,
+        les_sgsp_dir=les_sgsp_data_path
+        if _is_viable_solution_path(les_sgsp_data_path)
+        else None,
+        les_avc_dir=les_avc_data_path
+        if _is_viable_solution_path(les_avc_data_path)
+        else None,
         output_path=paths.master,
         viscosity=problem.viscosity,
         domain_length=problem.domain_length,

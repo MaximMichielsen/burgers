@@ -11,45 +11,35 @@ from constants import DNS_TO_LES_RATIO
 
 @dataclass
 class DiscretisationConfig:
-    """Spatial and temporal discretization parameters derived from LES element count."""
+    """Spatial and temporal discretization parameters for both DNS and LES grids.
+
+    Derives all mesh and time-step quantities from the LES element count,
+    Courant number, and DNS-to-LES refinement ratios.
+    """
 
     n_elements_les: int
     temporal_refinement: int
     courant_les: float
     domain_length: float
+    initial_condition_fn: Callable
 
     def __post_init__(self) -> None:
         self.n_nodes_les: int = self.n_elements_les + 1
         self.n_elements_dns: int = self.n_elements_les * DNS_TO_LES_RATIO
         self.n_nodes_dns: int = self.n_elements_dns + 1
+
         self.h_les: float = self.domain_length / self.n_elements_les
         self.dt_les: float = self.courant_les * self.h_les
         self.dt_dns: float = self.dt_les / self.temporal_refinement
 
+        self.mesh_les, element_size_les = np.linspace(
+            0, self.domain_length, self.n_nodes_les, retstep=True
+        )
+        self.element_size_les = float(element_size_les)
+        self.initial_solution_les: NDArray = self.initial_condition_fn(self.mesh_les)
 
-@dataclass
-class MeshConfig:
-    """Resolved grid, time-step, and initial condition for one resolution level."""
-
-    n_nodes: int
-    mesh: NDArray
-    element_size: float
-    time_step: float
-    initial_solution: NDArray
-
-
-def build_mesh_config(
-    n_nodes: int,
-    domain_length: float,
-    time_step: float,
-    initial_condition_fn: Callable,
-) -> MeshConfig:
-    """Build a MeshConfig from node count, domain length, time step, and IC function."""
-    mesh, element_size = np.linspace(0, domain_length, n_nodes, retstep=True)
-    return MeshConfig(
-        n_nodes=n_nodes,
-        mesh=mesh,
-        element_size=float(element_size),
-        time_step=time_step,
-        initial_solution=initial_condition_fn(mesh),
-    )
+        self.mesh_dns, element_size_dns = np.linspace(
+            0, self.domain_length, self.n_nodes_dns, retstep=True
+        )
+        self.element_size_dns = float(element_size_dns)
+        self.initial_solution_dns: NDArray = self.initial_condition_fn(self.mesh_dns)

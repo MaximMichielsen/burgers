@@ -115,6 +115,9 @@ def diagnose_sgsp_predictions(
     each step — before clipping, before scatter into the global residual —
     so the output is not affected by clip_pusuluri / clip_rajampeta flags.
 
+    Stops gracefully if a blow-up is detected mid-run, printing all steps
+    collected up to that point.
+
     Parameters
     ----------
     solver:
@@ -129,7 +132,12 @@ def diagnose_sgsp_predictions(
     print("  " + "-" * (18 + 14 * len(_COL_NAMES)))
 
     for step_idx in range(n_steps):
-        solver.advance_time_step()
+        try:
+            solver.advance_time_step()
+        except RuntimeError as exc:
+            print(f"  {step_idx:>4}  (blow-up: {exc})")
+            break
+
         ann_correction_array = solver._compute_sgsp_contribution()
 
         if ann_correction_array is None:

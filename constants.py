@@ -30,11 +30,14 @@ BATCH_SIZE: int = 128
 LEARNING_RATE: float = 0.001
 EPOCHS: int = 150
 
+BLOWUP_THRESHOLD: float = 1e4
+BLOWUP_BUFFER_SIZE: int = 5000
+
 # ---------------------------------------------------------------------------
 # Corrector agent hyperparameters
 # ---------------------------------------------------------------------------
 
-AVC_EPOCHS: int = 30
+AVC_EPOCHS: int = 200
 
 # ---------------------------------------------------------------------------
 # Path names

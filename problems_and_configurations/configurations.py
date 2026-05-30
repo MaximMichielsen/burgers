@@ -1,9 +1,7 @@
 """Solver config builders for DNS, LES, and ANN-coupled Burgers simulations."""
 
 from pathlib import Path
-from typing import Callable
 
-import numpy as np
 
 from constants import (
     BLOWN_UP_FOLDER,
@@ -14,34 +12,16 @@ from constants import (
     LES_ANN_UNCLIPPED_FOLDER,
     LES_AVC_SAVE_PATH,
 )
-from problems_and_configurations.mesh_config import MeshConfig
+from problems_and_configurations.mesh_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
 from solvers.burgers_base import BurgersBase as Burgers
 from solvers.burgers_sgsp import BurgersSGSP
 from utils.io_utils import set_extractions
 
 
-def build_mesh_config(
-    n_nodes: int,
-    domain_length: float,
-    time_step: float,
-    initial_condition_fn: Callable,
-) -> MeshConfig:
-    """Build a MeshConfig from node count, domain length, time step, and IC function."""
-    mesh, element_size = np.linspace(0, domain_length, n_nodes, retstep=True)
-    return MeshConfig(
-        n_nodes=n_nodes,
-        mesh=mesh,
-        element_size=float(element_size),
-        time_step=time_step,
-        initial_solution=initial_condition_fn(mesh),
-    )
-
-
 def create_solver_configs(
     problem_definition: Problem,
-    dns_mesh: MeshConfig,
-    les_mesh: MeshConfig,
+    disc_cfg: DiscretisationConfig,
     dns_dir: Path | str | None = None,
     les_a_dir: Path | str | None = None,
     les_nm_dir: Path | str | None = None,
@@ -49,26 +29,26 @@ def create_solver_configs(
     """Return (config_dns, config_les_analytical, config_les_no_model)."""
     dns_extractions = set_extractions(
         problem_definition.domain_timespan,
-        int(round(problem_definition.domain_timespan / dns_mesh.time_step)),
-        dns_mesh.time_step,
+        int(round(problem_definition.domain_timespan / disc_cfg.dt_dns)),
+        disc_cfg.dt_dns,
     )
     les_extractions = set_extractions(
         problem_definition.domain_timespan,
-        int(problem_definition.domain_timespan / les_mesh.time_step),
-        les_mesh.time_step,
+        int(problem_definition.domain_timespan / disc_cfg.dt_les),
+        disc_cfg.dt_les,
     )
 
     config_dns = Burgers.create_config(
-        initial_condition=dns_mesh.initial_solution,
+        initial_condition=disc_cfg.initial_solution_dns,
         simulation_mode="dns",
         run_objective="data_generation",
-        node_amount=dns_mesh.n_nodes,
+        node_amount=disc_cfg.n_nodes_dns,
         boundary_condition_type=problem_definition.boundary_condition_type,
         boundary_condition_value=problem_definition.boundary_condition_value,
         external_forcing=problem_definition.external_forcing,
         forcing_steady=problem_definition.forcing_steady,
         domain_timespan=problem_definition.domain_timespan,
-        time_step=dns_mesh.time_step,
+        time_step=disc_cfg.dt_dns,
         domain_length=problem_definition.domain_length,
         convergence_tol_residual=1e-6,
         convergence_tol_update=1e-6,
@@ -80,14 +60,14 @@ def create_solver_configs(
     )
 
     shared_les_kwargs: dict = dict(
-        initial_condition=les_mesh.initial_solution,
-        node_amount=les_mesh.n_nodes,
+        initial_condition=disc_cfg.initial_solution_les,
+        node_amount=disc_cfg.n_nodes_les,
         boundary_condition_type=problem_definition.boundary_condition_type,
         boundary_condition_value=problem_definition.boundary_condition_value,
         external_forcing=problem_definition.external_forcing,
         forcing_steady=problem_definition.forcing_steady,
         domain_timespan=problem_definition.domain_timespan,
-        time_step=les_mesh.time_step,
+        time_step=disc_cfg.dt_les,
         domain_length=problem_definition.domain_length,
         convergence_tol_residual=1e-3,
         convergence_tol_update=1e-3,
@@ -144,7 +124,7 @@ def _resolve_avc_output_paths(solver_data_dir: Path) -> tuple[Path, Path]:
 
 def create_sgsp_config(
     problem_definition: Problem,
-    les_mesh: MeshConfig,
+    disc_cfg: DiscretisationConfig,
     sgsp_model_path: Path,
     normalisation_stats_path: Path,
     data_dir: Path | str | None = None,
@@ -154,14 +134,14 @@ def create_sgsp_config(
     blowup_buffer_size: int = 5000,
     sgsp_warmup_steps: int = 2,
 ) -> tuple[dict, Path, Path]:
-    """ANN-coupled LES config built from a pre-resolved MeshConfig.
+    """ANN-coupled LES config built from a DiscretisationConfig.
 
     Returns (config, stable_path, blown_up_path).
     """
     les_extractions = set_extractions(
         problem_definition.domain_timespan,
-        int(problem_definition.domain_timespan / les_mesh.time_step),
-        les_mesh.time_step,
+        int(problem_definition.domain_timespan / disc_cfg.dt_les),
+        disc_cfg.dt_les,
     )
     stable_path, blown_up_path = _resolve_sgsp_output_paths(
         solver_data_dir=Path(data_dir),
@@ -175,12 +155,12 @@ def create_sgsp_config(
         blowup_threshold=blowup_threshold,
         blowup_buffer_size=blowup_buffer_size,
         blown_up_path=str(blown_up_path),
-        initial_condition=les_mesh.initial_solution,
+        initial_condition=disc_cfg.initial_solution_les,
         simulation_mode="sgsp",
         run_objective="data_generation",
-        node_amount=les_mesh.n_nodes,
+        node_amount=disc_cfg.n_nodes_les,
         viscosity=problem_definition.viscosity,
-        time_step=les_mesh.time_step,
+        time_step=disc_cfg.dt_les,
         domain_timespan=problem_definition.domain_timespan,
         domain_length=problem_definition.domain_length,
         boundary_condition_type=problem_definition.boundary_condition_type,

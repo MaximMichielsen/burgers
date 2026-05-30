@@ -11,7 +11,8 @@ from numpy.typing import NDArray
 from packaging import markers
 
 from pipeline_settings import RunPaths
-from problems_and_configurations.mesh_config import MeshConfig
+from problems_and_configurations.mesh_config import DiscretisationConfig
+
 from utils.io_utils import read_data
 
 import re
@@ -33,8 +34,7 @@ class SolutionConfig:
 
 def build_plot_configs(
     paths: RunPaths,
-    dns_mesh: MeshConfig,
-    les_mesh: MeshConfig,
+    disc_cfg: DiscretisationConfig,
     dns_solution: NDArray,
     projected_solution: NDArray,
     les_sgsp_data_path: Path,
@@ -50,7 +50,7 @@ def build_plot_configs(
             linestyle="-",
             marker="",
             alpha=0.7,
-            mesh=dns_mesh.mesh,
+            mesh=disc_cfg.mesh_dns,
             solution=dns_solution,
         ),
         SolutionConfig(
@@ -58,21 +58,21 @@ def build_plot_configs(
             label="LES - A",
             color="royalblue",
             marker="x",
-            mesh=les_mesh.mesh,
+            mesh=disc_cfg.mesh_les,
         ),
         SolutionConfig(
             data_path=paths.les_nm_data,
             label="LES - no model",
             color="tab:orange",
             marker=".",
-            mesh=les_mesh.mesh,
+            mesh=disc_cfg.mesh_les,
         ),
         SolutionConfig(
             data_path=paths.dns_data,
             label="LES - projection",
             color="lightgreen",
             marker="^",
-            mesh=les_mesh.mesh,
+            mesh=disc_cfg.mesh_les,
             solution=projected_solution,
         ),
         SolutionConfig(
@@ -80,14 +80,14 @@ def build_plot_configs(
             label="LES - SGSP",
             color="salmon",
             marker="d",
-            mesh=les_mesh.mesh,
+            mesh=disc_cfg.mesh_les,
         ),
         SolutionConfig(
             data_path=les_avc_data_path,
             label="LES - AVC",
             color="mediumorchid",
             marker="*",
-            mesh=les_mesh.mesh,
+            mesh=disc_cfg.mesh_les,
         ),
         SolutionConfig(
             data_path=les_avc_fixed_mean_path,
@@ -95,7 +95,7 @@ def build_plot_configs(
             color="plum",
             linestyle="--",
             marker="*",
-            mesh=les_mesh.mesh,
+            mesh=disc_cfg.mesh_les,
             alpha=0.6,
         ),
     ]
@@ -245,3 +245,11 @@ def plot_solutions_from_directory_animated(
     plt.tight_layout()
     plt.show()
     return ani
+
+
+def _is_viable_solution_path(data_path: Path | str | None) -> bool:
+    """True if the path exists and contains at least one solution CSV."""
+    if data_path is None:
+        return False
+    path = Path(data_path)
+    return path.exists() and any(path.glob("sol_t*.csv"))
