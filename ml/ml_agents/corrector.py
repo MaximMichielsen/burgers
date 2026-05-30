@@ -85,8 +85,16 @@ class AVCorrector(nn.Module):
         # TODO: rethink this whole alpha max thing
 
     def forward(self, state_input: Tensor) -> Tensor:
-        """Returns shape (batch, 1) for global or (batch, N) for local."""
-        return self.alpha_max * torch.sigmoid(self.network(state_input))
+        """Returns shape (batch, 1) for global or (batch, N) for local.
+
+        Network outputs are passed through softplus to enforce positivity,
+        then hard-clipped to alpha_max. This decouples the learned scale
+        from the upper bound — raising alpha_max only expands headroom,
+        it does not rescale existing outputs.
+        """
+        raw_output = self.network(state_input)
+        positive_output = nn.functional.softplus(raw_output)
+        return torch.clamp(positive_output, max=self.alpha_max)
 
 
 # ---------------------------------------------------------------------------

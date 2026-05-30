@@ -8,7 +8,6 @@ import numpy as np
 from matplotlib import animation, pyplot as plt
 from matplotlib.animation import FuncAnimation
 from numpy.typing import NDArray
-from packaging import markers
 
 from pipeline_settings import RunPaths
 from problems_and_configurations.mesh_config import DiscretisationConfig
@@ -247,7 +246,7 @@ def plot_solutions_from_directory_animated(
     return ani
 
 
-def _is_viable_solution_path(data_path: Path | str | None) -> bool:
+def is_viable_solution_path(data_path: Path | str | None) -> bool:
     """True if the path exists and contains at least one solution CSV."""
     if data_path is None:
         return False

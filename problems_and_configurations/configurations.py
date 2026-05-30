@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from numpy._typing import NDArray
 
 from constants import (
     BLOWN_UP_FOLDER,
@@ -14,6 +15,7 @@ from constants import (
 )
 from problems_and_configurations.mesh_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
+from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_base import BurgersBase as Burgers
 from solvers.burgers_sgsp import BurgersSGSP
 from utils.io_utils import set_extractions
@@ -112,13 +114,29 @@ def _resolve_sgsp_output_paths(
     return stable_path, blown_up_path
 
 
-def _resolve_avc_output_paths(solver_data_dir: Path) -> tuple[Path, Path]:
+def _resolve_avc_output_paths(
+    solver_data_dir: Path,
+    clip_pusuluri: bool = False,
+    clip_rajampeta: bool = False,
+) -> tuple[Path, Path]:
     """Resolve and create (stable_path, blown_up_path) for the AVC solver."""
-    base_avc_dir = solver_data_dir / LES_AVC_SAVE_PATH
+    if clip_rajampeta and not clip_pusuluri:
+        raise ValueError("clip_rajampeta requires clip_pusuluri to be enabled.")
+
+    if clip_rajampeta:
+        clip_variant_folder = LES_ANN_RAJAMPETA_FOLDER
+    elif clip_pusuluri:
+        clip_variant_folder = LES_ANN_PUSULURI_FOLDER
+    else:
+        clip_variant_folder = LES_ANN_UNCLIPPED_FOLDER
+
+    base_avc_dir = solver_data_dir / LES_AVC_SAVE_PATH / clip_variant_folder
     stable_path = base_avc_dir / STABLE_FOLDER
     blown_up_path = base_avc_dir / BLOWN_UP_FOLDER
+
     stable_path.mkdir(parents=True, exist_ok=True)
     blown_up_path.mkdir(parents=True, exist_ok=True)
+
     return stable_path, blown_up_path
 
 
@@ -173,5 +191,38 @@ def create_sgsp_config(
         relaxation=None,
         extract_at_times=les_extractions,
         master_path=stable_path,
+        clip_pusuluri=clip_pusuluri,
+        clip_rajampeta=clip_rajampeta,
     )
+    return config, stable_path, blown_up_path
+
+
+def create_avc_config(
+    config_sgsp: dict,
+    avc_model_path: str | Path,
+    dns_energy_spectrum: NDArray,
+    dns_dissipation: float,
+    data_dir: Path | str | None = None,
+    clip_pusuluri: bool = False,
+    clip_rajampeta: bool = False,
+) -> tuple[dict, Path, Path]:
+    """Build AVC config by extending an existing SGSP config.
+
+    Returns (config, stable_path, blown_up_path).
+    """
+    stable_path, blown_up_path = _resolve_avc_output_paths(
+        solver_data_dir=Path(data_dir),
+        clip_pusuluri=clip_pusuluri,
+        clip_rajampeta=clip_rajampeta,
+    )
+    config = {
+        **config_sgsp,
+        "simulation_mode": "avc",
+        "run_objective": "data_generation",
+        "avc_model_path": str(avc_model_path),
+        "dns_energy_spectrum": dns_energy_spectrum.tolist(),
+        "dns_dissipation": float(dns_dissipation),
+        "blown_up_path": str(blown_up_path),
+        "master_path": str(stable_path),
+    }
     return config, stable_path, blown_up_path

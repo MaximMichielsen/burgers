@@ -6,10 +6,10 @@ import numpy as np
 
 from constants import RUNS_FOLDER, BLOWUP_THRESHOLD, BLOWUP_BUFFER_SIZE
 from pipeline_settings import PipelineConfig, RunPaths
-from pipeline_stages import register_stages
 from problems_and_configurations.configurations import (
     create_sgsp_config,
     create_solver_configs,
+    create_avc_config,
 )
 from problems_and_configurations.mesh_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem, Problems
@@ -20,23 +20,22 @@ from utils.io_utils import read_data
 from utils.plot_utils import (
     build_plot_configs,
     plot_solution_comparison,
-    _is_viable_solution_path,
+    is_viable_solution_path,
 )
+from utils.solver_utils import run_config
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 
-# ---------------------------------------------------------------------------
-# Pipeline settings
-# ---------------------------------------------------------------------------
-
 pipeline = PipelineConfig.all_stages(manual_path="")
-pipeline.debug_sgsp = True
+
 pipeline.clip_pusuluri = True
+pipeline.clip_rajampeta = False
+pipeline.debug_sgsp = True
 
 problem: Problem = Problems.raj_two
 
 disc_cfg = DiscretisationConfig(
-    n_elements_les=16,
+    n_elements_les=8,
     temporal_refinement=1,
     courant_les=0.04,
     domain_length=problem.domain_length,
@@ -47,10 +46,6 @@ master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=probl
 paths = RunPaths.from_master(master_path)
 paths.create_master()
 
-# ---------------------------------------------------------------------------
-# Build solver configs and register all stages onto pipeline
-# ---------------------------------------------------------------------------
-
 config_dns, config_les, config_les_no_model = create_solver_configs(
     problem_definition=problem,
     disc_cfg=disc_cfg,
@@ -58,7 +53,6 @@ config_dns, config_les, config_les_no_model = create_solver_configs(
     les_a_dir=paths.les_a_data,
     les_nm_dir=paths.les_nm_data,
 )
-
 config_sgsp, les_sgsp_stable_path, _ = create_sgsp_config(
     problem_definition=problem,
     disc_cfg=disc_cfg,
@@ -71,57 +65,116 @@ config_sgsp, les_sgsp_stable_path, _ = create_sgsp_config(
     blowup_buffer_size=BLOWUP_BUFFER_SIZE,
 )
 
-register_stages(
-    pipeline=pipeline,
-    paths=paths,
-    problem=problem,
-    disc_cfg=disc_cfg,
-    config_dns=config_dns,
-    config_les=config_les,
-    config_les_no_model=config_les_no_model,
-    config_sgsp=config_sgsp,
-    les_sgsp_stable_path=les_sgsp_stable_path,
-)
 # ---------------------------------------------------------------------------
-# Step 1 · Step 2 · Step 3 · Step 4
+# Step 1: DNS + LES solvers
+# ---------------------------------------------------------------------------
+
+if pipeline.run_solvers:
+    if pipeline.run_dns:
+        run_config(config_dns)
+    run_config(config_les)
+    run_config(config_les_no_model)
+
+# ---------------------------------------------------------------------------
+# Step 2: DNS → LES projection
 # ---------------------------------------------------------------------------
 
 paths.projection.mkdir(parents=True, exist_ok=True)
 
-pipeline.run_solvers_stage()
+if pipeline.run_projection:
+    if not paths.dns_data.exists():
+        raise FileNotFoundError(f"DNS data not found at: {paths.dns_data}")
+    from ml.data_curation.projection import run_projection
+    from utils.io_utils import read_data as _read
 
-if (
-    pipeline.run_projection and not paths.dns_data.exists()
-):  # ← after solvers, gated on projection
-    raise FileNotFoundError(f"DNS data not found at: {paths.dns_data}")
-
-pipeline.run_projection_stage()
-pipeline.run_sgsp_training_assembly()
-trained_model = pipeline.run_sgsp_training()
-
-# ---------------------------------------------------------------------------
-# Step 5
-# ---------------------------------------------------------------------------
-
-pipeline.verify_sgsp_apriori(trained_model)
-
-# ---------------------------------------------------------------------------
-# Step 6
-# ---------------------------------------------------------------------------
-
-solver_sgsp: BurgersSGSP | None = pipeline.run_sgsp_model()
-
-if pipeline.run_avc_online_training and solver_sgsp is None:
-    raise RuntimeError(
-        "Step 6 requires solver_sgsp — enable pipeline.run_sgsp before run_avc_online_training."
+    _, dns_times, _, _ = _read(paths.dns_data)
+    run_projection(
+        directory=paths.dns_data,
+        bc_mode=problem.boundary_condition_type,
+        bc_values=problem.boundary_condition_value,
+        output_dir=paths.projection,
+        verify=False,
+        les_snapshot_indices=np.arange(0, len(dns_times), disc_cfg.temporal_refinement),
+        n_nodes_les=disc_cfg.n_nodes_les,
     )
 
+# ---------------------------------------------------------------------------
+# Step 3: Training data assembly
+# ---------------------------------------------------------------------------
+
+if pipeline.run_training_assembly:
+    from ml.data_curation.training_data_assembly import run_training_data_assembly
+
+    run_training_data_assembly(
+        projection_path=paths.projection,
+        output_dir=paths.training,
+        dt=disc_cfg.dt_les,
+        element_size=disc_cfg.element_size_les,
+    )
+
+# ---------------------------------------------------------------------------
+# Step 4: Train SGS predictor
+# ---------------------------------------------------------------------------
+
+trained_model = None
+if pipeline.run_training_sgsp:
+    from ml.ml_agents.predictor import train_predictor, plot_training_diagnostics
+
+    trained_model, training_stats = train_predictor(
+        data_path=paths.training,
+        output_dir=paths.model_output,
+    )
+    plot_training_diagnostics(
+        training_stats=training_stats, output_dir=paths.model_output
+    )
+
+# ---------------------------------------------------------------------------
+# Step 5: A priori verification
+# ---------------------------------------------------------------------------
+
+if pipeline.verify_apriori:
+    import torch
+    from ml.ml_agents.predictor import load_predictor
+    from ml.data_curation.a_priori_verificiation import run_apriori_verification
+    from numpy.typing import NDArray
+
+    apriori_model = trained_model or load_predictor(
+        paths.model_output / "sgs_predictor.pt"
+    )
+    apriori_model.eval()
+
+    def _model_predict(x_array: np.ndarray) -> NDArray:
+        with torch.no_grad():
+            return apriori_model(torch.tensor(x_array, dtype=torch.float32)).numpy()
+
+    run_apriori_verification(
+        model_predict_fn=_model_predict,
+        data_dir=paths.training,
+        output_dir=paths.apriori,
+        domain_length=problem.domain_length,
+        dt=disc_cfg.dt_les,
+        dataset_label="Validation",
+        n_elements=disc_cfg.n_elements_les,
+    )
+
+# ---------------------------------------------------------------------------
+# Step 6: SGSP coupled solver
+# ---------------------------------------------------------------------------
+
+solver_sgsp: BurgersSGSP | None = None
+if pipeline.run_sgsp:
+    solver_sgsp = BurgersSGSP(configuration=config_sgsp)
+    assert solver_sgsp is not None
+    solver_sgsp.print_configuration()
+    solver_sgsp.run_simulation()
+    solver_sgsp.post_processing()
+
 les_sgsp_data_path = (
-    solver_sgsp.master_path if pipeline.run_sgsp else les_sgsp_stable_path
+    solver_sgsp.master_path if solver_sgsp is not None else les_sgsp_stable_path
 )
 
 # ---------------------------------------------------------------------------
-# Step 6b: SGSP diagnostics (debug only)
+# Step 6b: SGSP diagnostics
 # ---------------------------------------------------------------------------
 
 if pipeline.run_sgsp and pipeline.debug_sgsp:
@@ -129,75 +182,131 @@ if pipeline.run_sgsp and pipeline.debug_sgsp:
         diagnose_sgsp_predictions,
         diagnose_training_label_scale,
     )
-    from solvers.burgers_sgsp import BurgersSGSP
 
     diagnose_training_label_scale(training_data_path=paths.training)
-    solver_ann_debug = BurgersSGSP(
-        configuration=config_sgsp,
-        clip_pusuluri=pipeline.clip_pusuluri,
-        clip_rajampeta=pipeline.clip_rajampeta,
-    )
+    solver_ann_debug = BurgersSGSP(configuration=config_sgsp)
     diagnose_sgsp_predictions(solver=solver_ann_debug, n_steps=10)
 
 # ---------------------------------------------------------------------------
-# Step 7
+# Step 7: AVC online training
 # ---------------------------------------------------------------------------
 
-config_avc, avc_stable_path = pipeline.run_avc_training(solver_sgsp=solver_sgsp)
+config_avc: dict | None = None
+avc_stable_path: Path | None = None
 
-# ---------------------------------------------------------------------------
-# Step 8a
-# ---------------------------------------------------------------------------
+if pipeline.run_avc_online_training:
+    if solver_sgsp is None:
+        raise RuntimeError(
+            "Step 7 requires solver_sgsp — enable pipeline.run_sgsp first."
+        )
 
-if pipeline.run_avc and (config_avc is None or avc_stable_path is None):
-    raise RuntimeError(
-        "Step 8a requires config_avc — enable pipeline.run_avc_online_training before run_avc."
+    from ml.corrector_training.online_trainer import (
+        BurgersAVCEnvironment,
+        OnlineAVTrainer,
+        SACAgent,
+        SACConfig,
+    )
+    from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
+    from ml.ml_agents.corrector import AVCorrector, save_corrector
+
+    _, dns_positive_spectrum = solver_sgsp.get_positive_spectrum(
+        *solver_sgsp.compute_energy_spectrum(solver_sgsp.solution)
+    )
+    dns_dissipation_ref = float(solver_sgsp.dissipation_history[-1])
+    n_wavenumber_bins = len(dns_positive_spectrum)
+
+    config_avc, avc_stable_path, _ = create_avc_config(
+        config_sgsp=config_sgsp,
+        avc_model_path=paths.model_output / "av_corrector.pt",
+        dns_energy_spectrum=dns_positive_spectrum,
+        dns_dissipation=dns_dissipation_ref,
+        data_dir=paths.solver_data,
+        clip_pusuluri=pipeline.clip_pusuluri,
+        clip_rajampeta=pipeline.clip_rajampeta,
     )
 
-solver_avc: BurgersAVC | None = pipeline.run_avc_model(config_avc)
+    av_corrector_model = AVCorrector(
+        alpha_max=1 * problem.viscosity, n_wavenumber_bins=n_wavenumber_bins
+    )
+    save_corrector(av_corrector_model, paths.model_output / "av_corrector.pt")
+
+    sac_config = SACConfig(n_skip_steps=5, warmup_steps=100, batch_size=64)
+    dns_reference_schedule = DNSReferenceSchedule.from_directory(
+        dns_dir=paths.dns_data,
+        domain_length=problem.domain_length,
+        viscosity=problem.viscosity,
+        n_wavenumber_bins=n_wavenumber_bins,
+    )
+    assert isinstance(config_avc, dict)
+    environment = BurgersAVCEnvironment(
+        solver_config=config_avc,
+        sac_config=sac_config,
+        dns_reference_schedule=dns_reference_schedule,
+    )
+    sac_agent = SACAgent(
+        av_corrector=av_corrector_model,
+        state_dim=environment.state_dim,
+        sac_config=sac_config,
+    )
+    trainer = OnlineAVTrainer(
+        environment=environment,
+        sac_agent=sac_agent,
+        sac_config=sac_config,
+        output_dir=paths.model_output / "avc_checkpoints",
+    )
+    trainer.train(n_episodes=50)
+
+# ---------------------------------------------------------------------------
+# Step 8a: Run AVC model
+# ---------------------------------------------------------------------------
+
+solver_avc: BurgersAVC | None = None
+if pipeline.run_avc:
+    if config_avc is None or avc_stable_path is None:
+        raise RuntimeError(
+            "Step 8a requires config_avc — enable pipeline.run_avc_online_training first."
+        )
+    solver_avc = BurgersAVC(configuration=config_avc)
+    assert solver_avc is not None
+    solver_avc.print_configuration()
+    solver_avc.run_simulation()
+    solver_avc.post_processing()
+
 les_avc_data_path = (
-    solver_avc.master_path
-    if pipeline.run_avc and solver_avc is not None
-    else avc_stable_path
+    solver_avc.master_path if solver_avc is not None else avc_stable_path
 )
 
 # ---------------------------------------------------------------------------
-# Step 8b
+# Step 8b: Fixed mean AV baseline
 # ---------------------------------------------------------------------------
 
-if pipeline.run_avc and solver_avc is not None:
-    av_history_values = solver_avc.av_history
-    av_mean_value = float(np.mean(av_history_values))
-else:
-    av_mean_value = 0.0
+solver_avc_fixed_mean: BurgersAVC | None = None
+if pipeline.run_avc and solver_avc is not None and config_avc is not None:
+    av_mean_value = (
+        float(np.mean(solver_avc.av_history)) if solver_avc.av_history else 0.0
+    )
 
-fixed_av_stable_path = paths.solver_data / "LES_AVC_fixed_mean" / "stable"
-fixed_av_stable_path.mkdir(parents=True, exist_ok=True)
+    fixed_av_stable_path = paths.solver_data / "LES_AVC_fixed_mean" / "stable"
+    fixed_av_stable_path.mkdir(parents=True, exist_ok=True)
 
-config_avc_fixed_mean: dict | None = (
-    {
+    config_avc_fixed_mean = {
         **config_avc,
         "master_path": str(fixed_av_stable_path),
         "run_objective": "avc_fixed_mean_baseline",
     }
-    if pipeline.run_avc and config_avc is not None
-    else None
-)
+    solver_avc_fixed_mean = BurgersAVC(
+        configuration=config_avc_fixed_mean, correction_is_fixed=True
+    )
+    assert solver_avc_fixed_mean is not None
+    solver_avc_fixed_mean.av_correction = av_mean_value
+    solver_avc_fixed_mean.run_simulation()
+    solver_avc_fixed_mean.post_processing()
 
-solver_avc_fixed_mean: BurgersAVC | None = pipeline.run_fixed_av_baseline(
-    config_avc_fixed_mean, av_mean_value
-)
 les_avc_fixed_mean_path = (
     solver_avc_fixed_mean.master_path
     if solver_avc_fixed_mean is not None
-    else fixed_av_stable_path
+    else paths.solver_data / "LES_AVC_fixed_mean" / "stable"
 )
-
-# ---------------------------------------------------------------------------
-# Save timings to txt.
-# ---------------------------------------------------------------------------
-
-pipeline.report_timings(output_path=master_path)
 
 # ---------------------------------------------------------------------------
 # Step 9: Plots
@@ -206,6 +315,12 @@ pipeline.report_timings(output_path=master_path)
 if pipeline.run_plotting:
     dns_solution, _ = read_data(directory=paths.dns_data, final_only=True)
     projected_solution = np.load(paths.projection / "solutions_projection.npy")[-1]
+
+    les_avc_data_path = (
+        solver_avc.master_path
+        if solver_avc is not None
+        else avc_stable_path or paths.solver_data / "LES_AVC" / "stable"
+    )
 
     plot_configs_all = build_plot_configs(
         paths=paths,
@@ -217,13 +332,11 @@ if pipeline.run_plotting:
         les_avc_fixed_mean_path=les_avc_fixed_mean_path,
     )
 
-    # Drop any solver that blew up without producing usable output.
     plot_configs_viable = [
         cfg
         for cfg in plot_configs_all
-        if cfg.solution is not None or _is_viable_solution_path(cfg.data_path)
+        if cfg.solution is not None or is_viable_solution_path(cfg.data_path)
     ]
-
     plot_solution_comparison(
         configs=plot_configs_viable,
         output_path=paths.master,
@@ -248,10 +361,10 @@ if pipeline.run_plotting:
         les_a_dir=paths.les_a_data,
         les_nm_dir=paths.les_nm_data,
         les_sgsp_dir=les_sgsp_data_path
-        if _is_viable_solution_path(les_sgsp_data_path)
+        if is_viable_solution_path(les_sgsp_data_path)
         else None,
         les_avc_dir=les_avc_data_path
-        if _is_viable_solution_path(les_avc_data_path)
+        if is_viable_solution_path(les_avc_data_path)
         else None,
         output_path=paths.master,
         viscosity=problem.viscosity,

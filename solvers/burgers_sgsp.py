@@ -178,14 +178,15 @@ class BurgersSGSP(BurgersBase):
     def __init__(
         self,
         configuration: dict,
-        clip_pusuluri: bool = False,
-        clip_rajampeta: bool = False,
-        exclude_visc: bool = False,
         sigma_multiplier: float = 3.0,
     ) -> None:
         super().__init__(configuration)
 
-        if clip_rajampeta and not clip_pusuluri:
+        self.clip_pusuluri: bool = bool(configuration.get("clip_pusuluri", False))
+        self.clip_rajampeta: bool = bool(configuration.get("clip_rajampeta", False))
+        self.exclude_visc: bool = bool(configuration.get("exclude_visc", False))
+
+        if self.clip_rajampeta and not self.clip_pusuluri:
             raise ValueError("clip_rajampeta requires clip_pusuluri to be enabled.")
 
         sgsp_model_path = Path(configuration["sgsp_model_path"])
@@ -205,10 +206,6 @@ class BurgersSGSP(BurgersBase):
         self._sgsp_warmup_steps: int = int(configuration.get("sgsp_warmup_steps", 2))
         self._step_count: int = 0
         self._grad_basis: NDArray = _gradient_basis_functions(self.element_size)
-
-        self.clip_pusuluri: bool = clip_pusuluri
-        self.clip_rajampeta: bool = clip_rajampeta
-        self.exclude_visc: bool = exclude_visc
 
         if self.clip_pusuluri:
             self._y_lower_bound: NDArray = self._y_mean - sigma_multiplier * self._y_std
@@ -240,6 +237,9 @@ class BurgersSGSP(BurgersBase):
         blowup_threshold: float = BLOWUP_THRESHOLD,
         blowup_buffer_size: int = 5_000,
         blown_up_path: str | None = None,
+        clip_pusuluri: bool = False,
+        clip_rajampeta: bool = False,
+        exclude_visc: bool = False,
         **base_config_kwargs,
     ) -> dict:
         """Build a coupled-solver config dict; forwards kwargs to BurgersPure.create_config."""
@@ -252,6 +252,9 @@ class BurgersSGSP(BurgersBase):
                 "sgsp_warmup_steps": sgsp_warmup_steps,
                 "blowup_threshold": blowup_threshold,
                 "blowup_buffer_size": blowup_buffer_size,
+                "clip_pusuluri": clip_pusuluri,
+                "clip_rajampeta": clip_rajampeta,
+                "exclude_visc": exclude_visc,
             }
         )
         if blown_up_path is not None:
@@ -740,6 +743,35 @@ class BurgersSGSP(BurgersBase):
         print(
             f"wrote {len(self.extracted_solutions)} pre-blowup snapshots at {self.master_path}"
         )
+
+    def print_configuration(self) -> None:
+        """Print base config plus SGSP-specific settings."""
+        super().print_configuration()
+        W = 72
+        COL = 30
+
+        def _row(label: str, value: str) -> None:
+            print(f"  {label:<{COL}} {value}")
+
+        print()
+        print("  SGS Predictor")
+        print("─" * W)
+        _row("model path", str(self.configuration.get("sgsp_model_path", "N/A")))
+        _row(
+            "normalisation stats",
+            str(self.configuration.get("normalisation_stats_path", "N/A")),
+        )
+        _row("warmup steps", str(self._sgsp_warmup_steps))
+        _row("blowup threshold", f"{self._blowup_threshold:.2e}")
+        _row("blowup buffer size", str(self._blowup_buffer.max_steps))
+        _row("blown_up path", str(self._blown_up_path))
+        print()
+        print("  Clipping")
+        print("─" * W)
+        _row("clip_pusuluri", str(self.clip_pusuluri))
+        _row("clip_rajampeta", str(self.clip_rajampeta))
+        _row("exclude_visc", str(self.exclude_visc))
+        print("═" * W)
 
     # ------------------------------------------------------------------ #
     #  Post-processing

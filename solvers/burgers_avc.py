@@ -70,16 +70,8 @@ class BurgersAVC(BurgersSGSP):
         self,
         configuration: dict,
         correction_is_fixed: bool = False,
-        clip_pusuluri: bool = False,
-        clip_rajampeta: bool = False,
-        exclude_visc: bool = False,
     ) -> None:
-        super().__init__(
-            configuration,
-            clip_pusuluri=clip_pusuluri,
-            clip_rajampeta=clip_rajampeta,
-            exclude_visc=exclude_visc,
-        )
+        super().__init__(configuration)
 
         avc_model_path = Path(configuration["avc_model_path"])
         self._corrector: AVCorrector = load_corrector(avc_model_path)
@@ -334,6 +326,26 @@ class BurgersAVC(BurgersSGSP):
                 )
         return drain
 
+    def print_configuration(self) -> None:
+        """Print base + SGSP config plus AVC-specific settings."""
+        super().print_configuration()
+        W = 72
+        COL = 30
+
+        def _row(label: str, value: str) -> None:
+            print(f"  {label:<{COL}} {value}")
+
+        print()
+        print("  AV Corrector")
+        print("─" * W)
+        _row("model path", str(self.configuration.get("avc_model_path", "N/A")))
+        _row("correction mode", str(self._corrector.correction_mode))
+        _row("alpha_max", f"{self._corrector.alpha_max:.4e}")
+        _row("correction_is_fixed", str(self.correction_is_fixed))
+        _row("n_wavenumber_bins", str(self._n_wavenumber_bins))
+        _row("dns_dissipation", f"{self._dns_dissipation:.4e}")
+        print("═" * W)
+
     # ------------------------------------------------------------------ #
     #  Post-processing
     # ------------------------------------------------------------------ #
@@ -341,9 +353,27 @@ class BurgersAVC(BurgersSGSP):
     def post_processing(self) -> None:
         """Standard post-processing plus AVC contribution plots."""
         super().post_processing()
-        print("AV history:", self.av_history)
         if self.av_history:
             self.plot_avc_contributions()
+
+    def post_logging(self) -> None:
+        """Write run summary plus AVC-specific fields to the log file."""
+        super().post_logging()
+        self.logger.info(
+            "AVC — alpha_max: %.4e  correction_mode: %s  correction_is_fixed: %s",
+            self._corrector.alpha_max,
+            self._corrector.correction_mode,
+            self.correction_is_fixed,
+        )
+        if self.av_history:
+            av_arr = np.array(self.av_history)
+            self.logger.info(
+                "AV correction — mean: %.4e  min: %.4e  max: %.4e  final: %.4e",
+                float(av_arr.mean()),
+                float(av_arr.min()),
+                float(av_arr.max()),
+                float(av_arr[-1]),
+            )
 
     def plot_avc_contributions(self) -> None:
         """Plot applied viscosity α(t) and accumulated energy drain over time."""

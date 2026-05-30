@@ -270,8 +270,6 @@ class BurgersAVCEnvironment:
         self._solver_config = solver_config
         self._sac_config = sac_config
         self._dns_reference_schedule = dns_reference_schedule
-        self._clip_pusuluri = clip_pusuluri
-        self._clip_rajampeta = clip_rajampeta
         self._exclude_visc = exclude_visc
 
         self._solver: BurgersAVC | None = None
@@ -286,12 +284,14 @@ class BurgersAVCEnvironment:
 
     def reset(self) -> NDArray:
         """Instantiate a fresh BurgersAVC solver and return initial state sₙ."""
+        training_config = {
+            **self._solver_config,
+            "suppress_file_logging": True,
+            "write_solutions": False,
+        }
         self._solver = BurgersAVC(
-            configuration=self._solver_config,
+            configuration=training_config,
             correction_is_fixed=True,  # trainer controls av_correction externally
-            clip_pusuluri=self._clip_pusuluri,
-            clip_rajampeta=self._clip_rajampeta,
-            exclude_visc=self._exclude_visc,
         )
         self._total_les_steps = 0
         return self._solver._create_avc_input_stencil()
@@ -370,9 +370,16 @@ class BurgersAVCEnvironment:
             if self._solver.dissipation_history
             else 0.0
         )
-        dissipation_penalty = float(
-            w_eps * (current_dissipation - dns_dissipation) ** 2
+        # Include AV contribution to get total effective dissipation.
+        current_av_drain = (
+            self._solver.energy_drain_history[-1]
+            if self._solver.energy_drain_history
+            else 0.0
         )
+        total_dissipation = current_dissipation + current_av_drain
+
+        dissipation_penalty = float(w_eps * (total_dissipation - dns_dissipation) ** 2)
+
 
         return -(spectral_penalty + dissipation_penalty)
 

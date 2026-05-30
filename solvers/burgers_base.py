@@ -631,22 +631,87 @@ class BurgersBase:
         return formatted
 
     def print_configuration(self) -> None:
-        """Print run configuration to stdout."""
-        print("=" * 60)
-        print("Configuration settings")
-        print("Time Integration: Second Order Implicit Euler")
-        print(f"Simulation mode: {self.simulation_mode}")
-        print("=" * 60)
-        for key, value in self._format_config_for_display().items():
-            print(f"{key}: {value}")
-        print("=" * 60)
+        """Print run configuration in a clean tabular format."""
+        W = 72
+        COL = 30
+
+        def _row(label: str, value: str) -> None:
+            print(f"  {label:<{COL}} {value}")
+
+        def _sep(char: str = "─") -> None:
+            print(char * W)
+
+        def _section(title: str) -> None:
+            print()
+            print(f"  {title}")
+            _sep()
+
+        _sep("═")
+        print(
+            f"  Solver Configuration  ·  mode: {self.simulation_mode}  ·  integration: 2nd-order implicit Euler"
+        )
+        _sep("═")
+
+        # --- Mesh ---
+        _section("Mesh")
+        _row("nodes", str(self.n_nodes))
+        _row("elements", str(self.n_elements))
+        _row("domain length", f"{self.domain_length:.4g}")
+        _row("element size h", f"{self.element_size:.4e}")
+
+        # --- Time ---
+        _section("Time")
+        _row("timespan", f"{self.domain_timespan:.4g}")
+        _row("dt", f"{self.dt:.4e}")
+        _row("total steps", str(int(self.domain_timespan / self.dt)))
+        if self.extract_at_times is not None:
+            n_ext = len(self.extract_at_times)
+            first_five = "  ".join(f"{t:.4f}" for t in self.extract_at_times[:5])
+            _row("extractions", str(n_ext))
+            _row("  first 5 times", first_five)
+
+        # --- Physics ---
+        _section("Physics")
+        _row("viscosity ν", f"{self.viscosity:.4e}")
+        if callable(self.forcing):
+            forcing_str = f"{self.forcing.__name__} (from {getattr(self.forcing, '__module__', '')})"
+        elif self.forcing is None:
+            forcing_str = "None"
+        else:
+            forcing_str = f"array, shape {np.array(self.forcing).shape}"
+        _row("forcing", forcing_str)
+        _row("forcing steady", str(self.forcing_is_steady))
+
+        # --- Boundary conditions ---
+        _section("Boundary conditions")
+        _row("type", self.boundary_condition_type)
+        _row("value", str(self.boundary_condition_value))
+
+        # --- Solver ---
+        _section("Solver")
+        _row("max iterations", str(self.max_iterations))
+        _row("tol residual", f"{self.configuration['convergence_tol_residual']:.2e}")
+        _row("tol update", f"{self.configuration['convergence_tol_update']:.2e}")
+        _row("relaxation", str(self.relaxation_factor))
+        _row("objective", str(self.configuration.get("run_objective", "N/A")))
+
+        # --- Paths ---
+        _section("Paths")
+        _row("output", str(self.master_path))
+
+        _sep("═")
 
     def _setup_logger(self) -> logging.Logger:
-        """Initialise a file logger for this run."""
+        """Initialise a file logger for this run; skipped when suppress_file_logging is set."""
         logger_ = logging.getLogger(str(self.run_id))
         logger_.setLevel(logging.INFO)
         if logger_.handlers:
             return logger_
+
+        if self.configuration.get("suppress_file_logging", False):
+            logger_.addHandler(logging.NullHandler())
+            return logger_
+
         formatter = logging.Formatter("[%(levelname)s] - %(message)s")
         fh = logging.FileHandler(
             self.master_path / f"{self.run_id}.log", encoding="utf-8"
