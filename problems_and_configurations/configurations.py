@@ -11,7 +11,8 @@ from constants import (
     LES_ANN_SAVE_PATH,
     STABLE_FOLDER,
     LES_ANN_UNCLIPPED_FOLDER,
-    LES_AVC_SAVE_PATH,
+    LES_AVCG_SAVE_PATH,
+    LES_AVCL_SAVE_PATH,
 )
 from problems_and_configurations.mesh_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
@@ -116,6 +117,7 @@ def _resolve_sgsp_output_paths(
 
 def _resolve_avc_output_paths(
     solver_data_dir: Path,
+    is_global: bool,
     clip_pusuluri: bool = False,
     clip_rajampeta: bool = False,
 ) -> tuple[Path, Path]:
@@ -130,7 +132,13 @@ def _resolve_avc_output_paths(
     else:
         clip_variant_folder = LES_ANN_UNCLIPPED_FOLDER
 
-    base_avc_dir = solver_data_dir / LES_AVC_SAVE_PATH / clip_variant_folder
+    if is_global:
+        base_avc_dir = solver_data_dir / LES_AVCG_SAVE_PATH / clip_variant_folder
+    elif not is_global:
+        base_avc_dir = solver_data_dir / LES_AVCL_SAVE_PATH / clip_variant_folder
+    else:
+        raise ValueError("Pass the corrector mode!")
+
     stable_path = base_avc_dir / STABLE_FOLDER
     blown_up_path = base_avc_dir / BLOWN_UP_FOLDER
 
@@ -202,6 +210,7 @@ def create_avc_config(
     avc_model_path: str | Path,
     dns_energy_spectrum: NDArray,
     dns_dissipation: float,
+    is_global: bool,
     data_dir: Path | str | None = None,
     clip_pusuluri: bool = False,
     clip_rajampeta: bool = False,
@@ -214,6 +223,7 @@ def create_avc_config(
         solver_data_dir=Path(data_dir),
         clip_pusuluri=clip_pusuluri,
         clip_rajampeta=clip_rajampeta,
+        is_global=is_global,
     )
     config = {
         **config_sgsp,

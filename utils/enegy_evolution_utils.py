@@ -99,7 +99,8 @@ def plot_energy_comparison(
     les_a_dir: Path,
     les_nm_dir: Path,
     les_sgsp_dir: Path | None,
-    les_avc_dir: Path | None,
+    les_avcg_dir: Path | None,
+    les_avcl_dir: Path | None,
     output_path: Path,
     viscosity: float = 0.01,
     domain_length: float = 1.0,
@@ -113,7 +114,8 @@ def plot_energy_comparison(
         "LES-A": (les_a_dir, "royalblue", "--", 1.4),
         "LES-NM": (les_nm_dir, "tab:orange", "-.", 1.4),
         "LES-SGSP": (les_sgsp_dir, "crimson", ":", 1.8),
-        "LES-AVC": (les_avc_dir, "mediumorchid", ":", 1.8),
+        "LES-AVCG": (les_avcg_dir, "mediumorchid", ":", 1.8),
+        "LES-AVCL": (les_avcl_dir, "gold", "-.", 1.8),
     }
 
     data: dict = {}

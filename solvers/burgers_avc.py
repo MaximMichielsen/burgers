@@ -173,6 +173,7 @@ class BurgersAVC(BurgersSGSP):
 
         sₙ = (Ê₁, …, Êₖ, ε⁻ⁿ, αₙ₋₁)
         where Êₖ = E(k, t) / E_DNS(k) is the DNS-normalised spectral energy.
+        For local mode αₙ₋₁ is the mean correction over all nodes.
 
         Returns
         -------
@@ -185,10 +186,8 @@ class BurgersAVC(BurgersSGSP):
         _, positive_spectrum = self.get_positive_spectrum(
             wavenumbers_all, raw_spectrum_all
         )
-        # Trim to K bins to match DNS target length.
         spectrum_k = positive_spectrum[: self._n_wavenumber_bins].astype(np.float32)
 
-        # Normalise: Êₖ = E(k) / E_DNS(k); avoid division by zero.
         dns_safe = np.where(
             self._dns_energy_spectrum > 0.0, self._dns_energy_spectrum, 1.0
         )
@@ -197,24 +196,37 @@ class BurgersAVC(BurgersSGSP):
         dissipation_val = np.float32(
             self.dissipation_history[-1] if self.dissipation_history else 0.0
         )
-        alpha_prev_val = np.float32(self.av_correction)
 
-        return np.concatenate([normalised_spectrum, [dissipation_val, alpha_prev_val]])
+        av_corr = self.av_correction
+        if isinstance(av_corr, np.ndarray):
+            alpha_prev_val = np.float32(float(np.mean(av_corr)))
+        else:
+            alpha_prev_val = np.float32(av_corr)
 
-    def _calc_avc_correction(self) -> float:
-        """Run the AVCorrector forward pass and return αₙ ∈ [0, αₘₐₓ].
+        return np.concatenate(
+            [
+                normalised_spectrum,
+                np.array([dissipation_val, alpha_prev_val], dtype=np.float32),
+            ]
+        )
+
+    def _calc_avc_correction(self) -> float | NDArray:
+        """Run the AVCorrector forward pass and return αₙ.
 
         Returns
         -------
-        alpha_n : scalar float.
+        alpha_n : scalar float for global mode, NDArray shape (N_nodes,) for local.
         """
         state_array = self._create_avc_input_stencil()
         state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
 
         with torch.no_grad():
-            alpha_tensor = self._corrector(state_tensor)
+            alpha_tensor = self._corrector(state_tensor).squeeze(0)  # (output_dim,)
 
-        return float(alpha_tensor.squeeze().item())
+        if self._corrector.correction_mode == "global":
+            return float(alpha_tensor.item())
+        else:
+            return alpha_tensor.numpy().astype(np.float64)  # (N_nodes,)
 
     def _add_avc_correction(self) -> None:
         """Predict αₙ and write it into self.av_correction.
@@ -223,15 +235,10 @@ class BurgersAVC(BurgersSGSP):
         _jacobian_integrand at element-assembly time, so it must be set before
         super().advance_time_step() is called.
         """
-        alpha_output = self._calc_avc_correction()
-
-        if self._corrector.correction_mode == "global":
-            self.av_correction = float(alpha_output)  # scalar float
-        else:
-            self.av_correction = alpha_output  # NDArray shape (N,)
+        self.av_correction = self._calc_avc_correction()
 
         logger.debug(
-            "AVC correction applied: α=%.6e  (t=%.4f)",
+            "AVC correction applied: α=%s  (t=%.4f)",
             self.av_correction,
             self.simulation_time_elapsed,
         )
@@ -250,8 +257,10 @@ class BurgersAVC(BurgersSGSP):
         f_interp: float = 0.0,
     ) -> float:
         """Weak-form residual integrand with effective viscosity νeff = ν + α."""
-        if self._corrector.correction_mode == "global":
-            av_local = self.av_correction
+        if self._corrector.correction_mode == "global" or isinstance(
+            self.av_correction, float
+        ):
+            av_local = float(self.av_correction)
         else:
             av_local = float(basis @ self.av_correction[list(self._current_element)])
         time_derivative = basis[i] * (f["u_k"] - f["u_n"]) / self.dt
@@ -269,8 +278,10 @@ class BurgersAVC(BurgersSGSP):
         f: dict[str, float],
     ) -> float:
         """Jacobian integrand with effective viscosity νeff = ν + α."""
-        if self._corrector.correction_mode == "global":
-            av_local = self.av_correction
+        if self._corrector.correction_mode == "global" or isinstance(
+            self.av_correction, float
+        ):
+            av_local = float(self.av_correction)
         else:
             av_local = float(basis @ self.av_correction[list(self._current_element)])
         mass = basis[i] * basis[j] / self.dt
@@ -302,12 +313,17 @@ class BurgersAVC(BurgersSGSP):
 
         The AV contribution to dissipation is α · ∫(∂u/∂x)² dx, mirroring
         compute_dissipation in BurgersBase but with α instead of ν.
+        For local mode α is interpolated to each Gauss point via the basis functions.
 
         Returns
         -------
-        energy_drain : float  (zero when av_correction is zero).
+        energy_drain : float  (zero when av_correction is everywhere zero).
         """
-        if self.av_correction == 0.0:
+        av_corr = self.av_correction
+        if isinstance(av_corr, np.ndarray):
+            if not np.any(av_corr):
+                return 0.0
+        elif av_corr == 0.0:
             return 0.0
 
         drain = 0.0
@@ -318,8 +334,14 @@ class BurgersAVC(BurgersSGSP):
         for element in self.elements:
             u_element = self.solution[element]
             for gauss_point, gauss_weight in zip(points, weights):
+                if isinstance(av_corr, np.ndarray):
+                    basis_vals = self.reference_basis_functions(gauss_point)
+                    av_local = float(basis_vals @ av_corr[list(element)])
+                else:
+                    av_local = float(av_corr)
+
                 drain += (
-                    self.av_correction
+                    av_local
                     * gauss_weight
                     * abs(jacobian_val)
                     * (dn_dx @ u_element) ** 2
@@ -366,7 +388,15 @@ class BurgersAVC(BurgersSGSP):
             self.correction_is_fixed,
         )
         if self.av_history:
-            av_arr = np.array(self.av_history)
+            # For local mode each entry is an NDArray; flatten to a single array
+            # of all per-node values across all steps for summary statistics.
+            av_arr = np.array(
+                [
+                    np.mean(a) if isinstance(a, np.ndarray) else a
+                    for a in self.av_history
+                ],
+                dtype=np.float64,
+            )
             self.logger.info(
                 "AV correction — mean: %.4e  min: %.4e  max: %.4e  final: %.4e",
                 float(av_arr.mean()),
@@ -387,7 +417,11 @@ class BurgersAVC(BurgersSGSP):
             return
 
         time_axis = np.array(self.time_steps[:n_plot_points], dtype=float) * self.dt
-        av_array = np.array(self.av_history[:n_plot_points])
+        av_raw = self.av_history[:n_plot_points]
+        av_array = np.array(
+            [np.mean(a) if isinstance(a, np.ndarray) else a for a in av_raw],
+            dtype=np.float64,
+        )
         drain_array = np.cumsum(self.energy_drain_history[:n_plot_points])
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4))
@@ -396,7 +430,6 @@ class BurgersAVC(BurgersSGSP):
         axes[0].set_xlabel("Time")
         axes[0].set_ylabel(r"$\alpha(t)$")
         axes[0].set_title("AV correction applied by corrector policy")
-        axes[0].legend()
         axes[0].grid(True, alpha=0.3)
 
         axes[1].plot(time_axis, drain_array, color="royalblue", linewidth=1.5)

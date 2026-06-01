@@ -126,7 +126,7 @@ class Transition(NamedTuple):
     """Single MDP transition (sₙ, αₙ, rₙ, sₙ₊₁, done)."""
 
     state: NDArray
-    action: float
+    action: NDArray
     reward: float
     next_state: NDArray
     done: bool
@@ -151,8 +151,8 @@ class ReplayBuffer:
             np.array([t.state for t in batch]), dtype=torch.float32
         )
         actions_tensor = torch.tensor(
-            np.array([[t.action] for t in batch]), dtype=torch.float32
-        )
+            np.array([t.action for t in batch]), dtype=torch.float32
+        )  # shape (batch, action_dim): (batch, 1) global or (batch, N_nodes) local
         rewards_tensor = torch.tensor(
             np.array([[t.reward] for t in batch]), dtype=torch.float32
         )
@@ -182,11 +182,10 @@ class ReplayBuffer:
 class _QNetwork(nn.Module):
     """Single Q(s, a) MLP approximator."""
 
-    def __init__(self, state_dim: int, hidden_dim: int) -> None:
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int) -> None:
         super().__init__()
-        # Input is (s ‖ a): state_dim + 1 for scalar action.
         self.network = nn.Sequential(
-            nn.Linear(state_dim + 1, hidden_dim),
+            nn.Linear(state_dim + action_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -202,22 +201,20 @@ class _QNetwork(nn.Module):
 class TwinQNetwork(nn.Module):
     """Twin Q-networks Q₁, Q₂ to reduce overestimation bias."""
 
-    def __init__(self, state_dim: int, hidden_dim: int) -> None:
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int) -> None:
         super().__init__()
-        self.q1_network = _QNetwork(state_dim, hidden_dim)
-        self.q2_network = _QNetwork(state_dim, hidden_dim)
+        self.q1_network = _QNetwork(state_dim, action_dim, hidden_dim)
+        self.q2_network = _QNetwork(state_dim, action_dim, hidden_dim)
 
     def forward(
         self, state_input: Tensor, action_input: Tensor
     ) -> tuple[Tensor, Tensor]:
-        """Return (Q₁(s,a), Q₂(s,a))."""
         return (
             self.q1_network(state_input, action_input),
             self.q2_network(state_input, action_input),
         )
 
     def q1_only(self, state_input: Tensor, action_input: Tensor) -> Tensor:
-        """Return Q₁(s,a) only (used in actor update)."""
         return self.q1_network(state_input, action_input)
 
 
@@ -291,16 +288,23 @@ class BurgersAVCEnvironment:
         }
         self._solver = BurgersAVC(
             configuration=training_config,
-            correction_is_fixed=True,  # trainer controls av_correction externally
+            correction_is_fixed=True,
         )
         self._total_les_steps = 0
+        # Cache correction mode after solver (and thus corrector) is constructed.
+        self._correction_mode = self._solver._corrector.correction_mode
+        self._n_output_nodes = self._solver._corrector.output_dim
         return self._solver._create_avc_input_stencil()
 
     def step(self, alpha_action: float) -> tuple[NDArray, float, bool]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done)."""
         assert self._solver is not None, "Call reset() before step()."
 
-        self._solver.av_correction = float(alpha_action)
+        alpha_array = np.asarray(alpha_action, dtype=np.float64)
+        if self._correction_mode == "local":
+            self._solver.av_correction = alpha_array  # shape (N_nodes,)
+        else:
+            self._solver.av_correction = float(alpha_array.item())  # scalar
 
         blown_up = False
         for _ in range(self._sac_config.n_skip_steps):
@@ -380,7 +384,6 @@ class BurgersAVCEnvironment:
 
         dissipation_penalty = float(w_eps * (total_dissipation - dns_dissipation) ** 2)
 
-
         return -(spectral_penalty + dissipation_penalty)
 
 
@@ -427,7 +430,19 @@ class SACAgent:
         self._policy = av_corrector
         self._config = sac_config
 
-        self._critic = TwinQNetwork(state_dim, sac_config.critic_hidden_dim)
+        action_dim = av_corrector.output_dim
+        effective_target_entropy = (
+            sac_config.target_entropy
+            if sac_config.target_entropy != -1.0
+            else -float(action_dim)
+        )
+        self._target_entropy = effective_target_entropy
+
+        self._critic = TwinQNetwork(
+            state_dim=state_dim,
+            hidden_dim=sac_config.critic_hidden_dim,
+            action_dim=action_dim,
+        )
         self._critic_target = copy.deepcopy(self._critic)
         for param_tensor in self._critic_target.parameters():
             param_tensor.requires_grad = False
@@ -451,22 +466,23 @@ class SACAgent:
 
     def select_action(
         self, state_array: NDArray, *, deterministic: bool = False
-    ) -> float:
+    ) -> NDArray:
         """Return αₙ for the given state sₙ.
 
-        Exploration noise (~5 % of αₘₐₓ Gaussian) added during training;
-        suppressed when deterministic=True.
+        Returns shape (1,) for global or (N_nodes,) for local.
         """
         state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
         with torch.no_grad():
-            mean_action_val = self._policy(state_tensor).squeeze().item()
+            action_tensor = self._policy(state_tensor).squeeze(0)  # (action_dim,)
 
         if deterministic:
-            return float(mean_action_val)
+            return action_tensor.numpy()
 
         noise_std = 0.05 * self._policy.alpha_max
-        noisy_action = float(mean_action_val) + float(np.random.normal(0.0, noise_std))
-        return float(np.clip(noisy_action, 0.0, self._policy.alpha_max))
+        noisy_action = action_tensor.numpy() + np.random.normal(
+            0.0, noise_std, size=action_tensor.shape
+        )
+        return np.clip(noisy_action, 0.0, self._policy.alpha_max).astype(np.float32)
 
     def update(self, replay_buffer: ReplayBuffer) -> tuple[float, float, float]:
         """One SAC gradient step on critic, actor, and temperature.
@@ -520,8 +536,7 @@ class SACAgent:
 
         # ---- Temperature update ----
         alpha_loss_val = -(
-            self._log_alpha_temp
-            * (actor_loss_val.detach() + self._config.target_entropy)
+            self._log_alpha_temp * (actor_loss_val.detach() + self._target_entropy)
         )
         self._alpha_temp_optimizer.zero_grad()
         alpha_loss_val.backward()
@@ -612,8 +627,12 @@ class OnlineAVTrainer:
 
             while not done_flag:
                 if self._stats.total_env_steps < self._config.warmup_steps:
-                    alpha_action_val = float(
+                    random_scalar = float(
                         np.random.uniform(0.0, self._agent._policy.alpha_max)
+                    )
+                    action_dim = self._agent._policy.output_dim
+                    alpha_action_val = np.full(
+                        action_dim, random_scalar, dtype=np.float32
                     )
                 else:
                     alpha_action_val = self._agent.select_action(state_current)

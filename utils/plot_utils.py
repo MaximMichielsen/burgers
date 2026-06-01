@@ -37,7 +37,8 @@ def build_plot_configs(
     dns_solution: NDArray,
     projected_solution: NDArray,
     les_sgsp_data_path: Path,
-    les_avc_data_path: Path,
+    les_avcg_data_path: Path,
+    les_avcl_data_path: Path,
     les_avc_fixed_mean_path: Path,
 ) -> list[SolutionConfig]:
     """Build the five standard solution plot configs for a pipeline run."""
@@ -82,20 +83,27 @@ def build_plot_configs(
             mesh=disc_cfg.mesh_les,
         ),
         SolutionConfig(
-            data_path=les_avc_data_path,
-            label="LES - AVC",
+            data_path=les_avcg_data_path,
+            label="LES - AVCG",
             color="mediumorchid",
             marker="*",
             mesh=disc_cfg.mesh_les,
         ),
         SolutionConfig(
             data_path=les_avc_fixed_mean_path,
-            label="LES - fm-AVC",
+            label="LES - fm-AVCG",
             color="plum",
             linestyle="--",
             marker="*",
             mesh=disc_cfg.mesh_les,
             alpha=0.6,
+        ),
+        SolutionConfig(
+            data_path=les_avcl_data_path,
+            label="LES - AVCL",
+            color="gold",
+            marker="2",
+            mesh=disc_cfg.mesh_les,
         ),
     ]
 

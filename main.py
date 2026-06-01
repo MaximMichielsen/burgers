@@ -34,6 +34,8 @@ pipeline.debug_sgsp = True
 
 problem: Problem = Problems.raj_two
 
+alpha_max_var: float = 10
+
 disc_cfg = DiscretisationConfig(
     n_elements_les=8,
     temporal_refinement=1,
@@ -188,11 +190,11 @@ if pipeline.run_sgsp and pipeline.debug_sgsp:
     diagnose_sgsp_predictions(solver=solver_ann_debug, n_steps=10)
 
 # ---------------------------------------------------------------------------
-# Step 7: AVC online training
+# Step 7a: AVC (global) online training
 # ---------------------------------------------------------------------------
 
-config_avc: dict | None = None
-avc_stable_path: Path | None = None
+config_avc_global: dict | None = None
+avc_stable_path_global: Path | None = None
 
 if pipeline.run_avc_online_training:
     if solver_sgsp is None:
@@ -215,20 +217,25 @@ if pipeline.run_avc_online_training:
     dns_dissipation_ref = float(solver_sgsp.dissipation_history[-1])
     n_wavenumber_bins = len(dns_positive_spectrum)
 
-    config_avc, avc_stable_path, _ = create_avc_config(
+    config_avc_global, avc_stable_path_global, _ = create_avc_config(
         config_sgsp=config_sgsp,
-        avc_model_path=paths.model_output / "av_corrector.pt",
+        avc_model_path=paths.model_output / "av_global_corrector.pt",
         dns_energy_spectrum=dns_positive_spectrum,
         dns_dissipation=dns_dissipation_ref,
         data_dir=paths.solver_data,
         clip_pusuluri=pipeline.clip_pusuluri,
         clip_rajampeta=pipeline.clip_rajampeta,
+        is_global=True,
     )
 
-    av_corrector_model = AVCorrector(
-        alpha_max=1 * problem.viscosity, n_wavenumber_bins=n_wavenumber_bins
+    av_corrector_global_model = AVCorrector(
+        alpha_max=alpha_max_var * problem.viscosity,
+        output_scale=problem.viscosity * 2,
+        n_wavenumber_bins=n_wavenumber_bins,
     )
-    save_corrector(av_corrector_model, paths.model_output / "av_corrector.pt")
+    save_corrector(
+        av_corrector_global_model, paths.model_output / "av_global_corrector.pt"
+    )
 
     sac_config = SACConfig(n_skip_steps=5, warmup_steps=100, batch_size=64)
     dns_reference_schedule = DNSReferenceSchedule.from_directory(
@@ -237,60 +244,143 @@ if pipeline.run_avc_online_training:
         viscosity=problem.viscosity,
         n_wavenumber_bins=n_wavenumber_bins,
     )
-    assert isinstance(config_avc, dict)
-    environment = BurgersAVCEnvironment(
-        solver_config=config_avc,
+    assert isinstance(config_avc_global, dict)
+    environment_global = BurgersAVCEnvironment(
+        solver_config=config_avc_global,
         sac_config=sac_config,
         dns_reference_schedule=dns_reference_schedule,
     )
-    sac_agent = SACAgent(
-        av_corrector=av_corrector_model,
-        state_dim=environment.state_dim,
+    sac_agent_global = SACAgent(
+        av_corrector=av_corrector_global_model,
+        state_dim=environment_global.state_dim,
         sac_config=sac_config,
     )
-    trainer = OnlineAVTrainer(
-        environment=environment,
-        sac_agent=sac_agent,
+    trainer_global = OnlineAVTrainer(
+        environment=environment_global,
+        sac_agent=sac_agent_global,
         sac_config=sac_config,
-        output_dir=paths.model_output / "avc_checkpoints",
+        output_dir=paths.model_output / "avcg_checkpoints",
     )
-    trainer.train(n_episodes=50)
+    trainer_global.train(n_episodes=50)
 
 # ---------------------------------------------------------------------------
-# Step 8a: Run AVC model
+# Step 7b: Run AVC model
 # ---------------------------------------------------------------------------
 
-solver_avc: BurgersAVC | None = None
+solver_avc_global: BurgersAVC | None = None
 if pipeline.run_avc:
-    if config_avc is None or avc_stable_path is None:
+    if config_avc_global is None or avc_stable_path_global is None:
         raise RuntimeError(
             "Step 8a requires config_avc — enable pipeline.run_avc_online_training first."
         )
-    solver_avc = BurgersAVC(configuration=config_avc)
-    assert solver_avc is not None
-    solver_avc.print_configuration()
-    solver_avc.run_simulation()
-    solver_avc.post_processing()
+    solver_avc_global = BurgersAVC(configuration=config_avc_global)
+    assert solver_avc_global is not None
+    solver_avc_global.print_configuration()
+    solver_avc_global.run_simulation()
+    solver_avc_global.post_processing()
 
-les_avc_data_path = (
-    solver_avc.master_path if solver_avc is not None else avc_stable_path
+les_avc_data_path_global = (
+    solver_avc_global.master_path
+    if solver_avc_global is not None
+    else avc_stable_path_global
 )
 
 # ---------------------------------------------------------------------------
-# Step 8b: Fixed mean AV baseline
+# Step 8a: AVC (local) online training
+# ---------------------------------------------------------------------------
+
+if pipeline.run_avc_online_training:
+    if solver_sgsp is None:
+        raise RuntimeError(
+            "Step 7 requires solver_sgsp — enable pipeline.run_sgsp first."
+        )
+
+    config_avc_local, avc_stable_path_local, _ = create_avc_config(
+        config_sgsp=config_sgsp,
+        avc_model_path=paths.model_output / "av_local_corrector.pt",
+        dns_energy_spectrum=dns_positive_spectrum,
+        dns_dissipation=dns_dissipation_ref,
+        data_dir=paths.solver_data,
+        clip_pusuluri=pipeline.clip_pusuluri,
+        clip_rajampeta=pipeline.clip_rajampeta,
+        is_global=False,
+    )
+
+    av_corrector_local_model = AVCorrector(
+        alpha_max=alpha_max_var * problem.viscosity,
+        output_scale=problem.viscosity * 2,
+        n_wavenumber_bins=n_wavenumber_bins,
+        correction_mode="local",
+        n_output_nodes=disc_cfg.n_nodes_les,
+    )
+    save_corrector(
+        av_corrector_local_model, paths.model_output / "av_local_corrector.pt"
+    )
+
+    sac_config = SACConfig(n_skip_steps=5, warmup_steps=100, batch_size=64)
+    dns_reference_schedule = DNSReferenceSchedule.from_directory(
+        dns_dir=paths.dns_data,
+        domain_length=problem.domain_length,
+        viscosity=problem.viscosity,
+        n_wavenumber_bins=n_wavenumber_bins,
+    )
+    assert isinstance(config_avc_local, dict)
+    environment_local = BurgersAVCEnvironment(
+        solver_config=config_avc_local,
+        sac_config=sac_config,
+        dns_reference_schedule=dns_reference_schedule,
+    )
+    sac_agent_local = SACAgent(
+        av_corrector=av_corrector_local_model,
+        state_dim=environment_local.state_dim,
+        sac_config=sac_config,
+    )
+    trainer_local = OnlineAVTrainer(
+        environment=environment_local,
+        sac_agent=sac_agent_local,
+        sac_config=sac_config,
+        output_dir=paths.model_output / "avcl_checkpoints",
+    )
+    trainer_local.train(n_episodes=50)
+
+# ---------------------------------------------------------------------------
+# Step 8b: Run AVC model
+# ---------------------------------------------------------------------------
+
+if pipeline.run_avc:
+    if config_avc_local is None or avc_stable_path_local is None:
+        raise RuntimeError(
+            "Step 8a requires config_avc — enable pipeline.run_avc_online_training first."
+        )
+    solver_avc_local = BurgersAVC(configuration=config_avc_local)
+    assert solver_avc_local is not None
+    solver_avc_local.print_configuration()
+    solver_avc_local.run_simulation()
+    solver_avc_local.post_processing()
+
+les_avc_data_path_local = (
+    solver_avc_local.master_path
+    if solver_avc_local is not None
+    else avc_stable_path_local
+)
+
+# ---------------------------------------------------------------------------
+# Step 7c: Fixed mean AV baseline
 # ---------------------------------------------------------------------------
 
 solver_avc_fixed_mean: BurgersAVC | None = None
-if pipeline.run_avc and solver_avc is not None and config_avc is not None:
+if pipeline.run_avc and solver_avc_global is not None and config_avc_global is not None:
     av_mean_value = (
-        float(np.mean(solver_avc.av_history)) if solver_avc.av_history else 0.0
+        float(np.mean(solver_avc_global.av_history))
+        if solver_avc_global.av_history
+        else 0.0
     )
 
     fixed_av_stable_path = paths.solver_data / "LES_AVC_fixed_mean" / "stable"
     fixed_av_stable_path.mkdir(parents=True, exist_ok=True)
 
     config_avc_fixed_mean = {
-        **config_avc,
+        **config_avc_global,
         "master_path": str(fixed_av_stable_path),
         "run_objective": "avc_fixed_mean_baseline",
     }
@@ -316,10 +406,10 @@ if pipeline.run_plotting:
     dns_solution, _ = read_data(directory=paths.dns_data, final_only=True)
     projected_solution = np.load(paths.projection / "solutions_projection.npy")[-1]
 
-    les_avc_data_path = (
-        solver_avc.master_path
-        if solver_avc is not None
-        else avc_stable_path or paths.solver_data / "LES_AVC" / "stable"
+    les_avc_data_path_global = (
+        solver_avc_global.master_path
+        if solver_avc_global is not None
+        else avc_stable_path_global or paths.solver_data / "LES_AVC" / "stable"
     )
 
     plot_configs_all = build_plot_configs(
@@ -328,7 +418,8 @@ if pipeline.run_plotting:
         dns_solution=dns_solution,
         projected_solution=projected_solution,
         les_sgsp_data_path=les_sgsp_data_path,
-        les_avc_data_path=les_avc_data_path,
+        les_avcg_data_path=les_avc_data_path_global,
+        les_avcl_data_path=les_avc_data_path_local,
         les_avc_fixed_mean_path=les_avc_fixed_mean_path,
     )
 
@@ -363,8 +454,11 @@ if pipeline.run_plotting:
         les_sgsp_dir=les_sgsp_data_path
         if is_viable_solution_path(les_sgsp_data_path)
         else None,
-        les_avc_dir=les_avc_data_path
-        if is_viable_solution_path(les_avc_data_path)
+        les_avcg_dir=les_avc_data_path_global
+        if is_viable_solution_path(les_avc_data_path_global)
+        else None,
+        les_avcl_dir=les_avc_data_path_local
+        if is_viable_solution_path(les_avc_data_path_local)
         else None,
         output_path=paths.master,
         viscosity=problem.viscosity,

@@ -42,6 +42,7 @@ class AVCorrector(nn.Module):
         hidden_dim: int = HIDDEN_UNITS,
         correction_mode: Literal["global", "local"] = "global",
         n_output_nodes: int = 1,  # ignored for global; N_LES for local.
+        output_scale: float | None = None,  # sigmoid scale; defaults to alpha_max
     ) -> None:
         super().__init__()
 
@@ -66,6 +67,7 @@ class AVCorrector(nn.Module):
         input_dim: int = n_wavenumber_bins + 2
         output_dim: int = n_output_nodes
 
+        self.output_scale = output_scale if output_scale is not None else alpha_max
         self.alpha_max = alpha_max
         self.n_wavenumber_bins = n_wavenumber_bins
         self.hidden_dim = hidden_dim
@@ -85,16 +87,10 @@ class AVCorrector(nn.Module):
         # TODO: rethink this whole alpha max thing
 
     def forward(self, state_input: Tensor) -> Tensor:
-        """Returns shape (batch, 1) for global or (batch, N) for local.
-
-        Network outputs are passed through softplus to enforce positivity,
-        then hard-clipped to alpha_max. This decouples the learned scale
-        from the upper bound — raising alpha_max only expands headroom,
-        it does not rescale existing outputs.
-        """
+        """Sigmoid-bounded output, hard-clamped to alpha_max as a safety ceiling."""
         raw_output = self.network(state_input)
-        positive_output = nn.functional.softplus(raw_output)
-        return torch.clamp(positive_output, max=self.alpha_max)
+        scaled_output = self.output_scale * torch.sigmoid(raw_output)
+        return torch.clamp(scaled_output, max=self.alpha_max)
 
 
 # ---------------------------------------------------------------------------
@@ -113,25 +109,29 @@ def train_corrector() -> None:
 
 
 def save_corrector(model: AVCorrector, save_path: Path) -> None:
-    """Save AVCorrector weights and config to a .pt checkpoint."""
     torch.save(
         {
             "model_state_dict": model.state_dict(),
             "alpha_max": model.alpha_max,
             "n_wavenumber_bins": model.n_wavenumber_bins,
             "hidden_dim": model.hidden_dim,
+            "correction_mode": model.correction_mode,
+            "n_output_nodes": model.output_dim,
+            "output_scale": model.output_scale,
         },
         save_path,
     )
 
 
 def load_corrector(model_path: Path) -> AVCorrector:
-    """Load a saved AVCorrector from a .pt checkpoint."""
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
     model = AVCorrector(
         alpha_max=checkpoint["alpha_max"],
         n_wavenumber_bins=checkpoint["n_wavenumber_bins"],
         hidden_dim=checkpoint["hidden_dim"],
+        correction_mode=checkpoint.get("correction_mode", "global"),
+        n_output_nodes=checkpoint.get("n_output_nodes", 1),
+        output_scale=checkpoint.get("output_scale", None),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
