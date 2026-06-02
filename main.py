@@ -34,7 +34,8 @@ pipeline.debug_sgsp = True
 
 problem: Problem = Problems.raj_two
 
-alpha_max_var: float = 10
+alpha_max_var: float = 100
+output_max_var: float = 10
 
 disc_cfg = DiscretisationConfig(
     n_elements_les=8,
@@ -308,7 +309,7 @@ if pipeline.run_avc_online_training:
 
     av_corrector_local_model = AVCorrector(
         alpha_max=alpha_max_var * problem.viscosity,
-        output_scale=problem.viscosity * 2,
+        output_scale=problem.viscosity * output_max_var,
         n_wavenumber_bins=n_wavenumber_bins,
         correction_mode="local",
         n_output_nodes=disc_cfg.n_nodes_les,

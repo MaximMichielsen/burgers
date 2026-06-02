@@ -339,7 +339,7 @@ class BurgersAVCEnvironment:
         dns_dissipation_static = float(self._solver_config["dns_dissipation"])
         return dns_spectrum_static, dns_dissipation_static
 
-    def _compute_reward(self, blown_up: bool) -> float:
+    def _compute_reward(self, blown_up: bool, spectral_pen_only: bool = True) -> float:
         """Compute rₙ from eq. (2.10); large terminal penalty on blow-up."""
         if blown_up:
             return -1e8
@@ -384,6 +384,8 @@ class BurgersAVCEnvironment:
 
         dissipation_penalty = float(w_eps * (total_dissipation - dns_dissipation) ** 2)
 
+        if spectral_pen_only:
+            return -spectral_penalty
         return -(spectral_penalty + dissipation_penalty)
 
 
