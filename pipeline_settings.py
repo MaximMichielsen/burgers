@@ -115,6 +115,14 @@ class PipelineConfig:
         )
 
     @classmethod
+    def all_but_dns(cls, manual_path: str = "") -> "PipelineConfig":
+        """Full pipeline minus DNS, with predictor clipping enabled."""
+        return cls(
+            manual_path=manual_path,
+            run_dns=False,
+        )
+
+    @classmethod
     def coupled_only(cls, manual_path: str = "") -> "PipelineConfig":
         """Coupled simulation and plotting only; skips data generation and training."""
         return cls(
