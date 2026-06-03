@@ -32,13 +32,14 @@ pipeline.clip_pusuluri = True
 pipeline.clip_rajampeta = False
 pipeline.debug_sgsp = True
 
-problem: Problem = Problems.raj_two
+problem: Problem = Problems.raj_three
 
-alpha_max_var: float = 100
-output_max_var: float = 10
+alpha_max_var: float = 10
+output_max_var: float = 2
+spectral_pen_only: bool = False
 
 disc_cfg = DiscretisationConfig(
-    n_elements_les=8,
+    n_elements_les=16,
     temporal_refinement=1,
     courant_les=0.04,
     domain_length=problem.domain_length,
@@ -250,6 +251,7 @@ if pipeline.run_avc_online_training:
         solver_config=config_avc_global,
         sac_config=sac_config,
         dns_reference_schedule=dns_reference_schedule,
+        spectral_penalty_only=spectral_pen_only,
     )
     sac_agent_global = SACAgent(
         av_corrector=av_corrector_global_model,
@@ -330,6 +332,7 @@ if pipeline.run_avc_online_training:
         solver_config=config_avc_local,
         sac_config=sac_config,
         dns_reference_schedule=dns_reference_schedule,
+        spectral_penalty_only=spectral_pen_only,
     )
     sac_agent_local = SACAgent(
         av_corrector=av_corrector_local_model,

@@ -263,6 +263,7 @@ class BurgersAVCEnvironment:
         clip_pusuluri: bool = False,
         clip_rajampeta: bool = False,
         exclude_visc: bool = False,
+        spectral_penalty_only: bool = False
     ) -> None:
         self._solver_config = solver_config
         self._sac_config = sac_config
@@ -278,6 +279,8 @@ class BurgersAVCEnvironment:
         dns_spectrum_static = np.asarray(solver_config["dns_energy_spectrum"])
         self.n_wavenumber_bins: int = len(dns_spectrum_static)
         self.state_dim: int = self.n_wavenumber_bins + 2
+
+        self.spectral_penalty_only = spectral_penalty_only
 
     def reset(self) -> NDArray:
         """Instantiate a fresh BurgersAVC solver and return initial state sₙ."""
@@ -314,7 +317,7 @@ class BurgersAVCEnvironment:
                 blown_up = True
                 break
 
-        reward_val = self._compute_reward(blown_up=blown_up)
+        reward_val = self._compute_reward(blown_up=blown_up, spectral_pen_only=self.spectral_penalty_only)
         done_flag = blown_up or self._total_les_steps >= self._max_les_steps
         next_state_array = self._solver._create_avc_input_stencil()
 
@@ -339,7 +342,7 @@ class BurgersAVCEnvironment:
         dns_dissipation_static = float(self._solver_config["dns_dissipation"])
         return dns_spectrum_static, dns_dissipation_static
 
-    def _compute_reward(self, blown_up: bool, spectral_pen_only: bool = True) -> float:
+    def _compute_reward(self, blown_up: bool, spectral_pen_only: bool) -> float:
         """Compute rₙ from eq. (2.10); large terminal penalty on blow-up."""
         if blown_up:
             return -1e8
