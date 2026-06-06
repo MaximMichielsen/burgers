@@ -1,0 +1,43 @@
+{
+  "simulation_mode": "sgsp",
+  "run_objective": "data_generation",
+  "boundary_condition_type": "dirichlet",
+  "boundary_condition_value": 1.0,
+  "extract_at_times": [
+    0.0,
+    0.0075,
+    0.015
+  ],
+  "node_amount": 9,
+  "domain_timespan": 0.015,
+  "time_step": 0.005,
+  "domain_length": 1.0,
+  "convergence_tol_residual": 0.0001,
+  "convergence_tol_update": 0.0001,
+  "initial_condition": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "external_forcing": "<callable: compute_sine_forcing>",
+  "forcing_steady": false,
+  "max_iterations": 20,
+  "relaxation": null,
+  "viscosity": 0.01,
+  "sgsp_model_path": "C:\\Users\\poopy\\PycharmProjects\\burgers\\runs\\run_raj_two_0603_130247\\agents\\sgs_predictor.pt",
+  "normalisation_stats_path": "C:\\Users\\poopy\\PycharmProjects\\burgers\\runs\\run_raj_two_0603_130247\\training_data\\post_split\\normalisation_stats.npz",
+  "sgsp_warmup_steps": 1,
+  "blowup_threshold": 10000.0,
+  "blowup_buffer_size": 5000,
+  "clip_pusuluri": true,
+  "clip_rajampeta": false,
+  "exclude_visc": false,
+  "blown_up_path": "C:\\Users\\poopy\\PycharmProjects\\burgers\\validation\\runs\\run_raj_two_0606_163053\\solver_data\\LES_SGSP\\pusuluri\\blown_up",
+  "run_id": "0606_163053"
+}

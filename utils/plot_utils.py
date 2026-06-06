@@ -31,18 +31,24 @@ class SolutionConfig:
     solution: Optional[NDArray] = field(default=None, repr=False)
 
 
+# utils/plot_utils.py
+
+
 def build_plot_configs(
     paths: RunPaths,
     disc_cfg: DiscretisationConfig,
     dns_solution: NDArray,
     projected_solution: NDArray,
     les_sgsp_data_path: Path,
-    les_avcg_data_path: Path,
-    les_avcl_data_path: Path,
-    les_avc_fixed_mean_path: Path,
+    extra_configs: list[SolutionConfig] | None = None,
 ) -> list[SolutionConfig]:
-    """Build the five standard solution plot configs for a pipeline run."""
-    return [
+    """Build standard solution plot configs, with optional extra configs appended.
+
+    The five base configs (DNS, LES-A, LES-no-model, projection, SGSP) are always
+    included. Any caller-specific configs (e.g. AVC variants) are passed via
+    ``extra_configs`` and appended at the end.
+    """
+    base_configs: list[SolutionConfig] = [
         SolutionConfig(
             data_path=paths.dns_data,
             label="DNS",
@@ -82,30 +88,8 @@ def build_plot_configs(
             marker="d",
             mesh=disc_cfg.mesh_les,
         ),
-        SolutionConfig(
-            data_path=les_avcg_data_path,
-            label="LES - AVCG",
-            color="mediumorchid",
-            marker="*",
-            mesh=disc_cfg.mesh_les,
-        ),
-        SolutionConfig(
-            data_path=les_avc_fixed_mean_path,
-            label="LES - fm-AVCG",
-            color="plum",
-            linestyle="--",
-            marker="*",
-            mesh=disc_cfg.mesh_les,
-            alpha=0.6,
-        ),
-        SolutionConfig(
-            data_path=les_avcl_data_path,
-            label="LES - AVCL",
-            color="gold",
-            marker="2",
-            mesh=disc_cfg.mesh_les,
-        ),
     ]
+    return base_configs + (extra_configs or [])
 
 
 def _infer_final_time_from_directory(data_path: Path | None) -> float | None:

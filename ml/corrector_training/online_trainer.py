@@ -263,7 +263,7 @@ class BurgersAVCEnvironment:
         clip_pusuluri: bool = False,
         clip_rajampeta: bool = False,
         exclude_visc: bool = False,
-        spectral_penalty_only: bool = False
+        spectral_penalty_only: bool = False,
     ) -> None:
         self._solver_config = solver_config
         self._sac_config = sac_config
@@ -317,7 +317,9 @@ class BurgersAVCEnvironment:
                 blown_up = True
                 break
 
-        reward_val = self._compute_reward(blown_up=blown_up, spectral_pen_only=self.spectral_penalty_only)
+        reward_val = self._compute_reward(
+            blown_up=blown_up, spectral_pen_only=self.spectral_penalty_only
+        )
         done_flag = blown_up or self._total_les_steps >= self._max_les_steps
         next_state_array = self._solver._create_avc_input_stencil()
 

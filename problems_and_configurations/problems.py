@@ -16,7 +16,7 @@ from problems_and_configurations.initial_conditions import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class Problem:
     """Immutable problem definition with derived viscosity."""
 

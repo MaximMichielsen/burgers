@@ -26,22 +26,22 @@ from utils.solver_utils import run_config
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 
-pipeline = PipelineConfig.all_but_dns(manual_path="")
+pipeline = PipelineConfig.all_stages(manual_path="")
 
 pipeline.clip_pusuluri = True
 pipeline.clip_rajampeta = False
 pipeline.debug_sgsp = True
 
-problem: Problem = Problems.raj_two
+problem: Problem = Problems.raj_one
 
 alpha_max_var: float = 100
 output_max_var: float = 10
-spectral_pen_only: bool = True
+spectral_pen_only: bool = False
 
 disc_cfg = DiscretisationConfig(
     n_elements_les=8,
     temporal_refinement=1,
-    courant_les=0.04,
+    courant_les=0.01,
     domain_length=problem.domain_length,
     initial_condition_fn=problem.initial_condition,
 )
@@ -50,7 +50,9 @@ master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=probl
 paths = RunPaths.from_master(master_path)
 paths.create_master()
 
-paths.dns_data = Path(r"C:\Users\poopy\PycharmProjects\burgers\runs\run_raj_two_0603_130247\solver_data\DNS")
+# paths.dns_data = Path(
+#     r"C:\Users\poopy\PycharmProjects\burgers\runs\run_raj_two_0603_130247\solver_data\DNS"
+# )
 
 config_dns, config_les, config_les_no_model = create_solver_configs(
     problem_definition=problem,

@@ -1,0 +1,40 @@
+[INFO] - ============================================================
+[INFO] - RUN COMPLETE — id: 0606_161628
+[INFO] - Time Integration: Second Order Implicit Euler
+[INFO] - Simulation mode: sgsp
+[INFO] - ----------------------------------------
+[INFO] -   run_objective                  data_generation
+[INFO] -   boundary_condition_type        dirichlet
+[INFO] -   boundary_condition_value       1
+[INFO] -   extract_at_times               5 extractions, first 5: [0.0, 0.00625, 0.0125, 0.018750000000000003, 0.025]
+[INFO] -   node_amount                    9
+[INFO] -   domain_timespan                0.025
+[INFO] -   time_step                      0.005
+[INFO] -   domain_length                  1
+[INFO] -   convergence_tol_residual       1.00e-04
+[INFO] -   convergence_tol_update         1.00e-04
+[INFO] -   external_forcing               compute_sine_forcing (from problems_and_configurations.forcing_types)
+[INFO] -   forcing_steady                 False
+[INFO] -   max_iterations                 20
+[INFO] -   relaxation                     None
+[INFO] -   viscosity                      0.01
+[INFO] -   sgsp_model_path                C:\Users\poopy\PycharmProjects\burgers\runs\run_raj_two_0603_130247\agents\sgs_predictor.pt
+[INFO] -   normalisation_stats_path       C:\Users\poopy\PycharmProjects\burgers\runs\run_raj_two_0603_130247\training_data\post_split\normalisation_stats.npz
+[INFO] -   sgsp_warmup_steps              2
+[INFO] -   blowup_threshold               10000
+[INFO] -   blowup_buffer_size             5000
+[INFO] -   clip_pusuluri                  True
+[INFO] -   clip_rajampeta                 False
+[INFO] -   exclude_visc                   False
+[INFO] -   blown_up_path                  C:\Users\poopy\PycharmProjects\burgers\validation\runs\run_raj_two_0606_161628\solver_data\LES_SGSP\pusuluri\blown_up
+[INFO] - ----------------------------------------
+[INFO] -   convergence_checking      0.0000s (  0.2%)
+[INFO] -   elemental_iterations      0.0139s ( 66.6%)
+[INFO] -   global_assembly           0.0002s (  1.2%)
+[INFO] -   linear_solve              0.0001s (  0.7%)
+[INFO] -   solution_update           0.0000s (  0.1%)
+[INFO] -   TOTAL                     0.0209s
+[INFO] - Residual — initial: 0.0000e+00  final: 8.0950e-06  max: 2.2005e-01
+[INFO] - Update   — initial: 0.0000e+00  final: 5.5295e-07  max: 1.3028e-02
+[INFO] - Status: CONVERGED
+[INFO] - ============================================================

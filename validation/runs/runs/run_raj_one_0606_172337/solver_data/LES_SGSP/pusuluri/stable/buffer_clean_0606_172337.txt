@@ -1,0 +1,18 @@
+Run ID             : 0606_172337
+Label              : clean
+Steps in buffer    : 3
+Termination step   : 2  (t = 0.003750)
+Max |u| at end     : 5.0464e-01
+NaN in u           : False
+Inf in u           : False
+Final residual norm: 2.4906e-07
+Final dissipation  : 3.1543e-02
+
+--- Solver config ---
+  n_nodes       : 9
+  viscosity     : 0.01
+  dt            : 0.00125
+  clip_pusuluri : True
+  clip_rajampeta: False
+  exclude_visc  : False
+  blowup_thr    : 1.00e+04

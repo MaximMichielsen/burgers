@@ -37,6 +37,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
+from typing import Callable
 
 import numpy as np
 import torch
@@ -626,6 +627,41 @@ class BurgersSGSP(BurgersBase):
             or np.any(np.isinf(solution_amplitudes))
             or np.max(np.abs(solution_amplitudes)) > self._blowup_threshold
         )
+
+    def seed_history_from_projection(
+        self,
+        projected_solutions: NDArray,
+        forcing_fn: Callable | None = None,
+    ) -> None:
+        """Pre-populate 3-level history from projected snapshots [t^{n-2}, t^{n-1}].
+
+        Seeds history with 3 entries (duplicating t^{n-2} as t^{n-3}) so the
+        3-level check in _compute_sgsp_contribution passes immediately.
+        """
+        assert len(projected_solutions) == 2, "Expected exactly 2 seed snapshots"
+
+        u_nm2 = projected_solutions[0].copy()
+        u_nm1 = projected_solutions[1].copy()
+
+        du_dt_nm2 = np.zeros(self.n_nodes)
+        du_dt_nm1 = (u_nm1 - u_nm2) / self.dt
+
+        f_nm2 = (
+            forcing_fn(self.node_coords, -2 * self.dt)
+            if forcing_fn
+            else np.zeros(self.n_nodes)
+        )
+        f_nm1 = (
+            forcing_fn(self.node_coords, -self.dt)
+            if forcing_fn
+            else np.zeros(self.n_nodes)
+        )
+
+        # 3 entries needed: duplicate u_nm2 as the oldest level
+        self._u_bar_history = [u_nm2.copy(), u_nm2, u_nm1]
+        self._du_bar_dt_history = [du_dt_nm2.copy(), du_dt_nm2, du_dt_nm1]
+        self._forcing_history = [f_nm2.copy(), f_nm2, f_nm1]
+        self._step_count = self._sgsp_warmup_steps
 
     # ------------------------------------------------------------------ #
     #  Blow-up buffer: save to disk
