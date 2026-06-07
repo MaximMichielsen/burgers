@@ -10,7 +10,7 @@ from replacing.solvers.burgers_base import BurgersBase
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 
-problem: Problem = Problems.raj_one
+problem: Problem = Problems.pipeline_test
 pipeline = PipelineConfig.all_stages(manual_path="")
 
 pipeline.clip_pusuluri = True
@@ -41,5 +41,7 @@ if pipeline.run_dns:
         disc_cfg,
         simulation_mode="dns",
         master_path=paths.dns_data,
-        snapshot_factor=1
+        snapshot_factor=1,
     )
+    solver_dns.run_simulation()
+    solver_dns.post_processing()

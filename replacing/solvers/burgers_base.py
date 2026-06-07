@@ -20,6 +20,7 @@ from time import perf_counter
 from typing import Any, Callable, Generator, Iterable
 
 import numpy as np
+from fontTools.diff import color
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
@@ -27,6 +28,8 @@ from tqdm import tqdm
 from replacing.constants import (
     MAXIMUM_ITERATIONS_DNS,
     MAXIMUM_ITERATIONS_LES,
+    TOLERANCE_RESIDUAL,
+    TOLERANCE_UPDATE,
 )
 from replacing.input_settings.disc_config import DiscretisationConfig
 from replacing.input_settings.problems import Problem
@@ -62,8 +65,9 @@ class BurgersBase:
         disc_cfg: DiscretisationConfig,
         simulation_mode: str,
         master_path: Path,
-        snapshot_factor: int = 1,
+        snapshot_factor: int | None = None,
     ) -> None:
+
         if simulation_mode not in self._VALID_SIMULATION_MODES:
             raise ValueError(
                 f"Unknown simulation_mode {simulation_mode!r}. "
@@ -75,25 +79,32 @@ class BurgersBase:
                 f"Expected one of {self._VALID_BC_TYPES}."
             )
 
+        self.problem_name = problem.name
+
         # Simulation settings
         self.simulation_mode: str = simulation_mode
         self.domain_timespan: float = problem.domain_timespan
         self.simulation_time_elapsed: float = 0.0
         self.domain_length: float = problem.domain_length
         self._dt: float = (
-            disc_cfg.dt_dns if simulation_mode == "dns" else disc_cfg.dt_dns
+            disc_cfg.dt_dns if simulation_mode == "dns" else disc_cfg.dt_les
         )
         self.dt, self._n_time_steps = compute_adjusted_dt(
             self._dt, self.domain_timespan
         )
-        self.time_steps: NDArray = np.linspace(0, self.domain_timespan, self._n_time_steps + 1)
-        self.viscosity: float = problem.viscosity
+        self.time_steps: NDArray = np.linspace(
+            0, self.domain_timespan, self._n_time_steps + 1
+        )
+        self.viscosity: float = float(problem.viscosity)
 
         self.max_iterations: int = (
             MAXIMUM_ITERATIONS_DNS
             if simulation_mode == "dns"
             else MAXIMUM_ITERATIONS_LES
         )
+
+        self.convergence_tol_update = TOLERANCE_RESIDUAL
+        self.convergence_tol_residual = TOLERANCE_UPDATE
 
         # Mesh
         self.n_nodes: int = (
@@ -130,9 +141,15 @@ class BurgersBase:
         self.dissipation_history: list = []
 
         # Output
-        self.snapshot_factor: int = snapshot_factor
-        self.requested_snapshots: NDArray = self.time_steps[::snapshot_factor]
-        self.is_written_at_times: list[bool] = [False] * len(self.requested_snapshots)
+        self.snapshot_factor: int | None = snapshot_factor
+        self.requested_snapshots: NDArray | None = (
+            self.time_steps[::snapshot_factor] if snapshot_factor is not None else None
+        )
+        self.is_written_at_times: list[bool] | None = (
+            [False] * len(self.requested_snapshots)
+            if self.requested_snapshots is not None
+            else None
+        )
 
         self.snapshots: list[NDArray] = []
         self.snapshots_solution: list[NDArray] = []
@@ -140,7 +157,9 @@ class BurgersBase:
 
         self.master_path: Path = master_path
         self.master_path.mkdir(parents=True, exist_ok=True)
-        self.logger = self._setup_logger()
+        self.logger = self._setup_logger(
+            suppress_file_logging=disc_cfg.suppress_file_logging
+        )
 
     # ------------------------------------------------------------------ #
     #  Main solver loop
@@ -148,22 +167,20 @@ class BurgersBase:
 
     def run_simulation(self) -> None:
         """Run the full time-marching simulation and write output."""
-        total_steps = int(self.domain_timespan / self.dt)
-        self.snapshots_solution = []
-        self.snapshots_forcing = []
         idx_extract = 0
 
         with self.timer("total_simulation"):
             with tqdm(
-                total=total_steps,
+                total=self._n_time_steps,
                 desc=f"Eating Burgers | {self.throbber(0)}",
                 file=sys.stdout,
             ) as pbar:
-                for time_step in range(total_steps):
+                for time_step in range(self._n_time_steps):
                     step_start = perf_counter()
-                    self.time_steps.append(time_step)
+
                     self.advance_time_step()
                     idx_extract = self._maybe_extract_solution(idx_extract)
+
                     pbar.set_description(f"Eating Burgers | {self.throbber(time_step)}")
                     pbar.update(1)
                     pbar.set_postfix(
@@ -175,6 +192,7 @@ class BurgersBase:
                     )
 
             if self.requested_snapshots is not None:
+                # TODO change idx extract logic to check timesteps
                 while idx_extract < len(self.requested_snapshots):
                     self.snapshots_solution.append(self.solution.copy())
                     self.snapshots_forcing.append(
@@ -188,7 +206,6 @@ class BurgersBase:
                     )
                     idx_extract += 1
 
-        if self.write_solutions:
             self.write_config_to_json()
             self.write_solution_to_csv()
 
@@ -255,18 +272,12 @@ class BurgersBase:
 
             update_history_loop.append(np.linalg.norm(delta_u))
 
-            with self.timer("solution_update"):
-                solution_k += (
-                    delta_u * (1 - self.relaxation_factor)
-                    if self.relaxation_factor is not None
-                    else delta_u
-                )
+            solution_k += delta_u
 
-            with self.timer("convergence_checking"):
-                if self.is_update_converged(delta_u) or self.is_residual_converged(
-                    global_residual
-                ):
-                    break
+            if self.is_update_converged(delta_u) or self.is_residual_converged(
+                global_residual
+            ):
+                break
 
         self.residual_history.append(residual_history_loop)
         self.update_history.append(update_history_loop)
@@ -388,7 +399,7 @@ class BurgersBase:
         term_time = (2 / self.dt) ** 2
         term_adv = (2 * abs(variable_u) / self.element_size) ** 2
         term_diff = (4 * self.viscosity / self.element_size**2) ** 2
-        return 0.5 / np.sqrt(term_time + term_adv + term_diff)
+        return float(0.5 / np.sqrt(term_time + term_adv + term_diff))
 
     # ------------------------------------------------------------------ #
     #  Newton–Raphson convergence
@@ -576,39 +587,39 @@ class BurgersBase:
     # ------------------------------------------------------------------ #
 
     def _format_config_for_display(self) -> dict[str, str]:
-        """Shared config formatter used by both print and log output."""
-        formatted: dict[str, str] = {}
-        skip_keys = {
-            "simulation_mode",
-            "solution_initial",
-            "master_path",
-            "initial_condition",
+        """Format solver state for display in logs and console output."""
+        if callable(self.forcing):
+            forcing_str = f"{self.forcing.__name__} (from {getattr(self.forcing, '__module__', '')})"
+        elif self.forcing is None:
+            forcing_str = "None"
+        else:
+            forcing_str = f"array, shape {np.array(self.forcing).shape}"
+
+        snapshots_str = (
+            f"{len(self.requested_snapshots)} snapshots, first 5: "
+            f"{[round(float(t), 4) for t in self.requested_snapshots[:5]]}"
+            if self.requested_snapshots is not None
+            else "None"
+        )
+
+        return {
+            "domain_timespan": f"{self.domain_timespan:.6g}",
+            "domain_length": f"{self.domain_length:.6g}",
+            "dt": f"{self.dt:.4e}",
+            "n_time_steps": str(self._n_time_steps),
+            "viscosity": f"{self.viscosity:.4e}",
+            "n_nodes": str(self.n_nodes),
+            "n_elements": str(self.n_elements),
+            "element_size": f"{self.element_size:.4e}",
+            "boundary_condition_type": self.boundary_condition_type,
+            "boundary_condition_value": str(self.boundary_condition_value),
+            "max_iterations": str(self.max_iterations),
+            "snapshot_factor": str(self.snapshot_factor),
+            "requested_snapshots": snapshots_str,
+            "forcing": forcing_str,
+            "forcing_is_steady": str(self.forcing_is_steady),
+            "problem_name": self.problem_name,
         }
-        for key, value in self.configuration.items():
-            if key in skip_keys:
-                continue
-            if key == "extract_at_times":
-                formatted[key] = (
-                    f"{len(value)} extractions, first 5: {[float(t) for t in value[:5]]}"
-                    if value is not None
-                    else "None"
-                )
-            elif key in ("convergence_tol_residual", "convergence_tol_update"):
-                formatted[key] = f"{value:.2e}"
-            elif key == "external_forcing":
-                if callable(value):
-                    formatted[key] = (
-                        f"{value.__name__} (from {getattr(value, '__module__', '')})"
-                    )
-                elif value is None:
-                    formatted[key] = "None"
-                else:
-                    formatted[key] = f"array, shape {np.array(value).shape}"
-            elif isinstance(value, float):
-                formatted[key] = f"{value:.6g}"
-            else:
-                formatted[key] = str(value)
-        return formatted
 
     def print_configuration(self) -> None:
         """Print run configuration in a clean tabular format."""
@@ -643,11 +654,11 @@ class BurgersBase:
         _section("Time")
         _row("timespan", f"{self.domain_timespan:.4g}")
         _row("dt", f"{self.dt:.4e}")
-        _row("total steps", str(int(self.domain_timespan / self.dt)))
+        _row("total steps", str(self._n_time_steps))
         if self.requested_snapshots is not None:
             n_ext = len(self.requested_snapshots)
             first_five = "  ".join(f"{t:.4f}" for t in self.requested_snapshots[:5])
-            _row("extractions", str(n_ext))
+            _row("snapshots", str(n_ext))
             _row("  first 5 times", first_five)
 
         # --- Physics ---
@@ -670,10 +681,8 @@ class BurgersBase:
         # --- Solver ---
         _section("Solver")
         _row("max iterations", str(self.max_iterations))
-        _row("tol residual", f"{self.configuration['convergence_tol_residual']:.2e}")
-        _row("tol update", f"{self.configuration['convergence_tol_update']:.2e}")
-        _row("relaxation", str(self.relaxation_factor))
-        _row("objective", str(self.configuration.get("run_objective", "N/A")))
+        _row("tol residual", f"{self.convergence_tol_residual:.2e}")
+        _row("tol update", f"{self.convergence_tol_update:.2e}")
 
         # --- Paths ---
         _section("Paths")
@@ -681,11 +690,11 @@ class BurgersBase:
 
         _sep("═")
 
-    def _setup_logger(self) -> logging.Logger:
-        """Initialise a file logger for this run; skipped when suppress_file_logging is set."""
+    def _setup_logger(self, suppress_file_logging: bool = False) -> logging.Logger:
+        """Initialize a file logger for this run."""
         logger_ = logging.getLogger(str(self.run_id))
         logger_.setLevel(logging.INFO)
-        if logger_.handlers:
+        if logger_.handlers or suppress_file_logging:
             return logger_
 
         formatter = logging.Formatter("[%(levelname)s] - %(message)s")
@@ -725,33 +734,32 @@ class BurgersBase:
                         "  %-25s %.4fs (%5.1f%%)", phase, time_elapsed, pct
                     )
             self.logger.info("  %-25s %.4fs", "TOTAL", total)
-
-        if self.residual_history:
-            res, upd = self.total_convergence_history
-            self.logger.info(
-                "Residual — initial: %.4e  final: %.4e  max: %.4e",
-                res[0],
-                res[-1],
-                np.max(res),
-            )
-            self.logger.info(
-                "Update   — initial: %.4e  final: %.4e  max: %.4e",
-                upd[0],
-                upd[-1],
-                np.max(upd),
-            )
-            tol = self.configuration.get("convergence_tol_residual", 1e-6)
-            status = (
-                "CONVERGED"
-                if res[-1] < tol
-                else f"NOT CONVERGED (final {res[-1]:.4e} > tol {tol:.4e})"
-            )
-            self.logger.info("Status: %s", status)
-
         self.logger.info("=" * 60)
 
     def write_config_to_json(self) -> None:
-        """Serialise run configuration to config.json in the run directory."""
+        """Serialize run configuration to config.json in the run directory."""
+        raw_config: dict = {
+            "run_id": self.run_id,
+            "simulation_mode": self.simulation_mode,
+            "domain_timespan": self.domain_timespan,
+            "domain_length": self.domain_length,
+            "dt": self.dt,
+            "n_time_steps": self._n_time_steps,
+            "viscosity": self.viscosity,
+            "n_nodes": self.n_nodes,
+            "n_elements": self.n_elements,
+            "element_size": self.element_size,
+            "boundary_condition_type": self.boundary_condition_type,
+            "boundary_condition_value": self.boundary_condition_value,
+            "max_iterations": self.max_iterations,
+            "convergence_tol_residual": self.convergence_tol_residual,
+            "convergence_tol_update": self.convergence_tol_update,
+            "snapshot_factor": self.snapshot_factor,
+            "forcing": self.forcing,
+            "forcing_is_steady": self.forcing_is_steady,
+            "problem_name": self.problem_name,
+        }
+
         config_serializable = {
             k: (
                 v.tolist()
@@ -760,23 +768,17 @@ class BurgersBase:
                 if callable(v)
                 else v
             )
-            for k, v in self.configuration.items()
-            if k not in ("solution_initial", "master_path")
+            for k, v in raw_config.items()
         }
-        config_serializable["run_id"] = self.run_id
+
         with open(self.master_path / "config.json", "w") as file_handle:
             json.dump(config_serializable, file_handle, indent=2)
 
     def write_solution_to_csv(self) -> None:
         """Write extracted solution snapshots to CSV files."""
-        if self.requested_snapshots is None:
-            solutions = [self.solution]
-            forcings = [self.forcing_current]
-            times = [self.simulation_time_elapsed]
-        else:
-            solutions = self.snapshots_solution
-            forcings = self.snapshots_forcing
-            times = self.requested_snapshots[: len(solutions)]
+        solutions = self.snapshots_solution
+        forcings = self.snapshots_forcing
+        times = self.requested_snapshots[: len(solutions)]
 
         for solution, time_value, forcing in zip(solutions, times, forcings):
             filepath = self.master_path / f"sol_t{time_value:.6f}.csv"
@@ -839,8 +841,8 @@ class BurgersBase:
             "avc": "LES-AVC",
         }.get(self.simulation_mode, self.simulation_mode)
 
-        fig = plt.figure(figsize=(12, 8))
-        gs = fig.add_gridspec(3, 2)
+        fig = plt.figure(figsize=(12, 6))
+        gs = fig.add_gridspec(2, 2)
 
         ax0 = fig.add_subplot(gs[0, :])
         ax0.plot(
@@ -848,7 +850,8 @@ class BurgersBase:
             self.solution,
             color="royalblue",
             linestyle="-",
-            marker="o",
+            linewidth=2.0 if self.simulation_mode == "dns" else 1.0,
+            marker="none" if self.simulation_mode == "dns" else ".",
             label="Resolved solution",
         )
         ax0.plot(
@@ -862,74 +865,32 @@ class BurgersBase:
         ax0.set_ylabel("Velocity")
         ax0.grid(True)
         ax0.legend()
-        ax0.set_title(f"Solution  [SGS: {sgs_label}]")
+        ax0.set_title(f"Solution  [Mode: {sgs_label}]")
 
         ax1 = fig.add_subplot(gs[1, 0])
-        t_axis = np.arange(len(fr_mean))
-        for mean, std, color, style, label in [
-            (fr_mean, fr_std, "royalblue", "-", "Residual (first)"),
-            (lr_mean, lr_std, "navy", "--", "Residual (last)"),
-            (fu_mean, fu_std, "tab:orange", "-", "Update (first)"),
-            (lu_mean, lu_std, "darkorange", "--", "Update (last)"),
-        ]:
-            ax1.plot(t_axis, mean, color=color, linestyle=style, label=label)
-            ax1.fill_between(t_axis, mean - std, mean + std, color=color, alpha=0.15)
-        tol_r = self.configuration["convergence_tol_residual"]
-        tol_u = self.configuration["convergence_tol_update"]
-        ax1.axhline(
-            y=tol_r,
-            color="lightskyblue" if tol_r != tol_u else "lightgray",
-            linestyle="--",
+        ax1.plot(
+            self.time_steps[:len(self.energy_history)], self.energy_history, color="red", label="Total energy"
         )
-        if tol_r != tol_u:
-            ax1.axhline(y=tol_u, color="lightsalmon", linestyle="--")
-        ax1.set_yscale("log")
-        ax1.set_xlabel("Time step")
-        ax1.set_ylabel("Norm")
-        ax1.set_title("Global convergence (smoothed)")
-        ax1.grid(True)
-        ax1.legend()
-
-        ax2 = fig.add_subplot(gs[1, 1])
-        if self.residual_history:
-            ax2.plot(
-                self.residual_history[-1], "o-", label="Residual", color="royalblue"
-            )
-            if self.update_history[-1]:
-                ax2.plot(
-                    self.update_history[-1], "x--", label="Update", color="tab:orange"
-                )
-        ax2.set_yscale("log")
-        ax2.set_xlabel("Newton iteration")
-        ax2.set_ylabel("Norm")
-        ax2.set_title("Last Newton iteration convergence")
-        ax2.grid(True)
-        ax2.legend()
-
-        ax3 = fig.add_subplot(gs[2, 0])
-        ax3.plot(
-            self.time_steps, self.energy_history, color="red", label="Total energy"
-        )
-        ax3.plot(
-            self.time_steps,
+        ax1.plot(
+            self.time_steps[:len(self.dissipation_history)],
             self.dissipation_history,
             color="purple",
             label="Dissipation",
         )
-        ax3.set_xlabel("Time step")
-        ax3.set_title("Energy and dissipation evolution")
-        ax3.grid(True)
-        ax3.legend()
+        ax1.set_xlabel("Time step")
+        ax1.set_title("Energy and dissipation evolution")
+        ax1.grid(True)
+        ax1.legend()
 
-        ax4 = fig.add_subplot(gs[2, 1])
+        ax2 = fig.add_subplot(gs[1, 1])
         wn, sp = self.get_positive_spectrum(
             *self.compute_energy_spectrum(self.solution)
         )
-        ax4.loglog(wn[1:], sp[1:], marker="o")
-        ax4.set_xlabel("Wavenumber k")
-        ax4.set_ylabel("E(k)")
-        ax4.set_title("Spectral analysis (final state)")
-        ax4.grid(True)
+        ax2.loglog(wn[1:], sp[1:], marker=".", color="orangered")
+        ax2.set_xlabel("Wavenumber k")
+        ax2.set_ylabel("E(k)")
+        ax2.set_title("Spectral analysis (final state)")
+        ax2.grid(True)
 
         plt.tight_layout()
         plt.savefig(
@@ -996,6 +957,8 @@ class BurgersBase:
     # ------------------------------------------------------------------ #
     #  Internal helpers
     # ------------------------------------------------------------------ #
+
+    # TODO change extraction logic
 
     def _maybe_extract_solution(self, idx_extract: int) -> int:
         """Extract and store the current solution if the next checkpoint time is reached."""

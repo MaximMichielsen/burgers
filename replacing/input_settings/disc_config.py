@@ -22,6 +22,7 @@ class DiscretisationConfig:
     courant_les: float
     domain_length: float
     initial_condition_fn: Callable
+    suppress_file_logging: bool = False
 
     def __post_init__(self) -> None:
         self.n_elements_les: int = self.n_nodes_les - 1
