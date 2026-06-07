@@ -93,7 +93,7 @@ def write_snapshots(
     Returns the list of written paths.
     """
     written = []
-    for t, snapshot in zip(extract_at_times, solver.extracted_solutions):
+    for t, snapshot in zip(extract_at_times, solver.snapshots_solution):
         filename = output_dir / f"{simulation_type}_N{n_nodes}_t{t:.3f}.csv"
         with open(filename, mode="w", newline="") as f:
             writer = csv.writer(f)

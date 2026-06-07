@@ -43,7 +43,7 @@ def run_simulation(
     solver = Burgers(configuration=config)
     solver.run_simulation()
     solver.post_logging()
-    return solver.extracted_solutions, solver.node_cords
+    return solver.snapshots_solution, solver.node_cords
 
 
 # --- Error computation ---

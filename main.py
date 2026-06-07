@@ -36,7 +36,6 @@ problem: Problem = Problems.raj_one
 
 alpha_max_var: float = 100
 output_max_var: float = 10
-spectral_pen_only: bool = False
 
 disc_cfg = DiscretisationConfig(
     n_elements_les=8,
@@ -255,7 +254,6 @@ if pipeline.run_avc_online_training:
         solver_config=config_avc_global,
         sac_config=sac_config,
         dns_reference_schedule=dns_reference_schedule,
-        spectral_penalty_only=spectral_pen_only,
     )
     sac_agent_global = SACAgent(
         av_corrector=av_corrector_global_model,
@@ -336,7 +334,6 @@ if pipeline.run_avc_online_training:
         solver_config=config_avc_local,
         sac_config=sac_config,
         dns_reference_schedule=dns_reference_schedule,
-        spectral_penalty_only=spectral_pen_only,
     )
     sac_agent_local = SACAgent(
         av_corrector=av_corrector_local_model,

@@ -4,6 +4,9 @@
 # Simulation defaults
 # ---------------------------------------------------------------------------
 
+STANDARD_EXTRACTION_AMOUNT: int = 10
+DNS_SNAPSHOT_AMOUNT: int = 2000
+
 TOLERANCE_RESIDUAL: float = 1e-6
 TOLERANCE_UPDATE: float = 1e-6
 MAXIMUM_ITERATIONS_DNS: int = 50

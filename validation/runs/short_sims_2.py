@@ -34,8 +34,8 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 # Configuration
 # ---------------------------------------------------------------------------
 
-T_START: float = 0.5        # simulation window start time
-N_STEPS: int = 3            # number of steps to run after T_START
+T_START: float = 0.5  # simulation window start time
+N_STEPS: int = 3  # number of steps to run after T_START
 
 PRETRAINED_RUN = Path(
     r"C:\Users\poopy\PycharmProjects\burgers\runs\run_raj_one_0606_165719"
@@ -48,20 +48,20 @@ master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=probl
 paths = RunPaths.from_master(master_path)
 paths.create_master()
 
-paths.dns_data    = PRETRAINED_RUN / "solver_data" / "DNS"
-paths.projection  = PRETRAINED_RUN / "training_data" / "pre_split"
-paths.training    = PRETRAINED_RUN / "training_data" / "post_split"
+paths.dns_data = PRETRAINED_RUN / "solver_data" / "DNS"
+paths.projection = PRETRAINED_RUN / "training_data" / "pre_split"
+paths.training = PRETRAINED_RUN / "training_data" / "post_split"
 paths.model_output = PRETRAINED_RUN / "agents"
 
-pipeline.run_solvers          = False
-pipeline.run_projection       = False
+pipeline.run_solvers = False
+pipeline.run_projection = False
 pipeline.run_training_assembly = False
-pipeline.run_training_sgsp    = False
-pipeline.verify_apriori       = False
-pipeline.run_sgsp             = True
-pipeline.run_plotting         = True
-pipeline.clip_pusuluri        = True
-pipeline.clip_rajampeta       = False
+pipeline.run_training_sgsp = False
+pipeline.verify_apriori = False
+pipeline.run_sgsp = True
+pipeline.run_plotting = True
+pipeline.clip_pusuluri = True
+pipeline.clip_rajampeta = False
 
 disc_cfg = DiscretisationConfig(
     n_elements_les=8,
@@ -98,10 +98,10 @@ config_sgsp, les_sgsp_stable_path, _ = create_sgsp_config(
 # ---------------------------------------------------------------------------
 
 projected_solutions = np.load(paths.projection / "solutions_projection.npy")
-dns_on_les          = np.load(paths.projection / "dns_on_les.npy")
+dns_on_les = np.load(paths.projection / "dns_on_les.npy")
 
 start_step = round(T_START / disc_cfg.dt_les)
-end_step   = start_step + N_STEPS
+end_step = start_step + N_STEPS
 
 assert start_step >= 2, "T_START must be at least 2*dt to have seed history"
 assert end_step < len(projected_solutions), (
@@ -137,51 +137,60 @@ solver_sgsp.seed_history_from_projection(
     projected_solutions=np.stack([seed_nm2, seed_nm1]),
     forcing_fn=problem.external_forcing if not problem.forcing_steady else None,
 )
-solver_sgsp.solution          = seed_nm1.copy()
+solver_sgsp.solution = seed_nm1.copy()
 solver_sgsp.initial_condition = seed_nm1.copy()
 
 # ---------------------------------------------------------------------------
 # Diagnostics: predicted vs true SGS terms at start_step
 # ---------------------------------------------------------------------------
 
-correction     = solver_sgsp._compute_sgsp_contribution()
+correction = solver_sgsp._compute_sgsp_contribution()
 net_convective = correction[:, 0] + correction[:, 1]
-net_temporal   = correction[:, 2] + correction[:, 3]
-net_viscous    = correction[:, 4]
+net_temporal = correction[:, 2] + correction[:, 3]
+net_viscous = correction[:, 4]
 
 print("\nper-element corrections:")
-print(f"{'elem':>4} {'cross':>12} {'reynolds':>12} {'temp_L':>12} {'temp_R':>12} {'visc':>12}")
+print(
+    f"{'elem':>4} {'cross':>12} {'reynolds':>12} {'temp_L':>12} {'temp_R':>12} {'visc':>12}"
+)
 for elem_idx, row in enumerate(correction):
-    print(f"{elem_idx:>4} {row[0]:>12.4e} {row[1]:>12.4e} {row[2]:>12.4e} {row[3]:>12.4e} {row[4]:>12.4e}")
+    print(
+        f"{elem_idx:>4} {row[0]:>12.4e} {row[1]:>12.4e} {row[2]:>12.4e} {row[3]:>12.4e} {row[4]:>12.4e}"
+    )
 
 print(f"\nnet convective sum: {net_convective.sum():.4e}")
 print(f"net temporal sum:   {net_temporal.sum():.4e}")
 print(f"net viscous sum:    {net_viscous.sum():.4e}")
 
 # True SGS terms at start_step
-u_bar_n   = projected_solutions[start_step]
+u_bar_n = projected_solutions[start_step]
 u_bar_nm1 = projected_solutions[start_step - 1]
-u_prime_n   = compute_u_prime_field(dns_on_les[start_step],     u_bar_n)
+u_prime_n = compute_u_prime_field(dns_on_les[start_step], u_bar_n)
 u_prime_nm1 = compute_u_prime_field(dns_on_les[start_step - 1], u_bar_nm1)
 du_prime_dt_n = compute_du_prime_dt(u_prime_n, u_prime_nm1, disc_cfg.dt_les)
 du_prime_dx_n = compute_du_prime_dx(u_prime_n, disc_cfg.element_size_les)
-du_bar_dt_n   = (u_bar_n - u_bar_nm1) / disc_cfg.dt_les
+du_bar_dt_n = (u_bar_n - u_bar_nm1) / disc_cfg.dt_les
 
 true_it = np.zeros((solver_sgsp.n_elements, 5))
 for elem_idx in range(solver_sgsp.n_elements):
     nl, nr = elem_idx, elem_idx + 1
     true_it[elem_idx] = compute_element_output_terms(
-        u_bar_left=float(u_bar_n[nl]),       u_bar_right=float(u_bar_n[nr]),
-        u_prime_left=float(u_prime_n[nl]),   u_prime_right=float(u_prime_n[nr]),
-        du_bar_dt_left=float(du_bar_dt_n[nl]),   du_bar_dt_right=float(du_bar_dt_n[nr]),
-        du_prime_dt_left=float(du_prime_dt_n[nl]), du_prime_dt_right=float(du_prime_dt_n[nr]),
-        du_prime_dx_left=float(du_prime_dx_n[nl]), du_prime_dx_right=float(du_prime_dx_n[nr]),
+        u_bar_left=float(u_bar_n[nl]),
+        u_bar_right=float(u_bar_n[nr]),
+        u_prime_left=float(u_prime_n[nl]),
+        u_prime_right=float(u_prime_n[nr]),
+        du_bar_dt_left=float(du_bar_dt_n[nl]),
+        du_bar_dt_right=float(du_bar_dt_n[nr]),
+        du_prime_dt_left=float(du_prime_dt_n[nl]),
+        du_prime_dt_right=float(du_prime_dt_n[nr]),
+        du_prime_dx_left=float(du_prime_dx_n[nl]),
+        du_prime_dx_right=float(du_prime_dx_n[nr]),
         element_size=disc_cfg.element_size_les,
     )
 
 true_net_conv = (true_it[:, 0] + true_it[:, 1]).sum()
 true_net_temp = (true_it[:, 2] + true_it[:, 3]).sum()
-true_net_visc =  true_it[:, 4].sum()
+true_net_visc = true_it[:, 4].sum()
 
 print("\nper-element TRUE vs PREDICTED:")
 print(f"{'elem':>4} {'chan':>10} {'true':>12} {'pred':>12} {'err':>12}")
@@ -190,14 +199,26 @@ for elem_idx in range(solver_sgsp.n_elements):
     for chan_idx, chan_name in enumerate(chan_names):
         true_val = true_it[elem_idx, chan_idx]
         pred_val = correction[elem_idx, chan_idx]
-        print(f"{elem_idx:>4} {chan_name:>10} {true_val:>12.4e} {pred_val:>12.4e} {pred_val - true_val:>12.4e}")
+        print(
+            f"{elem_idx:>4} {chan_name:>10} {true_val:>12.4e} {pred_val:>12.4e} {pred_val - true_val:>12.4e}"
+        )
 
 print(f"\n{'':>20} {'true':>12} {'pred':>12} {'err':>12}")
-print(f"{'net convective':>20} {true_net_conv:>12.4e} {net_convective.sum():>12.4e} {net_convective.sum() - true_net_conv:>12.4e}")
-print(f"{'net temporal':>20} {true_net_temp:>12.4e} {net_temporal.sum():>12.4e} {net_temporal.sum() - true_net_temp:>12.4e}")
-print(f"{'net viscous':>20} {true_net_visc:>12.4e} {net_viscous.sum():>12.4e} {net_viscous.sum() - true_net_visc:>12.4e}")
-print(f"\n{'true net total':>20} {true_net_conv + true_net_temp + true_net_visc:>12.4e}")
-print(f"{'pred net total':>20} {net_convective.sum() + net_temporal.sum() + net_viscous.sum():>12.4e}")
+print(
+    f"{'net convective':>20} {true_net_conv:>12.4e} {net_convective.sum():>12.4e} {net_convective.sum() - true_net_conv:>12.4e}"
+)
+print(
+    f"{'net temporal':>20} {true_net_temp:>12.4e} {net_temporal.sum():>12.4e} {net_temporal.sum() - true_net_temp:>12.4e}"
+)
+print(
+    f"{'net viscous':>20} {true_net_visc:>12.4e} {net_viscous.sum():>12.4e} {net_viscous.sum() - true_net_visc:>12.4e}"
+)
+print(
+    f"\n{'true net total':>20} {true_net_conv + true_net_temp + true_net_visc:>12.4e}"
+)
+print(
+    f"{'pred net total':>20} {net_convective.sum() + net_temporal.sum() + net_viscous.sum():>12.4e}"
+)
 
 # ---------------------------------------------------------------------------
 # Run simulation
@@ -249,7 +270,8 @@ if pipeline.run_plotting:
     )
 
     plot_configs_viable = [
-        cfg for cfg in plot_configs_all
+        cfg
+        for cfg in plot_configs_all
         if cfg.solution is not None or is_viable_solution_path(cfg.data_path)
     ]
     plot_solution_comparison(
