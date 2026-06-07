@@ -34,6 +34,8 @@ EPOCHS: int = 150
 BLOWUP_THRESHOLD: float = 1e4
 BLOWUP_BUFFER_SIZE: int = 5000
 
+WARMUP_STEPS: int = 2
+
 # ---------------------------------------------------------------------------
 # Corrector agent hyperparameters
 # ---------------------------------------------------------------------------
@@ -56,7 +58,7 @@ A_PRIORI_FOLDER: str = "apriori"
 DNS_SAVE_PATH: str = "DNS"
 LES_ANALYTICAL_SAVE_PATH: str = "LES_A"
 LES_NO_MODEL_SAVE_PATH: str = "LES_NM"
-LES_ANN_SAVE_PATH: str = "LES_SGSP"
+LES_SGSP_SAVE_PATH: str = "LES_SGSP"
 LES_AVCG_SAVE_PATH: str = "LES_AVCG"
 LES_AVCL_SAVE_PATH: str = "LES_AVCL"
 
@@ -68,4 +70,4 @@ BLOWN_UP_FOLDER: str = "blown_up"
 
 INPUT_STENCIL: str = "X.npy"
 OUTPUT_STENCIL: str = "y.npy"
-NORM_STATS: str = "norm_stats.npz"
+NORM_STATS: str = "normalisation_stats.npz"

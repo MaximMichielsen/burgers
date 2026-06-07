@@ -14,6 +14,9 @@ from constants import (
     POST_SPLIT_FOLDER,
     AGENT_FOLDER,
     A_PRIORI_FOLDER,
+    LES_SGSP_SAVE_PATH,
+    LES_AVCG_SAVE_PATH,
+    BLOWN_UP_FOLDER,
 )
 
 
@@ -69,6 +72,9 @@ class RunPaths:
     dns_data: Path
     les_a_data: Path
     les_nm_data: Path
+    les_sgsp_data: Path
+    les_avc_data: Path
+    blown_up: Path
     projection: Path
     training: Path
     model_output: Path
@@ -83,10 +89,13 @@ class RunPaths:
             dns_data=master_path / SOLVER_DATA_FOLDER / DNS_SAVE_PATH,
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
+            les_sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,
             projection=master_path / TRAINING_DATA_FOLDER / PRE_SPLIT_FOLDER,
             training=master_path / TRAINING_DATA_FOLDER / POST_SPLIT_FOLDER,
             model_output=master_path / AGENT_FOLDER,
             apriori=master_path / A_PRIORI_FOLDER,
+            les_avc_data=master_path / SOLVER_DATA_FOLDER / LES_AVCG_SAVE_PATH,
+            blown_up=master_path / SOLVER_DATA_FOLDER / BLOWN_UP_FOLDER,
         )
 
     def create_master(self) -> None:

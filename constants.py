@@ -65,4 +65,4 @@ BLOWN_UP_FOLDER: str = "blown_up"
 
 INPUT_STENCIL: str = "X.npy"
 OUTPUT_STENCIL: str = "y.npy"
-NORM_STATS: str = "norm_stats.npz"
+NORM_STATS: str = "normalisation_stats.npz"

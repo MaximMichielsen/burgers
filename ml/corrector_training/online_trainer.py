@@ -38,6 +38,7 @@ Research Proposal §2.3.2, §3.1.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import logging
 from collections import deque
 from dataclasses import dataclass, field
@@ -53,6 +54,10 @@ from torch import Tensor
 
 from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.ml_agents.corrector import AVCorrector, save_corrector
+from replacing.input_settings.disc_config import DiscretisationConfig
+from replacing.input_settings.problems import Problem
+from replacing.input_settings.solver_configs import SGSPConfig, AVCConfig
+from replacing.solvers.burgers_base import compute_adjusted_dt
 from solvers.burgers_avc import BurgersAVC
 
 logger = logging.getLogger(__name__)
@@ -224,77 +229,52 @@ class TwinQNetwork(nn.Module):
 
 
 class BurgersAVCEnvironment:
-    """MDP wrapper around BurgersAVC for the AV corrector control problem.
-
-    Exposes reset() / step() so the trainer drives the solver without
-    knowing about its internal structure.
-
-    The trainer sets solver.av_correction externally before calling
-    advance_time_step, bypassing BurgersAVC._add_avc_correction so the
-    policy is not called twice during training.
-
-    DNS reference
-    -------------
-    When *dns_reference_schedule* is provided the reward compares the LES
-    state against the DNS spectrum/dissipation interpolated to the *current*
-    solver time.  This is more faithful for transient problems than the
-    default static terminal snapshot.  When ``None``, the original behaviour
-    is preserved: the fixed ``dns_energy_spectrum`` and ``dns_dissipation``
-    values baked into *solver_config* are used.
-
-    Parameters
-    ----------
-    solver_config:
-        Config dict from BurgersAVC.create_avc_config.
-    sac_config:
-        SACConfig with Nₛₖᵢₚ and reward weights.
-    dns_reference_schedule:
-        Optional pre-built DNSReferenceSchedule.  If supplied it overrides
-        the static DNS targets in *solver_config* for reward computation.
-    clip_pusuluri, clip_rajampeta, exclude_visc:
-        SGS clipping flags forwarded to BurgersAVC.
-    """
+    """MDP wrapper around BurgersAVC for the AV corrector control problem."""
 
     def __init__(
         self,
-        solver_config: dict,
+        problem: Problem,
+        disc_cfg: DiscretisationConfig,
+        sgsp_cfg: SGSPConfig,
+        avc_cfg: AVCConfig,
+        master_path: Path,
         sac_config: SACConfig,
         dns_reference_schedule: DNSReferenceSchedule | None = None,
-        clip_pusuluri: bool = False,
-        clip_rajampeta: bool = False,
-        exclude_visc: bool = False,
         spectral_penalty_only: bool = False,
     ) -> None:
-        self._solver_config = solver_config
+        self._problem = problem
+        self._disc_cfg = disc_cfg
+        self._sgsp_cfg = sgsp_cfg
+        self._avc_cfg = avc_cfg
+        self._master_path = master_path
         self._sac_config = sac_config
         self._dns_reference_schedule = dns_reference_schedule
-        self._exclude_visc = exclude_visc
+        self.spectral_penalty_only = spectral_penalty_only
 
         self._solver: BurgersAVC | None = None
         self._total_les_steps: int = 0
-        self._max_les_steps: int = int(
-            solver_config["domain_timespan"] / solver_config["time_step"]
+
+        _, self._n_time_steps = compute_adjusted_dt(
+            disc_cfg.dt_les, problem.domain_timespan
         )
+        self._max_les_steps: int = self._n_time_steps
 
-        dns_spectrum_static = np.asarray(solver_config["dns_energy_spectrum"])
-        self.n_wavenumber_bins: int = len(dns_spectrum_static)
+        self.n_wavenumber_bins: int = len(avc_cfg.dns_energy_spectrum)
         self.state_dim: int = self.n_wavenumber_bins + 2
-
-        self.spectral_penalty_only = spectral_penalty_only
 
     def reset(self) -> NDArray:
         """Instantiate a fresh BurgersAVC solver and return initial state sₙ."""
-        training_config = {
-            **self._solver_config,
-            "suppress_file_logging": True,
-            "write_solutions": False,
-        }
         self._solver = BurgersAVC(
-            configuration=training_config,
-            correction_is_fixed=True,
+            problem=self._problem,
+            disc_cfg=dataclasses.replace(
+                self._disc_cfg, suppress_file_logging=True
+            ),
+            simulation_mode="avc",
+            master_path=self._master_path,
+            sgsp_cfg=self._sgsp_cfg,
+            avc_cfg=self._avc_cfg,
         )
         self._total_les_steps = 0
-        # Cache correction mode after solver (and thus corrector) is constructed.
         self._correction_mode = self._solver._corrector.correction_mode
         self._n_output_nodes = self._solver._corrector.output_dim
         return self._solver._create_avc_input_stencil()
@@ -305,9 +285,9 @@ class BurgersAVCEnvironment:
 
         alpha_array = np.asarray(alpha_action, dtype=np.float64)
         if self._correction_mode == "local":
-            self._solver.av_correction = alpha_array  # shape (N_nodes,)
+            self._solver.av_correction = alpha_array
         else:
-            self._solver.av_correction = float(alpha_array.item())  # scalar
+            self._solver.av_correction = float(alpha_array.item())
 
         blown_up = False
         for _ in range(self._sac_config.n_skip_steps):
@@ -326,23 +306,17 @@ class BurgersAVCEnvironment:
         return next_state_array, reward_val, done_flag
 
     def _get_dns_targets(self) -> tuple[NDArray, float]:
-        """Return (dns_spectrum_k, dns_dissipation) for the current solver time.
-
-        Uses the time-varying DNSReferenceSchedule when available, otherwise
-        falls back to the static values stored in the solver config.
-        """
+        """Return (dns_spectrum_k, dns_dissipation) for the current solver time."""
         assert self._solver is not None
 
         if self._dns_reference_schedule is not None:
             current_time = self._solver.simulation_time_elapsed
             return self._dns_reference_schedule.query(current_time)
 
-        # Static fallback: original terminal-snapshot behaviour.
-        dns_spectrum_static = np.asarray(
-            self._solver_config["dns_energy_spectrum"], dtype=np.float64
+        return (
+            np.asarray(self._avc_cfg.dns_energy_spectrum, dtype=np.float64),
+            float(self._avc_cfg.dns_dissipation),
         )
-        dns_dissipation_static = float(self._solver_config["dns_dissipation"])
-        return dns_spectrum_static, dns_dissipation_static
 
     def _compute_reward(self, blown_up: bool, spectral_pen_only: bool) -> float:
         """Compute rₙ from eq. (2.10); large terminal penalty on blow-up."""
@@ -358,10 +332,8 @@ class BurgersAVCEnvironment:
             wavenumbers_all, raw_spectrum_all
         )
         spectrum_k = positive_spectrum[: self.n_wavenumber_bins].astype(np.float64)
-
         dns_spectrum_k, dns_dissipation = self._get_dns_targets()
 
-        # Integer wavenumber indices k = 1, …, K (skip DC component k=0).
         wavenumber_indices = np.arange(1, self.n_wavenumber_bins + 1, dtype=np.float64)
 
         w_e = self._sac_config.reward_weight_energy
@@ -379,15 +351,14 @@ class BurgersAVCEnvironment:
             if self._solver.dissipation_history
             else 0.0
         )
-        # Include AV contribution to get total effective dissipation.
         current_av_drain = (
             self._solver.energy_drain_history[-1]
             if self._solver.energy_drain_history
             else 0.0
         )
-        total_dissipation = current_dissipation + current_av_drain
-
-        dissipation_penalty = float(w_eps * (total_dissipation - dns_dissipation) ** 2)
+        dissipation_penalty = float(
+            w_eps * (current_dissipation + current_av_drain - dns_dissipation) ** 2
+        )
 
         if spectral_pen_only:
             return -spectral_penalty

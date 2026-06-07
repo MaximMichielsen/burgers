@@ -20,7 +20,6 @@ from time import perf_counter
 from typing import Any, Callable, Generator, Iterable
 
 import numpy as np
-from fontTools.diff import color
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
@@ -778,6 +777,9 @@ class BurgersBase:
         """Write extracted solution snapshots to CSV files."""
         solutions = self.snapshots_solution
         forcings = self.snapshots_forcing
+        if self.requested_snapshots is None:
+            return None
+
         times = self.requested_snapshots[: len(solutions)]
 
         for solution, time_value, forcing in zip(solutions, times, forcings):
@@ -824,16 +826,6 @@ class BurgersBase:
 
     def post_plotting(self, show_plot: bool = False) -> None:
         """Plot solution and convergence diagnostics; save to disk."""
-        first_res = [r[0] for r in self.residual_history if r]
-        last_res = [r[-1] for r in self.residual_history if r]
-        first_upd = [u[0] for u in self.update_history if u]
-        last_upd = [u[-1] for u in self.update_history if u]
-
-        fr_mean, fr_std = self.moving_stats(first_res)
-        lr_mean, lr_std = self.moving_stats(last_res)
-        fu_mean, fu_std = self.moving_stats(first_upd)
-        lu_mean, lu_std = self.moving_stats(last_upd)
-
         sgs_label = {
             "dns": "DNS",
             "les": "LES-VMS",
@@ -869,10 +861,13 @@ class BurgersBase:
 
         ax1 = fig.add_subplot(gs[1, 0])
         ax1.plot(
-            self.time_steps[:len(self.energy_history)], self.energy_history, color="red", label="Total energy"
+            self.time_steps[: len(self.energy_history)],
+            self.energy_history,
+            color="red",
+            label="Total energy",
         )
         ax1.plot(
-            self.time_steps[:len(self.dissipation_history)],
+            self.time_steps[: len(self.dissipation_history)],
             self.dissipation_history,
             color="purple",
             label="Dissipation",
