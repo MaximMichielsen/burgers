@@ -40,34 +40,3 @@ def read_data(
         return list(solutions)[-1], mesh
 
     return mesh, list(times), list(solutions), list(forcings)
-
-
-def set_extractions(
-    duration: float,
-    extraction_amount: int,
-    time_step: float,
-    mode: str = "linear",
-    strict: bool = False,
-) -> NDArray | None:
-    """Return snapshot extraction times over [0, duration].
-
-    Falls back to every time step if the requested interval is finer than dt.
-    """
-    extraction_interval = (
-        duration / (extraction_amount - 1) if extraction_amount > 1 else duration
-    )
-    if extraction_interval < time_step:
-        extractions = np.arange(0, duration + time_step / 2, step=time_step)
-        msg = (
-            f"Requested extraction interval ({extraction_interval:.6f}) < dt ({time_step:.6f}). "
-            f"Falling back to every time step ({len(extractions)} extractions)."
-        )
-        if strict:
-            raise ValueError(msg)
-        print(msg)
-        return extractions
-
-    if mode == "linear":
-        return np.linspace(0, duration, extraction_amount)
-
-    raise ValueError(f"Mode '{mode}' is not supported. Use 'linear'.")

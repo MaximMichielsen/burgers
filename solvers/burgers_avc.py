@@ -36,6 +36,9 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
 from ml.ml_agents.corrector import AVCorrector, load_corrector
+from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.problems import Problem
+from problems_and_configurations.solver_configs import SGSPConfig, AVCConfig
 from solvers.burgers_sgsp import BurgersSGSP
 
 logger = logging.getLogger(__name__)
@@ -46,94 +49,44 @@ class BurgersAVC(BurgersSGSP):
 
     Extends BurgersSGSP by injecting a learned scalar artificial viscosity
     α(t) into the diffusion term at each control step.
-
-    Additional configuration keys
-    ------------------------------
-    avc_model_path      : Path to av_corrector.pt checkpoint.
-    avc_alpha_max       : Upper bound αₘₐₓ = Cα·ν (must match trained model).
-    dns_energy_spectrum : Array of DNS target spectral energies E_DNS(k), shape (K,).
-    dns_dissipation     : Scalar DNS target dissipation rate ε_DNS.
-
-    Parameters
-    ----------
-    configuration:
-        Config dict from create_avc_config.
-    correction_is_global:
-        If True the scalar α is applied uniformly (current formulation).
-        False is reserved for the future spatially-varying extension.
-    correction_is_fixed:
-        If True the corrector policy is bypassed; av_correction holds its
-        initial value throughout.  Used for constant-α sweep data collection.
     """
 
     def __init__(
         self,
-        configuration: dict,
-        correction_is_fixed: bool = False,
+        problem: Problem,
+        disc_cfg: DiscretisationConfig,
+        simulation_mode: str,
+        master_path: Path,
+        sgsp_cfg: SGSPConfig,
+        avc_cfg: AVCConfig,
+        snapshot_factor: int | None = 1,
     ) -> None:
-        super().__init__(configuration)
+        super().__init__(
+            problem,
+            disc_cfg,
+            simulation_mode,
+            master_path,
+            sgsp_cfg,
+            snapshot_factor,
+        )
 
-        avc_model_path = Path(configuration["avc_model_path"])
-        self._corrector: AVCorrector = load_corrector(avc_model_path)
+        self._avc_model_path: Path = avc_cfg.avc_model_path
+        self._corrector: AVCorrector = load_corrector(avc_cfg.avc_model_path)
         self._corrector.eval()
 
-        # Scalar AV correction α(t); written by _add_avc_correction each step.
         self.av_correction: float | NDArray = 0.0
-
-        # Per-step history lists for diagnostics and RL data collection.
         self.av_history: list[float] = []
         self.energy_drain_history: list[float] = []
 
-        self.correction_is_fixed: bool = correction_is_fixed
-
-        # DNS targets for state normalization and reward computation.
         self._dns_energy_spectrum: NDArray = np.asarray(
-            configuration["dns_energy_spectrum"], dtype=np.float32
+            avc_cfg.dns_energy_spectrum, dtype=np.float32
         )
-        self._dns_dissipation: float = float(configuration["dns_dissipation"])
-
-        # K = number of positive wavenumber bins used in the MDP state.
+        self._dns_dissipation: float = float(avc_cfg.dns_dissipation)
         self._n_wavenumber_bins: int = len(self._dns_energy_spectrum)
+        self._current_element: tuple[int, int] = (0, 1)
 
-        self._current_element: tuple[int, int] = (0, 1)  # overwritten each element loop
-
-    # ------------------------------------------------------------------ #
-    #  Configuration
-    # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def create_avc_config(
-        avc_model_path: str | Path,
-        dns_energy_spectrum: NDArray,
-        dns_dissipation: float,
-        **sgsp_config_kwargs,
-    ) -> dict:
-        """Build a config dict for BurgersAVC.
-
-        Forwards kwargs to BurgersSGSP.create_sgsp_config, then appends the
-        AVC-specific keys.
-
-        Parameters
-        ----------
-        avc_model_path:
-            Path to the saved AVCorrector .pt checkpoint.
-        dns_energy_spectrum:
-            1-D array of DNS target spectral energies E_DNS(k), shape (K,).
-        dns_dissipation:
-            Scalar DNS target dissipation rate ε_DNS.
-        **sgsp_config_kwargs:
-            Forwarded to BurgersSGSP.create_sgsp_config / BurgersBase.create_config.
-        """
-        base_config = BurgersSGSP.create_sgsp_config(**sgsp_config_kwargs)
-        base_config.update(
-            {
-                "simulation_mode": "avc",
-                "avc_model_path": str(avc_model_path),
-                "dns_energy_spectrum": dns_energy_spectrum.tolist(),
-                "dns_dissipation": float(dns_dissipation),
-            }
-        )
-        return base_config
+        self.correction_is_fixed: bool = avc_cfg.correction_is_fixed
+        self.use_policy_inference: bool = not avc_cfg.correction_is_fixed
 
     # ------------------------------------------------------------------ #
     #  advance_time_step
@@ -148,7 +101,7 @@ class BurgersAVC(BurgersSGSP):
         3. Call super().advance_time_step() — runs NR with SGS + AV.
         4. Append αₙ and energy drain to history lists.
         """
-        if not self.correction_is_fixed:
+        if self.use_policy_inference:
             self._add_avc_correction()
 
         step_ok = super().advance_time_step()  # returns bool from BurgersSGSP
@@ -360,7 +313,7 @@ class BurgersAVC(BurgersSGSP):
         print()
         print("  AV Corrector")
         print("─" * W)
-        _row("model path", str(self.configuration.get("avc_model_path", "N/A")))
+        _row("model path", str(self._avc_model_path))
         _row("correction mode", str(self._corrector.correction_mode))
         _row("alpha_max", f"{self._corrector.alpha_max:.4e}")
         _row("correction_is_fixed", str(self.correction_is_fixed))
@@ -416,7 +369,7 @@ class BurgersAVC(BurgersSGSP):
             logger.warning("plot_avc_contributions: no data points to plot, skipping.")
             return
 
-        time_axis = np.array(self.time_steps[:n_plot_points], dtype=float) * self.dt
+        time_axis = self.time_steps[1 : n_plot_points + 1]
         av_raw = self.av_history[:n_plot_points]
         av_array = np.array(
             [np.mean(a) if isinstance(a, np.ndarray) else a for a in av_raw],

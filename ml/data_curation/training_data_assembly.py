@@ -21,6 +21,8 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from problems_and_configurations.disc_config import DiscretisationConfig
+
 
 # ---------------------------------------------------------------------------
 # Quadrature helpers
@@ -37,49 +39,49 @@ def _gradient_basis_functions(element_size: float) -> NDArray:
     return np.array([-1.0, 1.0]) / element_size
 
 
-# ---------------------------------------------------------------------------
-# Per-element output term computation
-# ---------------------------------------------------------------------------
-
-
 def compute_element_output_terms(
-    u_bar_left: float,
-    u_bar_right: float,
-    u_prime_left: float,
-    u_prime_right: float,
-    du_bar_dt_left: float,
-    du_bar_dt_right: float,
-    du_prime_dt_left: float,
-    du_prime_dt_right: float,
-    du_prime_dx_left: float,
-    du_prime_dx_right: float,
-    element_size: float,
+    u_dns_now: NDArray,
+    u_dns_prev: NDArray | None,
+    u_bar_now: NDArray,
+    u_bar_prev: NDArray | None,
+    mesh_dns: NDArray,
+    x_left: float,
+    x_right: float,
+    element_size_les: float,
+    element_size_dns: float,
+    dt: float,
 ) -> NDArray:
-    """Compute the 5-component output vector for one element via 2-point Gauss quadrature.
+    """Compute the 5-component output vector for one LES element.
 
-    Returns NDArray of shape (5,):
+    Integrates interaction terms at full DNS resolution via Gauss quadrature,
+    interpolating DNS fields to each quadrature point. Returns shape (5,):
         [cross, Reynolds, temporal_L, temporal_R, viscous].
     """
-    gauss_pts, gauss_wts = np.polynomial.legendre.leggauss(deg=2)
-    grad_basis = _gradient_basis_functions(element_size)
-    jacobian = element_size / 2.0
+    gauss_pts, gauss_wts = np.polynomial.legendre.leggauss(deg=3)
+    grad_basis = _gradient_basis_functions(element_size_les)
+    jacobian = element_size_les / 2.0
+    w_x_val = grad_basis[1]
 
-    u_bar_nodes = np.array([u_bar_left, u_bar_right])
-    u_prime_nodes = np.array([u_prime_left, u_prime_right])
-    du_prime_dt_nodes = np.array([du_prime_dt_left, du_prime_dt_right])
-    du_prime_dx_nodes = np.array([du_prime_dx_left, du_prime_dx_right])
+    u_prime_now_dns = u_dns_now - u_bar_now
+    du_prime_dx_dns = np.gradient(u_prime_now_dns, element_size_dns)
+
+    if u_dns_prev is not None and u_bar_prev is not None:
+        u_prime_prev_dns = u_dns_prev - u_bar_prev
+        du_prime_dt_dns = (u_prime_now_dns - u_prime_prev_dns) / dt
+    else:
+        du_prime_dt_dns = np.zeros_like(u_prime_now_dns)
 
     cross_term = reynolds_term = temporal_left = temporal_right = viscous_term = 0.0
-    w_x_val = grad_basis[1]  # = 1/h, constant over element
 
     for gauss_pt, gauss_wt in zip(gauss_pts, gauss_wts):
+        x_phys = 0.5 * (x_left + x_right) + 0.5 * element_size_les * gauss_pt
         basis_vals = _basis_functions(gauss_pt)
         scale = gauss_wt * jacobian
 
-        u_bar_gp = float(basis_vals @ u_bar_nodes)
-        u_prime_gp = float(basis_vals @ u_prime_nodes)
-        du_prime_dt_gp = float(basis_vals @ du_prime_dt_nodes)
-        du_prime_dx_gp = float(basis_vals @ du_prime_dx_nodes)
+        u_bar_gp = float(np.interp(x_phys, mesh_dns, u_bar_now))
+        u_prime_gp = float(np.interp(x_phys, mesh_dns, u_prime_now_dns))
+        du_prime_dt_gp = float(np.interp(x_phys, mesh_dns, du_prime_dt_dns))
+        du_prime_dx_gp = float(np.interp(x_phys, mesh_dns, du_prime_dx_dns))
 
         cross_term += scale * w_x_val * u_bar_gp * u_prime_gp
         reynolds_term += scale * w_x_val * 0.5 * u_prime_gp**2
@@ -166,36 +168,37 @@ def build_input_stencil(
 
 def assemble_training_data(
     solutions_les: NDArray,
-    solutions_dns_projected: NDArray,
+    solutions_dns_raw: NDArray,
     forcings_les: NDArray,
+    mesh_dns: NDArray,
+    mesh_les: NDArray,
     dt: float,
-    element_size: float,
+    element_size_les: float,
+    element_size_dns: float,
 ) -> tuple[NDArray, NDArray, dict]:
     """Assemble and normalise (X, y) training pairs from projected LES/DNS data.
 
-    Skips snapshots 0–1 (need 3 time levels) and boundary elements (stencil
-    falls outside domain). Returns (X_normalised, y_normalised, norm_stats).
+    Computes interaction terms at full DNS resolution by integrating u' = u_DNS - u_bar
+    against LES basis functions via Gauss quadrature. Skips snapshots 0-1 (need 3 time
+    levels) and boundary elements (stencil falls outside domain).
+    Returns (X_normalised, y_normalised, norm_stats).
     """
     n_timesteps, n_les_nodes = solutions_les.shape
     n_elements = n_les_nodes - 1
 
-    u_prime_all, du_prime_dt_all, du_prime_dx_all, du_bar_dt_all = [], [], [], []
+    # Interpolate L2-projected LES solutions onto DNS mesh for u' computation
+    u_bar_on_dns_all: list[NDArray] = [
+        np.interp(mesh_dns, mesh_les, solutions_les[t]) for t in range(n_timesteps)
+    ]
 
+    # Precompute du_bar_dt on LES mesh for input stencil construction
+    du_bar_dt_all: list[NDArray] = []
     for time_idx in range(n_timesteps):
-        u_bar = solutions_les[time_idx]
-        u_prime = compute_u_prime_field(solutions_dns_projected[time_idx], u_bar)
-        u_prime_all.append(u_prime)
-        du_prime_dx_all.append(compute_du_prime_dx(u_prime, element_size))
-        du_prime_dt_all.append(
-            compute_du_prime_dt(
-                u_prime, u_prime_all[time_idx - 1] if time_idx > 0 else None, dt
-            )
-        )
         u_bar_prev = solutions_les[time_idx - 1] if time_idx > 0 else None
         du_bar_dt_all.append(
-            (u_bar - u_bar_prev) / dt
+            (solutions_les[time_idx] - u_bar_prev) / dt
             if u_bar_prev is not None
-            else np.zeros_like(u_bar)
+            else np.zeros(n_les_nodes)
         )
 
     input_rows: list[NDArray] = []
@@ -218,12 +221,6 @@ def assemble_training_data(
             forcings_les[time_idx],
         ]
 
-        u_bar_cur = solutions_les[time_idx]
-        u_prime_cur = u_prime_all[time_idx]
-        du_prime_dt_cur = du_prime_dt_all[time_idx]
-        du_prime_dx_cur = du_prime_dx_all[time_idx]
-        du_bar_dt_cur = du_bar_dt_all[time_idx]
-
         for elem_idx in range(n_elements):
             input_vec = build_input_stencil(
                 u_bar_history=u_bar_history,
@@ -235,19 +232,20 @@ def assemble_training_data(
             if input_vec is None:
                 continue
 
-            node_left, node_right = elem_idx, elem_idx + 1
+            x_left = float(mesh_les[elem_idx])
+            x_right = float(mesh_les[elem_idx + 1])
+
             output_vec = compute_element_output_terms(
-                u_bar_left=float(u_bar_cur[node_left]),
-                u_bar_right=float(u_bar_cur[node_right]),
-                u_prime_left=float(u_prime_cur[node_left]),
-                u_prime_right=float(u_prime_cur[node_right]),
-                du_bar_dt_left=float(du_bar_dt_cur[node_left]),
-                du_bar_dt_right=float(du_bar_dt_cur[node_right]),
-                du_prime_dt_left=float(du_prime_dt_cur[node_left]),
-                du_prime_dt_right=float(du_prime_dt_cur[node_right]),
-                du_prime_dx_left=float(du_prime_dx_cur[node_left]),
-                du_prime_dx_right=float(du_prime_dx_cur[node_right]),
-                element_size=element_size,
+                u_dns_now=solutions_dns_raw[time_idx],
+                u_dns_prev=solutions_dns_raw[time_idx - 1],
+                u_bar_now=u_bar_on_dns_all[time_idx],
+                u_bar_prev=u_bar_on_dns_all[time_idx - 1],
+                mesh_dns=mesh_dns,
+                x_left=x_left,
+                x_right=x_right,
+                element_size_les=element_size_les,
+                element_size_dns=element_size_dns,
+                dt=dt,
             )
             input_rows.append(input_vec)
             output_rows.append(output_vec)
@@ -314,8 +312,7 @@ def split_and_save(
 def run_training_data_assembly(
     projection_path: Path,
     output_dir: Path,
-    dt: float,
-    element_size: float,
+    disc_cfg: DiscretisationConfig,
     train_fraction: float = 0.8,
     random_seed: int = 42,
 ) -> tuple[NDArray, NDArray, dict]:
@@ -324,27 +321,31 @@ def run_training_data_assembly(
 
     solutions_les = np.load(projection_path / "solutions_projection.npy")
 
-    dns_on_les_path = projection_path / "dns_on_les.npy"
-    if not dns_on_les_path.exists():
+    dns_raw_path = projection_path / "solutions_dns_raw.npy"
+    if not dns_raw_path.exists():
         raise FileNotFoundError(
-            f"DNS-on-LES snapshot file not found at '{dns_on_les_path}'. "
+            f"DNS raw snapshot file not found at '{dns_raw_path}'. "
             "Run the projection step first."
         )
-    solutions_dns_projected = np.load(dns_on_les_path)
+    solutions_dns_raw = np.load(dns_raw_path)
+    mesh_dns = np.load(projection_path / "mesh_dns.npy")
 
     forcings_path = projection_path / "forcings_projection.npy"
-    if forcings_path.exists():
-        forcings_les = np.load(forcings_path)
-    else:
-        forcings_les = np.zeros_like(solutions_les)
-        print("Warning: no forcing file found; using zeros.")
+    forcings_les = (
+        np.load(forcings_path)
+        if forcings_path.exists()
+        else np.zeros_like(solutions_les)
+    )
 
     x_data, y_data, norm_stats = assemble_training_data(
         solutions_les=solutions_les,
-        solutions_dns_projected=solutions_dns_projected,
+        solutions_dns_raw=solutions_dns_raw,
         forcings_les=forcings_les,
-        dt=dt,
-        element_size=element_size,
+        mesh_dns=mesh_dns,
+        mesh_les=disc_cfg.mesh_les,
+        dt=disc_cfg.dt_les,
+        element_size_les=disc_cfg.h_les,
+        element_size_dns=disc_cfg.h_dns,
     )
     split_and_save(
         x_data=x_data,

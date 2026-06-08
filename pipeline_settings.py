@@ -1,12 +1,8 @@
 """Pipeline stage flags and run-ID generation for the Burgers LES pipeline."""
 
 import datetime
-import time
-from collections import OrderedDict
-from dataclasses import dataclass, field
-from functools import wraps
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from constants import (
     SOLVER_DATA_FOLDER,
@@ -18,14 +14,11 @@ from constants import (
     POST_SPLIT_FOLDER,
     AGENT_FOLDER,
     A_PRIORI_FOLDER,
+    LES_SGSP_SAVE_PATH,
+    LES_AVC_SAVE_PATH,
+    BLOWN_UP_FOLDER,
+    NORM_STATS,
 )
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ml.ml_agents.predictor import SGSPredictor
-    from solvers.burgers_avc import BurgersAVC
-    from solvers.burgers_sgsp import BurgersSGSP
 
 
 @dataclass
@@ -33,54 +26,17 @@ class PipelineConfig:
     """Controls which pipeline stages run and optional I/O path overrides."""
 
     run_dns: bool = True
-    run_solvers: bool = True
-    run_projection: bool = True
-    run_training_assembly: bool = True
-    run_training_sgsp: bool = True
-    verify_apriori: bool = True
-    run_sgsp: bool = True
-    debug_sgsp: bool = False
-    run_avc_online_training: bool = True
-    run_avc_offline_training: bool = False if run_avc_online_training else True
-    run_avc_eval: bool = (
-        False if not run_avc_offline_training or not run_avc_online_training else True
-    )
-    run_avc: bool = True
-    run_plotting: bool = True
+    run_base_models: bool = True
+    run_sgsp_block: bool = True
+    run_avc_block: bool = True
+
+    train_avc_online: bool = True
+    train_avc_offline: bool = False
+
     clip_pusuluri: bool = False
     clip_rajampeta: bool = False
-    manual_path: str = ""
-    _stage_timings: OrderedDict[str, float] = field(
-        default_factory=OrderedDict, init=False, repr=False
-    )
 
-    run_solvers_stage: Callable[[], None] | None = field(
-        default=None, init=False, repr=False
-    )
-    run_projection_stage: Callable[[], None] | None = field(
-        default=None, init=False, repr=False
-    )
-    run_sgsp_training_assembly: Callable[[], None] | None = field(
-        default=None, init=False, repr=False
-    )
-    run_sgsp_training: Callable[[], SGSPredictor | None] | None = field(
-        default=None, init=False, repr=False
-    )
-    verify_sgsp_apriori: Callable[[SGSPredictor | None], None] | None = field(
-        default=None, init=False, repr=False
-    )
-    run_sgsp_model: Callable[[], BurgersSGSP | None] | None = field(
-        default=None, init=False, repr=False
-    )
-    run_avc_training: Callable[[BurgersSGSP], tuple[dict, Path] | None] | None = field(
-        default=None, init=False, repr=False
-    )
-    run_avc_model: Callable[[dict], BurgersAVC | None] | None = field(
-        default=None, init=False, repr=False
-    )
-    run_fixed_av_baseline: Callable[[dict, float], BurgersAVC | None] | None = field(
-        default=None, init=False, repr=False
-    )
+    manual_path: str = ""
 
     def __post_init__(self) -> None:
         """Validate flag combinations."""
@@ -95,24 +51,9 @@ class PipelineConfig:
         return f"run_{problem_name}_{timestamp}"
 
     @classmethod
-    def all_stages(cls, manual_path: str = "") -> "PipelineConfig":
+    def all(cls, manual_path: str = "") -> "PipelineConfig":
         """Full pipeline (identical to default construction)."""
         return cls(manual_path=manual_path)
-
-    @classmethod
-    def all_stages_clipped(cls, manual_path: str = "") -> "PipelineConfig":
-        """Full pipeline with predictor clipping enabled."""
-        return cls(manual_path=manual_path, clip_pusuluri=True, clip_rajampeta=True)
-
-    @classmethod
-    def all_but_dns_clipped(cls, manual_path: str = "") -> "PipelineConfig":
-        """Full pipeline minus DNS, with predictor clipping enabled."""
-        return cls(
-            manual_path=manual_path,
-            run_dns=False,
-            clip_pusuluri=True,
-            clip_rajampeta=True,
-        )
 
     @classmethod
     def all_but_dns(cls, manual_path: str = "") -> "PipelineConfig":
@@ -121,102 +62,6 @@ class PipelineConfig:
             manual_path=manual_path,
             run_dns=False,
         )
-
-    @classmethod
-    def coupled_only(cls, manual_path: str = "") -> "PipelineConfig":
-        """Coupled simulation and plotting only; skips data generation and training."""
-        return cls(
-            run_solvers=False,
-            run_projection=False,
-            run_training_assembly=False,
-            run_training_sgsp=False,
-            verify_apriori=False,
-            run_sgsp=True,
-            run_plotting=True,
-            manual_path=manual_path,
-        )
-
-    @classmethod
-    def coupled_only_clipped(cls, manual_path: str = "") -> "PipelineConfig":
-        """Coupled simulation and plotting only, with predictor clipping enabled."""
-        return cls(
-            run_solvers=False,
-            run_projection=False,
-            run_training_assembly=False,
-            run_training_sgsp=False,
-            verify_apriori=False,
-            run_sgsp=True,
-            run_plotting=True,
-            manual_path=manual_path,
-            clip_pusuluri=True,
-            clip_rajampeta=True,
-        )
-
-    @classmethod
-    def only_plot(cls, manual_path: str) -> "PipelineConfig":
-        """Plotting only; requires an existing run via manual_path."""
-        return cls(
-            run_solvers=False,
-            run_projection=False,
-            run_training_assembly=False,
-            run_training_sgsp=False,
-            verify_apriori=False,
-            run_sgsp=False,
-            run_plotting=True,
-            manual_path=manual_path,
-        )
-
-    def stage(self, stage_name: str, enabled: bool = True) -> Callable:
-        """Decorator that times a pipeline stage and stores elapsed seconds.
-
-        Args:
-            stage_name: Human-readable label stored in timing report.
-            enabled: If False, the decorated function is a no-op (skipped stage).
-        """
-
-        def decorator(func: Callable) -> Callable:
-            @wraps(func)
-            def wrapper(*args, **kwargs):
-                if not enabled:
-                    print(f"[pipeline] Skipping: {stage_name}")
-                    return None
-                print(f"[pipeline] Starting: {stage_name}")
-                t_start = time.perf_counter()
-                result = func(*args, **kwargs)
-                elapsed_seconds = time.perf_counter() - t_start
-                self._stage_timings[stage_name] = elapsed_seconds
-                print(f"[pipeline] Done:     {stage_name}  ({elapsed_seconds:.2f}s)")
-                return result
-
-            return wrapper
-
-        return decorator
-
-    def report_timings(self, output_path: Path | None = None) -> None:
-        """Write a formatted timing summary to a .txt file (and print to stdout)."""
-        total_elapsed = sum(self._stage_timings.values())
-
-        lines: list[str] = [
-            "=" * 52,
-            f"{'Pipeline Stage':<32} {'Time (s)':>10}  {'%':>6}",
-            "=" * 52,
-        ]
-        for stage_name, elapsed_seconds in self._stage_timings.items():
-            pct = 100 * elapsed_seconds / total_elapsed if total_elapsed > 0 else 0.0
-            lines.append(f"  {stage_name:<30} {elapsed_seconds:>10.2f}  {pct:>5.1f}%")
-        lines += [
-            "-" * 52,
-            f"  {'TOTAL':<30} {total_elapsed:>10.2f}  100.0%",
-            "=" * 52,
-        ]
-
-        report_text = "\n".join(lines)
-        print("\n" + report_text)
-
-        resolved_path: Path | None = output_path or getattr(self, "_master_path", None)
-        if resolved_path is not None:
-            timing_file_path = Path(resolved_path) / "pipeline_timings.txt"
-            timing_file_path.write_text(report_text + "\n", encoding="utf-8")
 
 
 @dataclass
@@ -228,9 +73,15 @@ class RunPaths:
     dns_data: Path
     les_a_data: Path
     les_nm_data: Path
+    les_sgsp_data: Path
+    les_avc_data: Path
     projection: Path
     training: Path
+    normalization: Path
     model_output: Path
+    sgsp_model: Path
+    avcg_model: Path
+    avcl_model: Path
     apriori: Path
 
     @classmethod
@@ -242,10 +93,19 @@ class RunPaths:
             dns_data=master_path / SOLVER_DATA_FOLDER / DNS_SAVE_PATH,
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
+            les_sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,
             projection=master_path / TRAINING_DATA_FOLDER / PRE_SPLIT_FOLDER,
             training=master_path / TRAINING_DATA_FOLDER / POST_SPLIT_FOLDER,
+            normalization=master_path
+            / TRAINING_DATA_FOLDER
+            / POST_SPLIT_FOLDER
+            / NORM_STATS,
             model_output=master_path / AGENT_FOLDER,
+            sgsp_model=master_path / AGENT_FOLDER / "sgs_predictor.pt",
+            avcg_model=master_path / AGENT_FOLDER / "av_global_corrector.pt",
+            avcl_model=master_path / AGENT_FOLDER / "av_local_corrector.pt",
             apriori=master_path / A_PRIORI_FOLDER,
+            les_avc_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH,
         )
 
     def create_master(self) -> None:

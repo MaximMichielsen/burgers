@@ -10,7 +10,7 @@ from matplotlib.animation import FuncAnimation
 from numpy.typing import NDArray
 
 from pipeline_settings import RunPaths
-from problems_and_configurations.mesh_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretisationConfig
 
 from utils.io_utils import read_data
 

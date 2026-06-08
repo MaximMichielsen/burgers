@@ -144,6 +144,67 @@ class DNSReferenceSchedule:
             n_wavenumber_bins=n_wavenumber_bins,
         )
 
+    @classmethod
+    def from_projection_directory(
+        cls,
+        projection_dir: Path,
+        domain_length: float,
+        viscosity: float,
+        n_wavenumber_bins: int,
+    ) -> "DNSReferenceSchedule":
+        """Build a schedule from projected LES-grid snapshots.
+
+        Loads solutions_projection.npy and the corresponding time axis,
+        so all spectra are computed on the LES mesh and match the state vector.
+        """
+        projection_dir = Path(projection_dir)
+
+        solutions_les = np.load(projection_dir / "solutions_projection.npy")
+
+        times_path = projection_dir / "times.npy"
+        if times_path.exists():
+            snapshot_times_array = np.load(times_path).astype(np.float64)
+        else:
+            # Fall back: infer times from the number of snapshots and dt
+            raise FileNotFoundError(
+                f"times_projection.npy not found in {projection_dir}. "
+                "Ensure run_projection saves snapshot times."
+            )
+
+        spectra_list: list[NDArray] = []
+        dissipation_list: list[float] = []
+
+        for solution_snapshot in solutions_les:
+            spectrum_k = _compute_spectrum_bins(
+                velocity_array=solution_snapshot,
+                domain_length=domain_length,
+                n_wavenumber_bins=n_wavenumber_bins,
+            )
+            dissipation_val = _compute_dissipation(
+                velocity_array=solution_snapshot,
+                domain_length=domain_length,
+                viscosity=viscosity,
+            )
+            spectra_list.append(spectrum_k)
+            dissipation_list.append(dissipation_val)
+
+        spectra_array = np.stack(spectra_list, axis=0).astype(np.float64)
+        dissipation_array = np.array(dissipation_list, dtype=np.float64)
+
+        logger.info(
+            "DNSReferenceSchedule loaded %d projected snapshots from %s (K=%d).",
+            len(snapshot_times_array),
+            projection_dir,
+            n_wavenumber_bins,
+        )
+
+        return cls(
+            snapshot_times=snapshot_times_array,
+            spectra_array=spectra_array,
+            dissipation_array=dissipation_array,
+            n_wavenumber_bins=n_wavenumber_bins,
+        )
+
     # ------------------------------------------------------------------
     # Query
     # ------------------------------------------------------------------

@@ -25,19 +25,6 @@ def round_down(value: float, decimals: int) -> float:
     return np.floor(value * factor) / factor
 
 
-def compute_time_step(
-    h: float,
-    max_velocity: float,
-    viscosity: float,
-    do_round_down: bool = True,
-) -> float:
-    """CFL-based time step: minimum of convective and diffusive limits."""
-    if max_velocity == 0:
-        return h**2 / viscosity
-    dt = min(h / max_velocity, h**2 / viscosity)
-    return round_down(dt, 4) if do_round_down else dt
-
-
 def implicit_euler_first_order(field: NDArray | float, h: float) -> NDArray:
     """Central-difference first derivative with periodic roll."""
     return (np.roll(field, -1) - np.roll(field, 1)) / (2 * h)

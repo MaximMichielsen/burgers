@@ -54,10 +54,10 @@ from torch import Tensor
 
 from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.ml_agents.corrector import AVCorrector, save_corrector
-from replacing.input_settings.disc_config import DiscretisationConfig
-from replacing.input_settings.problems import Problem
-from replacing.input_settings.solver_configs import SGSPConfig, AVCConfig
-from replacing.solvers.burgers_base import compute_adjusted_dt
+from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.problems import Problem
+from problems_and_configurations.solver_configs import SGSPConfig, AVCConfig
+from solvers.burgers_base import compute_adjusted_dt
 from solvers.burgers_avc import BurgersAVC
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ class SACConfig:
     update_every: int = 1
     updates_per_step: int = 1
     target_entropy: float = -1.0
-    n_skip_steps: int = 10
+    n_skip_steps: int = 5
     reward_weight_energy: float = 1.0
     reward_weight_dissipation: float = 0.1
     reward_spectral_exponent: float = 5.0 / 3.0
@@ -240,7 +240,6 @@ class BurgersAVCEnvironment:
         master_path: Path,
         sac_config: SACConfig,
         dns_reference_schedule: DNSReferenceSchedule | None = None,
-        spectral_penalty_only: bool = False,
     ) -> None:
         self._problem = problem
         self._disc_cfg = disc_cfg
@@ -249,7 +248,8 @@ class BurgersAVCEnvironment:
         self._master_path = master_path
         self._sac_config = sac_config
         self._dns_reference_schedule = dns_reference_schedule
-        self.spectral_penalty_only = spectral_penalty_only
+
+        self.exclude_diss_from_reward = avc_cfg.exclude_diss_from_reward
 
         self._solver: BurgersAVC | None = None
         self._total_les_steps: int = 0
@@ -266,13 +266,14 @@ class BurgersAVCEnvironment:
         """Instantiate a fresh BurgersAVC solver and return initial state sₙ."""
         self._solver = BurgersAVC(
             problem=self._problem,
-            disc_cfg=dataclasses.replace(
-                self._disc_cfg, suppress_file_logging=True
-            ),
+            disc_cfg=dataclasses.replace(self._disc_cfg, suppress_file_logging=True),
             simulation_mode="avc",
             master_path=self._master_path,
             sgsp_cfg=self._sgsp_cfg,
             avc_cfg=self._avc_cfg,
+        )
+        self._solver.use_policy_inference = (
+            False  # trainer drives av_correction externally
         )
         self._total_les_steps = 0
         self._correction_mode = self._solver._corrector.correction_mode
@@ -297,9 +298,7 @@ class BurgersAVCEnvironment:
                 blown_up = True
                 break
 
-        reward_val = self._compute_reward(
-            blown_up=blown_up, spectral_pen_only=self.spectral_penalty_only
-        )
+        reward_val = self._compute_reward(blown_up=blown_up)
         done_flag = blown_up or self._total_les_steps >= self._max_les_steps
         next_state_array = self._solver._create_avc_input_stencil()
 
@@ -318,10 +317,10 @@ class BurgersAVCEnvironment:
             float(self._avc_cfg.dns_dissipation),
         )
 
-    def _compute_reward(self, blown_up: bool, spectral_pen_only: bool) -> float:
+    def _compute_reward(self, blown_up: bool) -> float:
         """Compute rₙ from eq. (2.10); large terminal penalty on blow-up."""
         if blown_up:
-            return -1e8
+            return -1.0
 
         assert self._solver is not None
 
@@ -335,16 +334,24 @@ class BurgersAVCEnvironment:
         dns_spectrum_k, dns_dissipation = self._get_dns_targets()
 
         wavenumber_indices = np.arange(1, self.n_wavenumber_bins + 1, dtype=np.float64)
-
         w_e = self._sac_config.reward_weight_energy
         w_eps = self._sac_config.reward_weight_dissipation
         gamma_exp = self._sac_config.reward_spectral_exponent
 
-        compensated_les = wavenumber_indices**gamma_exp * spectrum_k
-        compensated_dns = wavenumber_indices**gamma_exp * dns_spectrum_k
+        # Normalise spectra by total energy to compare shape only
+        normalised_les = spectrum_k / max(spectrum_k.sum(), 1e-12)
+        normalised_dns = dns_spectrum_k / max(dns_spectrum_k.sum(), 1e-12)
+
+        compensated_les = wavenumber_indices**gamma_exp * normalised_les
+        compensated_dns = wavenumber_indices**gamma_exp * normalised_dns
+
+        dns_safe = np.where(compensated_dns > 0.0, compensated_dns, 1.0)
         spectral_penalty = float(
-            w_e * np.sum(wavenumber_indices * (compensated_les - compensated_dns) ** 2)
+            w_e * np.mean(((compensated_les - compensated_dns) / dns_safe) ** 2)
         )
+
+        if self.exclude_diss_from_reward:
+            return -(spectral_penalty / (1.0 + spectral_penalty))
 
         current_dissipation = (
             self._solver.dissipation_history[-1]
@@ -356,13 +363,19 @@ class BurgersAVCEnvironment:
             if self._solver.energy_drain_history
             else 0.0
         )
+
+        dns_diss_safe = max(abs(dns_dissipation), 1e-12)
         dissipation_penalty = float(
-            w_eps * (current_dissipation + current_av_drain - dns_dissipation) ** 2
+            w_eps
+            * (
+                (current_dissipation + current_av_drain - dns_dissipation)
+                / dns_diss_safe
+            )
+            ** 2
         )
 
-        if spectral_pen_only:
-            return -spectral_penalty
-        return -(spectral_penalty + dissipation_penalty)
+        total_penalty = spectral_penalty + dissipation_penalty
+        return -(total_penalty / (1.0 + total_penalty))
 
 
 # ---------------------------------------------------------------------------

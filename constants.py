@@ -4,6 +4,9 @@
 # Simulation defaults
 # ---------------------------------------------------------------------------
 
+STANDARD_EXTRACTION_AMOUNT: int = 10
+DNS_SNAPSHOT_AMOUNT: int = 2000
+
 TOLERANCE_RESIDUAL: float = 1e-6
 TOLERANCE_UPDATE: float = 1e-6
 MAXIMUM_ITERATIONS_DNS: int = 50
@@ -31,6 +34,8 @@ EPOCHS: int = 150
 BLOWUP_THRESHOLD: float = 1e4
 BLOWUP_BUFFER_SIZE: int = 5000
 
+WARMUP_STEPS: int = 2
+
 # ---------------------------------------------------------------------------
 # Corrector agent hyperparameters
 # ---------------------------------------------------------------------------
@@ -53,9 +58,8 @@ A_PRIORI_FOLDER: str = "apriori"
 DNS_SAVE_PATH: str = "DNS"
 LES_ANALYTICAL_SAVE_PATH: str = "LES_A"
 LES_NO_MODEL_SAVE_PATH: str = "LES_NM"
-LES_ANN_SAVE_PATH: str = "LES_SGSP"
-LES_AVCG_SAVE_PATH: str = "LES_AVCG"
-LES_AVCL_SAVE_PATH: str = "LES_AVCL"
+LES_SGSP_SAVE_PATH: str = "LES_SGSP"
+LES_AVC_SAVE_PATH: str = "LES_AVC"
 
 LES_ANN_UNCLIPPED_FOLDER: str = "unclipped"
 LES_ANN_PUSULURI_FOLDER: str = "pusuluri"

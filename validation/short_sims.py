@@ -10,7 +10,7 @@ from problems_and_configurations.configurations import (
     create_sgsp_config,
     create_solver_configs,
 )
-from problems_and_configurations.mesh_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem, Problems
 from solvers.burgers_sgsp import BurgersSGSP
 from utils.io_utils import read_data
@@ -108,10 +108,10 @@ if pipeline.run_projection:
 
     _, dns_times, _, _ = _read(paths.dns_data)
     run_projection(
-        directory=paths.dns_data,
+        dns_directory=paths.dns_data,
         bc_mode=problem.boundary_condition_type,
         bc_values=problem.boundary_condition_value,
-        output_dir=paths.projection,
+        output_directory=paths.projection,
         verify=False,
         les_snapshot_indices=np.arange(0, len(dns_times), disc_cfg.temporal_refinement),
         n_nodes_les=disc_cfg.n_nodes_les,

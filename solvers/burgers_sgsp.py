@@ -45,12 +45,20 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
 
-from constants import OUTPUT_UNITS, BLOWUP_BUFFER_SIZE, BLOWUP_THRESHOLD
+from constants import (
+    OUTPUT_UNITS,
+    BLOWUP_BUFFER_SIZE,
+    BLOWUP_THRESHOLD,
+)
 from ml.data_curation.training_data_assembly import (
     _gradient_basis_functions,
     build_input_stencil,
 )
 from ml.ml_agents.predictor import SGSPredictor, load_predictor
+from constants import WARMUP_STEPS
+from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.problems import Problem
+from problems_and_configurations.solver_configs import SGSPConfig
 from solvers.burgers_base import BurgersBase
 
 logger = logging.getLogger(__name__)
@@ -178,23 +186,29 @@ class BurgersSGSP(BurgersBase):
 
     def __init__(
         self,
-        configuration: dict,
-        sigma_multiplier: float = 3.0,
+        problem: Problem,
+        disc_cfg: DiscretisationConfig,
+        simulation_mode: str,
+        master_path: Path,
+        sgsp_cfg: SGSPConfig,
+        snapshot_factor: int | None = 1,
     ) -> None:
-        super().__init__(configuration)
+        super().__init__(
+            problem, disc_cfg, simulation_mode, master_path, snapshot_factor
+        )
 
-        self.clip_pusuluri: bool = bool(configuration.get("clip_pusuluri", False))
-        self.clip_rajampeta: bool = bool(configuration.get("clip_rajampeta", False))
-        self.exclude_visc: bool = bool(configuration.get("exclude_visc", False))
+        self.clip_pusuluri: bool = sgsp_cfg.clip_pusuluri
+        self.clip_rajampeta: bool = sgsp_cfg.clip_rajampeta
 
         if self.clip_rajampeta and not self.clip_pusuluri:
             raise ValueError("clip_rajampeta requires clip_pusuluri to be enabled.")
 
-        sgsp_model_path = Path(configuration["sgsp_model_path"])
-        self._predictor: SGSPredictor = load_predictor(sgsp_model_path)
+        self._sgsp_model_path = sgsp_cfg.sgsp_model_path
+        self._predictor: SGSPredictor = load_predictor(sgsp_cfg.sgsp_model_path)
         self._predictor.eval()
 
-        norm_data = np.load(Path(configuration["normalisation_stats_path"]))
+        self._normalization_path = sgsp_cfg.normalization_path
+        norm_data = np.load(sgsp_cfg.normalization_path)
         self._x_mean: NDArray = norm_data["X_mean"].astype(np.float32)
         self._x_std: NDArray = norm_data["X_std"].astype(np.float32)
         self._y_mean: NDArray = norm_data["y_mean"].astype(np.float32)
@@ -204,63 +218,26 @@ class BurgersSGSP(BurgersBase):
         self._du_bar_dt_history: list[NDArray] = []
         self._forcing_history: list[NDArray] = []
 
-        self._sgsp_warmup_steps: int = int(configuration.get("sgsp_warmup_steps", 2))
+        self._sgsp_warmup_steps: int = WARMUP_STEPS
         self._step_count: int = 0
         self._grad_basis: NDArray = _gradient_basis_functions(self.element_size)
 
         if self.clip_pusuluri:
-            self._y_lower_bound: NDArray = self._y_mean - sigma_multiplier * self._y_std
-            self._y_upper_bound: NDArray = self._y_mean + sigma_multiplier * self._y_std
+            self._y_lower_bound: NDArray = (
+                self._y_mean - sgsp_cfg.sigma_multiplier * self._y_std
+            )
+            self._y_upper_bound: NDArray = (
+                self._y_mean + sgsp_cfg.sigma_multiplier * self._y_std
+            )
 
-        self._blowup_threshold: float = float(
-            configuration.get("blowup_threshold", BLOWUP_THRESHOLD)
-        )
+        self._blowup_threshold: float = BLOWUP_THRESHOLD
         self._blowup_buffer: _BlowupBuffer = _BlowupBuffer(
-            max_steps=int(configuration.get("blowup_buffer_size", BLOWUP_BUFFER_SIZE))
+            max_steps=int(BLOWUP_BUFFER_SIZE)
         )
 
         self._artificial_viscosity_prev: float = 0.0
 
-        blown_up_str: str | None = configuration.get("blown_up_path")
-        self._blown_up_path: Path = (
-            Path(blown_up_str) if blown_up_str is not None else self.master_path
-        )
-
-    # ------------------------------------------------------------------ #
-    #  Configuration
-    # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def create_sgsp_config(
-        sgsp_model_path: str | Path,
-        normalisation_stats_path: str | Path,
-        sgsp_warmup_steps: int = 2,
-        blowup_threshold: float = BLOWUP_THRESHOLD,
-        blowup_buffer_size: int = 5_000,
-        blown_up_path: str | None = None,
-        clip_pusuluri: bool = False,
-        clip_rajampeta: bool = False,
-        exclude_visc: bool = False,
-        **base_config_kwargs,
-    ) -> dict:
-        """Build a coupled-solver config dict; forwards kwargs to BurgersPure.create_config."""
-        base_config = BurgersBase.create_config(**base_config_kwargs)
-        base_config.update(
-            {
-                "simulation_mode": "sgsp",
-                "sgsp_model_path": str(sgsp_model_path),
-                "normalisation_stats_path": str(normalisation_stats_path),
-                "sgsp_warmup_steps": sgsp_warmup_steps,
-                "blowup_threshold": blowup_threshold,
-                "blowup_buffer_size": blowup_buffer_size,
-                "clip_pusuluri": clip_pusuluri,
-                "clip_rajampeta": clip_rajampeta,
-                "exclude_visc": exclude_visc,
-            }
-        )
-        if blown_up_path is not None:
-            base_config["blown_up_path"] = str(blown_up_path)
-        return base_config
+        self._blown_up_path: Path = sgsp_cfg.blown_up_path
 
     # ------------------------------------------------------------------ #
     #  run_simulation — blow-up guard around parent loop
@@ -271,19 +248,20 @@ class BurgersSGSP(BurgersBase):
         blowup_detected: bool = False
 
         try:
-            total_steps = int(self.domain_timespan / self.dt)
-            self.extracted_solutions = []
-            self.extracted_forcings = []
-            idx_extract = 0
+            self.snapshots_solution = []
+            self.snapshots_forcing = []
+
+            # IC snapshot (forcing evaluated at t=0)
+            self.resolve_current_forcing()
+            self._extract_snapshot()
 
             with self.timer("total_simulation"):
                 with tqdm(
-                    total=total_steps,
+                    total=self._n_time_steps,
                     desc=f"Eating Burgers | {self.throbber(0)}",
                     file=sys.stdout,
                 ) as pbar:
-                    for time_step_idx in range(total_steps):
-                        self.time_steps.append(time_step_idx)
+                    for time_step_idx in range(self._n_time_steps):
                         step_start = perf_counter()
 
                         step_ok = self.advance_time_step()
@@ -293,15 +271,11 @@ class BurgersSGSP(BurgersBase):
                                 "Blow-up termination at t=%.6f",
                                 self.simulation_time_elapsed,
                             )
-                            if self.time_steps:
-                                self.time_steps.pop()
-                            if self.energy_history:
-                                self.energy_history.pop()
-                            if self.dissipation_history:
-                                self.dissipation_history.pop()
                             break
 
-                        idx_extract = self._maybe_extract_solution(idx_extract)
+                        if (time_step_idx + 1) in self._snapshot_step_indices:
+                            self._extract_snapshot()
+
                         pbar.set_description(
                             f"Eating Burgers | {self.throbber(time_step_idx)}"
                         )
@@ -314,27 +288,7 @@ class BurgersSGSP(BurgersBase):
                             }
                         )
 
-                if not blowup_detected and self.extract_at_times is not None:
-                    while idx_extract < len(self.extract_at_times):
-                        self.extracted_solutions.append(self.solution.copy())
-                        self.extracted_forcings.append(
-                            self.forcing_current.copy()
-                            if self.forcing_current is not None
-                            else np.zeros_like(self.solution)
-                        )
-                        logger.info(
-                            "Extracted solution at t=%.4f (end-of-simulation flush)",
-                            self.extract_at_times[idx_extract],
-                        )
-                        idx_extract += 1
-
         except RuntimeError as exc:
-            if self.time_steps:
-                self.time_steps.pop()
-            if self.energy_history:
-                self.energy_history.pop()
-            if self.dissipation_history:
-                self.dissipation_history.pop()
             blowup_detected = True
             logger.warning("Blow-up termination: %s", exc)
 
@@ -347,13 +301,13 @@ class BurgersSGSP(BurgersBase):
 
         finally:
             if blowup_detected:
+                self._blown_up_path.mkdir(parents=True, exist_ok=True)
                 self.master_path = self._blown_up_path
-            if self.write_solutions:
-                self.write_config_to_json()
-                if not blowup_detected:
-                    self.write_solution_to_csv()
-                else:
-                    self._write_blowup_solutions_to_csv()
+            self.write_config_to_json()
+            if not blowup_detected:
+                self.write_solution_to_csv()
+            else:
+                self._write_blowup_solutions_to_csv()
             if len(self._blowup_buffer) > 0:
                 self._save_blowup_buffer(label="blowup" if blowup_detected else "clean")
 
@@ -501,18 +455,12 @@ class BurgersSGSP(BurgersBase):
 
             update_history_loop.append(np.linalg.norm(delta_u))
 
-            with self.timer("solution_update"):
-                solution_k += (
-                    delta_u * (1 - self.relaxation_factor)
-                    if self.relaxation_factor is not None
-                    else delta_u
-                )
+            solution_k += delta_u
 
-            with self.timer("convergence_checking"):
-                if self.is_update_converged(delta_u) or self.is_residual_converged(
-                    global_residual
-                ):
-                    break
+            if self.is_update_converged(delta_u) or self.is_residual_converged(
+                global_residual
+            ):
+                break
 
         self.residual_history.append(residual_history_loop)
         self.update_history.append(update_history_loop)
@@ -579,9 +527,6 @@ class BurgersSGSP(BurgersBase):
                 if uet > 0:
                     y_elem[:] = 0.0
 
-            if self.exclude_visc:
-                y_elem[4] = 0.0
-
             sgsp_correction_all[elem_idx] = y_elem
 
         return sgsp_correction_all
@@ -647,14 +592,12 @@ class BurgersSGSP(BurgersBase):
         du_dt_nm1 = (u_nm1 - u_nm2) / self.dt
 
         f_nm2 = (
-            forcing_fn(self.node_coords, -2 * self.dt)
+            forcing_fn(self.mesh, -2 * self.dt)
             if forcing_fn
             else np.zeros(self.n_nodes)
         )
         f_nm1 = (
-            forcing_fn(self.node_coords, -self.dt)
-            if forcing_fn
-            else np.zeros(self.n_nodes)
+            forcing_fn(self.mesh, -self.dt) if forcing_fn else np.zeros(self.n_nodes)
         )
 
         # 3 entries needed: duplicate u_nm2 as the oldest level
@@ -723,7 +666,6 @@ class BurgersSGSP(BurgersBase):
             f"  dt            : {self.dt}",
             f"  clip_pusuluri : {self.clip_pusuluri}",
             f"  clip_rajampeta: {self.clip_rajampeta}",
-            f"  exclude_visc  : {self.exclude_visc}",
             f"  blowup_thr    : {self._blowup_threshold:.2e}",
         ]
         txt_path.write_text("\n".join(line for line in lines if line is not None))
@@ -759,7 +701,7 @@ class BurgersSGSP(BurgersBase):
                     writer.writerow(
                         [
                             node_idx,
-                            round(self.node_coords[node_idx], 8),
+                            round(self.mesh[node_idx], 8),
                             amplitudes[node_idx],
                             buf.residual_norms_last[buf_idx],
                             buf.energy_values[buf_idx],
@@ -770,14 +712,11 @@ class BurgersSGSP(BurgersBase):
 
     def _write_blowup_solutions_to_csv(self) -> None:
         """Write only the snapshots collected before blow-up, skipping NaN padding."""
-        if not self.extracted_solutions:
-            print(
-                f"wrote 0 snapshots (blown up before first extraction) at {self.master_path}"
-            )
+        if self.requested_snapshots is None:
             return
         self.write_solution_to_csv()
         print(
-            f"wrote {len(self.extracted_solutions)} pre-blowup snapshots at {self.master_path}"
+            f"wrote {len(self.requested_snapshots)} pre-blowup snapshots at {self.master_path}"
         )
 
     def print_configuration(self) -> None:
@@ -792,11 +731,8 @@ class BurgersSGSP(BurgersBase):
         print()
         print("  SGS Predictor")
         print("─" * W)
-        _row("model path", str(self.configuration.get("sgsp_model_path", "N/A")))
-        _row(
-            "normalisation stats",
-            str(self.configuration.get("normalisation_stats_path", "N/A")),
-        )
+        _row("model path", str(self._sgsp_model_path))
+        _row("normalisation stats", str(self._normalization_path))
         _row("warmup steps", str(self._sgsp_warmup_steps))
         _row("blowup threshold", f"{self._blowup_threshold:.2e}")
         _row("blowup buffer size", str(self._blowup_buffer.max_steps))
@@ -806,7 +742,6 @@ class BurgersSGSP(BurgersBase):
         print("─" * W)
         _row("clip_pusuluri", str(self.clip_pusuluri))
         _row("clip_rajampeta", str(self.clip_rajampeta))
-        _row("exclude_visc", str(self.exclude_visc))
         print("═" * W)
 
     # ------------------------------------------------------------------ #
@@ -829,9 +764,10 @@ class BurgersSGSP(BurgersBase):
 
         Writes blowup_zoom_full_<run_id>.png and blowup_zoom_trim_<run_id>.png.
         """
+        """Generate two diagnostic plots centred on the blow-up region."""
         if not self.residual_history:
             return
-        n_total = len(self.time_steps)
+        n_total = len(self.energy_history)  # ← was len(self.time_steps)
         slice_start = max(0, n_total - pre_blowup_window)
         for plot_slice, tag in (
             (slice(slice_start, n_total), f"blowup_zoom_full_{self.run_id}"),
@@ -851,24 +787,18 @@ class BurgersSGSP(BurgersBase):
         show_plot: bool = False,
     ) -> None:
         """Render and save one diagnostic plot for a sliced history window."""
-        s_start, s_stop, _ = plot_slice.indices(len(self.time_steps))
+        n_steps_actual = len(self.energy_history)
+        s_start, s_stop, _ = plot_slice.indices(n_steps_actual)
+
         time_steps_sliced = self.time_steps[s_start:s_stop]
         energy_sliced = self.energy_history[s_start:s_stop]
         dissipation_sliced = self.dissipation_history[s_start:s_stop]
-        residual_history_sliced = self.residual_history[s_start:s_stop]
-        update_history_sliced = self.update_history[s_start:s_stop]
 
-        if not residual_history_sliced:
+        if len(time_steps_sliced) == 0:
+            logger.warning(
+                "_plot_blowup_window: empty window [%d:%d], skipping.", s_start, s_stop
+            )
             return
-
-        first_res = [r[0] for r in residual_history_sliced if r]
-        last_res = [r[-1] for r in residual_history_sliced if r]
-        first_upd = [u[0] for u in update_history_sliced if u]
-        last_upd = [u[-1] for u in update_history_sliced if u]
-        fr_mean, fr_std = self.moving_stats(first_res)
-        lr_mean, lr_std = self.moving_stats(last_res)
-        fu_mean, fu_std = self.moving_stats(first_upd)
-        lu_mean, lu_std = self.moving_stats(last_upd)
 
         buf = self._blowup_buffer
         solution_snapshot = (
@@ -879,14 +809,13 @@ class BurgersSGSP(BurgersBase):
         wn, sp = self.get_positive_spectrum(
             *self.compute_energy_spectrum(solution_snapshot)
         )
-        t_axis = np.arange(len(first_res))
 
-        fig = plt.figure(figsize=(12, 8))
-        gs = fig.add_gridspec(3, 2)
+        fig = plt.figure(figsize=(12, 6))
+        gs = fig.add_gridspec(2, 2)
 
         ax0 = fig.add_subplot(gs[0, :])
         ax0.plot(
-            self.node_coords,
+            self.mesh,
             solution_snapshot,
             color="royalblue",
             linestyle="-",
@@ -894,7 +823,7 @@ class BurgersSGSP(BurgersBase):
             label="Resolved solution",
         )
         ax0.plot(
-            self.node_coords,
+            self.mesh,
             self.initial_condition,
             color="grey",
             linestyle="--",
@@ -912,54 +841,21 @@ class BurgersSGSP(BurgersBase):
         ax0.set_title(f"Solution at window end [{step_range}] [SGS: LES-ANN]")
 
         ax1 = fig.add_subplot(gs[1, 0])
-        tol_r = self.configuration["convergence_tol_residual"]
-        tol_u = self.configuration["convergence_tol_update"]
-        for mean, std, color, style, label in [
-            (fr_mean, fr_std, "royalblue", "-", "Residual (first)"),
-            (lr_mean, lr_std, "navy", "--", "Residual (last)"),
-            (fu_mean, fu_std, "tab:orange", "-", "Update (first)"),
-            (lu_mean, lu_std, "darkorange", "--", "Update (last)"),
-        ]:
-            ax1.plot(t_axis, mean, color=color, linestyle=style, label=label)
-            ax1.fill_between(t_axis, mean - std, mean + std, color=color, alpha=0.15)
-        ax1.axhline(y=tol_r, color="lightskyblue", linestyle="--")
-        ax1.axhline(y=tol_u, color="lightsalmon", linestyle="--")
-        ax1.set_yscale("log")
-        ax1.set_xlabel(f"Time step (relative, window start = {time_steps_sliced[0]})")
-        ax1.set_ylabel("Norm")
-        ax1.set_title("Global convergence (smoothed, window)")
-        ax1.grid(True)
-        ax1.legend(fontsize=7)
-
-        ax2 = fig.add_subplot(gs[1, 1])
-        ax2.plot(residual_history_sliced[-1], "o-", label="Residual", color="royalblue")
-        if update_history_sliced[-1]:
-            ax2.plot(
-                update_history_sliced[-1], "x--", label="Update", color="tab:orange"
-            )
-        ax2.set_yscale("log")
-        ax2.set_xlabel("Newton iteration")
-        ax2.set_ylabel("Norm")
-        ax2.set_title("Last Newton iteration (window end)")
-        ax2.grid(True)
-        ax2.legend()
-
-        ax3 = fig.add_subplot(gs[2, 0])
-        ax3.plot(time_steps_sliced, energy_sliced, color="red", label="Total energy")
-        ax3.plot(
+        ax1.plot(time_steps_sliced, energy_sliced, color="red", label="Total energy")
+        ax1.plot(
             time_steps_sliced, dissipation_sliced, color="purple", label="Dissipation"
         )
-        ax3.set_xlabel("Time step")
-        ax3.set_title("Energy and dissipation (window)")
-        ax3.grid(True)
-        ax3.legend()
+        ax1.set_xlabel("Time step")
+        ax1.set_title("Energy and dissipation (window)")
+        ax1.grid(True)
+        ax1.legend()
 
-        ax4 = fig.add_subplot(gs[2, 1])
-        ax4.loglog(wn[1:], sp[1:], marker="o")
-        ax4.set_xlabel("Wavenumber k")
-        ax4.set_ylabel("E(k)")
-        ax4.set_title("Spectral analysis (window end)")
-        ax4.grid(True)
+        ax2 = fig.add_subplot(gs[1, 1])
+        ax2.loglog(wn[1:], sp[1:], marker="o")
+        ax2.set_xlabel("Wavenumber k")
+        ax2.set_ylabel("E(k)")
+        ax2.set_title("Spectral analysis (window end)")
+        ax2.grid(True)
 
         plt.tight_layout()
         save_path = self.master_path / f"{filename_tag}.png"

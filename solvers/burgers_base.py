@@ -17,179 +17,185 @@ from datetime import datetime
 from itertools import chain
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable, Generator, Iterable
+from typing import Any, Callable, Generator, Sequence
 
 import numpy as np
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
 
-from constants import MAXIMUM_ITERATIONS, TOLERANCE_RESIDUAL, TOLERANCE_UPDATE
+from constants import (
+    MAXIMUM_ITERATIONS_DNS,
+    MAXIMUM_ITERATIONS_LES,
+    TOLERANCE_RESIDUAL,
+    TOLERANCE_UPDATE,
+)
+from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.problems import Problem
 
 logger = logging.getLogger(__name__)
 
 
-class BurgersBase:
-    """Burgers FEM solver: M·U_t + A(U)·U + ν·K₀·U + C_fs(U) = f.
+def compute_adjusted_dt(
+    dt_nominal: float, time_end: float | int, time_start: float = 0.0
+) -> tuple[float, int]:
+    """Adjust dt so that time_end is hit exactly.
 
-    Parameters
-    ----------
-    configuration:
-        Dict produced by :meth:`create_config`.
+    Rounds to the nearest integer step count and recomputes dt.
+    The relative change in dt is O(1/n_steps), negligible in practice.
     """
+    time_span = time_end - time_start
+    n_steps = max(1, round(time_span / dt_nominal))
+    dt_adjusted = time_span / n_steps
+    return dt_adjusted, n_steps
+
+
+class BurgersBase:
+    """Burgers FEM solver: M·U_t + A(U)·U + ν·K₀·U + C_fs(U) = f."""
 
     _VALID_SIMULATION_MODES: frozenset[str] = frozenset(
-        {"dns", "no_model", "les", "sgsp", "avc"}
+        {"dns", "no_model", "les", "sgsp", "avc", "avcg", "avcl"}
     )
     _VALID_BC_TYPES: frozenset[str] = frozenset({"dirichlet", "fixed", "periodic"})
 
-    def __init__(self, configuration: dict) -> None:
-        self.configuration: dict = configuration
-        self.domain_timespan: float = configuration["domain_timespan"]
-        self.simulation_time_elapsed: float = 0.0
-        self.domain_length: float = configuration["domain_length"]
-        self.dt: float = configuration["time_step"]
-        self.relaxation_factor: float | None = configuration["relaxation"]
-        self.viscosity: float = configuration["viscosity"]
-        self.simulation_mode: str = configuration["simulation_mode"]
-        self.max_iterations: int = configuration["max_iterations"]
+    def __init__(
+        self,
+        problem: Problem,
+        disc_cfg: DiscretisationConfig,
+        simulation_mode: str,
+        master_path: Path,
+        snapshot_factor: int | None = 1,
+    ) -> None:
 
-        if self.simulation_mode not in self._VALID_SIMULATION_MODES:
+        if simulation_mode not in self._VALID_SIMULATION_MODES:
             raise ValueError(
-                f"Unknown simulation_mode {self.simulation_mode!r}. "
+                f"Unknown simulation_mode {simulation_mode!r}. "
                 f"Expected one of {self._VALID_SIMULATION_MODES}."
             )
+        if problem.boundary_condition_type not in self._VALID_BC_TYPES:
+            raise ValueError(
+                f"Unknown boundary_condition_type {problem.boundary_condition_type!r}. "
+                f"Expected one of {self._VALID_BC_TYPES}."
+            )
+
+        self.problem_name = problem.name
+
+        # Simulation settings
+        self.simulation_mode: str = simulation_mode
+        self.domain_timespan: float = problem.domain_timespan
+        self.simulation_time_elapsed: float = 0.0
+        self.domain_length: float = problem.domain_length
+        self._dt: float = (
+            disc_cfg.dt_dns if simulation_mode == "dns" else disc_cfg.dt_les
+        )
+        self.dt, self._n_time_steps = compute_adjusted_dt(
+            self._dt, self.domain_timespan
+        )
+        self.time_steps: NDArray = np.linspace(
+            0, self.domain_timespan, self._n_time_steps + 1
+        )
+        self.viscosity: float = float(problem.viscosity)
+
+        self.max_iterations: int = (
+            MAXIMUM_ITERATIONS_DNS
+            if simulation_mode == "dns"
+            else MAXIMUM_ITERATIONS_LES
+        )
+
+        self.convergence_tol_update = TOLERANCE_RESIDUAL
+        self.convergence_tol_residual = TOLERANCE_UPDATE
+
+        # Mesh
+        self.n_nodes: int = (
+            disc_cfg.n_nodes_dns if simulation_mode == "dns" else disc_cfg.n_nodes_les
+        )
+        self.n_elements: int = self.n_nodes - 1
+        self.nodes: NDArray = np.arange(0, self.n_nodes)
+        self.boundary_nodes: set[int] = {int(self.nodes[0]), int(self.nodes[-1])}
+        self.mesh: NDArray = np.linspace(0, self.domain_length, self.n_nodes)
+        self.elements: NDArray = self.initialize_elements()
+        self.element_size: float = self.domain_length / (self.n_nodes - 1)
+
+        # Boundary conditions
+        self.boundary_condition_type: str = problem.boundary_condition_type
+        self.boundary_condition_value: float | tuple[float, float] | None = (
+            problem.boundary_condition_value
+        )
+
+        # Initial condition and solution
+        self.initial_condition: NDArray = self.set_initial_condition(
+            problem.initial_condition
+        )
+        self.solution: NDArray = self.initial_condition.copy()
+
+        # Forcing
+        self.forcing: NDArray | Callable | None = problem.forcing
+        self.forcing_is_steady: bool = problem.forcing_is_steady
+        self.forcing_current: NDArray | None = None
+
+        # Output
+        self.snapshot_factor = snapshot_factor
+        self._snapshot_step_indices: frozenset[int] = (
+            frozenset(range(0, self._n_time_steps + 1, snapshot_factor))
+            if snapshot_factor is not None
+            else frozenset()
+        )
+        self.requested_snapshots: NDArray | None = (
+            self.time_steps[sorted(self._snapshot_step_indices)]
+            if snapshot_factor is not None
+            else None
+        )
+
+        self.is_written_at_times: list[bool] | None = (
+            [False] * len(self.requested_snapshots)
+            if self.requested_snapshots is not None
+            else None
+        )
+
+        self.snapshots: list[NDArray] = []
+        self.snapshots_solution: list[NDArray] = []
+        self.snapshots_forcing: list[NDArray] = []
+
+        self.master_path: Path = master_path
+        self.master_path.mkdir(parents=True, exist_ok=True)
 
         # Benchmarking
         self.run_id: str = datetime.now().strftime("%m%d_%H%M%S")
         self.timings_performance: dict = {}
-        self.time_steps: list = []
         self.residual_history: list = []
         self.update_history: list = []
         self.energy_history: list = []
         self.dissipation_history: list = []
 
-        # Mesh
-        self.n_nodes: int = configuration["node_amount"]
-        self.n_elements: int = self.n_nodes - 1
-        self.nodes: NDArray = np.arange(0, self.n_nodes)
-        self.boundary_nodes: set[int] = {int(self.nodes[0]), int(self.nodes[-1])}
-        self.node_coords: NDArray = np.linspace(0, self.domain_length, self.n_nodes)
-        self.elements: NDArray = self.initialize_elements()
-        self.element_size: float = self.domain_length / (self.n_nodes - 1)
-
-        # Boundary conditions
-        self.boundary_condition_type: str = configuration["boundary_condition_type"]
-        if self.boundary_condition_type not in self._VALID_BC_TYPES:
-            raise ValueError(
-                f"Unknown boundary_condition_type {self.boundary_condition_type!r}. "
-                f"Expected one of {self._VALID_BC_TYPES}."
-            )
-        self.boundary_condition_value = configuration.get(
-            "boundary_condition_value", 0.0
+        self.logger = self._setup_logger(
+            suppress_file_logging=disc_cfg.suppress_file_logging
         )
-
-        # Initial condition and solution
-        self.initial_condition: NDArray = self.set_initial_condition(
-            configuration["initial_condition"]
-        )
-        self.solution: NDArray = self.initial_condition.copy()
-
-        # Forcing
-        self.forcing: NDArray | Callable | None = configuration["external_forcing"]
-        self.forcing_is_steady: bool = configuration["forcing_steady"]
-        self.forcing_current: NDArray | None = None
-
-        # Output
-        self.write_solutions: bool = True
-        self.extract_at_times: list | None = configuration["extract_at_times"]
-        self.is_extracted_at_times: list[bool] | None = (
-            [False] * len(self.extract_at_times)
-            if self.extract_at_times is not None
-            else None
-        )
-        self.extracted_solutions: list[NDArray] = []
-        self.extracted_forcings: list[NDArray] = []
-
-        self.master_path: Path = Path(configuration["master_path"])
-        self.master_path.mkdir(parents=True, exist_ok=True)
-        self.logger = self._setup_logger()
-
-    # ------------------------------------------------------------------ #
-    #  Configuration
-    # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def create_config(
-        initial_condition: NDArray | Callable,
-        simulation_mode: str,
-        node_amount: int,
-        viscosity: float,
-        time_step: float,
-        domain_timespan: float,
-        domain_length: float,
-        boundary_condition_type: str,
-        boundary_condition_value: float | NDArray | Callable | None = None,
-        external_forcing: NDArray | Callable | None = None,
-        forcing_steady: bool = True,
-        run_objective: str = "N/A",
-        convergence_tol_residual: float = TOLERANCE_RESIDUAL,
-        convergence_tol_update: float = TOLERANCE_UPDATE,
-        max_iterations: int = MAXIMUM_ITERATIONS,
-        relaxation: float | None = None,
-        extract_at_times: list | NDArray | None = None,
-        master_path: str | Path | None = None,
-    ) -> dict:
-        """Build and return a solver configuration dictionary."""
-        return {
-            "simulation_mode": str(simulation_mode),
-            "run_objective": str(run_objective),
-            "boundary_condition_type": boundary_condition_type,
-            "boundary_condition_value": boundary_condition_value,
-            "extract_at_times": extract_at_times,
-            "node_amount": node_amount,
-            "domain_timespan": domain_timespan,
-            "time_step": time_step,
-            "domain_length": domain_length,
-            "convergence_tol_residual": convergence_tol_residual,
-            "convergence_tol_update": convergence_tol_update,
-            "initial_condition": initial_condition,
-            "external_forcing": external_forcing,
-            "forcing_steady": forcing_steady,
-            "max_iterations": max_iterations,
-            "relaxation": relaxation,
-            "viscosity": viscosity,
-            "master_path": master_path,
-        }
 
     # ------------------------------------------------------------------ #
     #  Main solver loop
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def throbber(time_step: int, _every: int = 2) -> str:
-        """Cycle through eating-animation states based on time step."""
-        states = ["nom..        ", "nom nom..    ", "nom nom nom.."]
-        return states[(time_step // _every) % len(states)]
-
     def run_simulation(self) -> None:
         """Run the full time-marching simulation and write output."""
-        total_steps = int(self.domain_timespan / self.dt)
-        self.extracted_solutions = []
-        self.extracted_forcings = []
-        idx_extract = 0
+
+        # add IC to snapshots
+        self.resolve_current_forcing()
+        self._extract_snapshot()
 
         with self.timer("total_simulation"):
             with tqdm(
-                total=total_steps,
+                total=self._n_time_steps,
                 desc=f"Eating Burgers | {self.throbber(0)}",
                 file=sys.stdout,
             ) as pbar:
-                for time_step in range(total_steps):
+                for time_step in range(self._n_time_steps):
                     step_start = perf_counter()
-                    self.time_steps.append(time_step)
+
                     self.advance_time_step()
-                    idx_extract = self._maybe_extract_solution(idx_extract)
+
+                    if (time_step + 1) in self._snapshot_step_indices:
+                        self._extract_snapshot()
+
                     pbar.set_description(f"Eating Burgers | {self.throbber(time_step)}")
                     pbar.update(1)
                     pbar.set_postfix(
@@ -200,37 +206,12 @@ class BurgersBase:
                         }
                     )
 
-            if self.extract_at_times is not None:
-                while idx_extract < len(self.extract_at_times):
-                    self.extracted_solutions.append(self.solution.copy())
-                    self.extracted_forcings.append(
-                        self.forcing_current.copy()
-                        if self.forcing_current is not None
-                        else np.zeros_like(self.solution)
-                    )
-                    logger.info(
-                        "Extracted solution at t=%.4f (end-of-simulation flush)",
-                        self.extract_at_times[idx_extract],
-                    )
-                    idx_extract += 1
-
-        if self.write_solutions:
             self.write_config_to_json()
             self.write_solution_to_csv()
 
     def advance_time_step(self) -> None:
         """Advance the solution by one time step: U^{n+1} ← U^n."""
-        if callable(self.forcing):
-            self.forcing_current = (
-                self.forcing(self.node_coords, self.simulation_time_elapsed)
-                if not self.forcing_is_steady
-                else self.forcing(self.node_coords)
-            )
-        elif self.forcing is None:
-            self.forcing_current = np.zeros_like(self.solution)
-        else:
-            self.forcing_current = self.forcing
-
+        self.resolve_current_forcing()
         self.solution = self.nr_iteration(self.solution)
         self.energy_history.append(self.compute_energy(self.solution))
         self.dissipation_history.append(self.compute_dissipation(self.solution))
@@ -281,18 +262,12 @@ class BurgersBase:
 
             update_history_loop.append(np.linalg.norm(delta_u))
 
-            with self.timer("solution_update"):
-                solution_k += (
-                    delta_u * (1 - self.relaxation_factor)
-                    if self.relaxation_factor is not None
-                    else delta_u
-                )
+            solution_k += delta_u
 
-            with self.timer("convergence_checking"):
-                if self.is_update_converged(delta_u) or self.is_residual_converged(
-                    global_residual
-                ):
-                    break
+            if self.is_update_converged(delta_u) or self.is_residual_converged(
+                global_residual
+            ):
+                break
 
         self.residual_history.append(residual_history_loop)
         self.update_history.append(update_history_loop)
@@ -364,8 +339,18 @@ class BurgersBase:
         solution_k: NDArray,
     ) -> tuple[NDArray, NDArray]:
         """Enforce Dirichlet BCs via row-replacement."""
-        for node in self.boundary_nodes:
-            global_residual[node] = solution_k[node] - self.boundary_condition_value
+        if self.boundary_condition_value is None:
+            raise ValueError(
+                "Applying fixed BCS requires a value of either float or tuple[float, float]!"
+            )
+
+        bc_values = (
+            self.boundary_condition_value
+            if isinstance(self.boundary_condition_value, tuple)
+            else (self.boundary_condition_value, self.boundary_condition_value)
+        )
+        for node, bc_value in zip(sorted(self.boundary_nodes), bc_values):
+            global_residual[node] = solution_k[node] - bc_value
             global_jacobian[node, :] = 0
             global_jacobian[node, node] = 1
         return global_residual, global_jacobian
@@ -387,8 +372,8 @@ class BurgersBase:
 
     def global_assembly(
         self,
-        elemental_residuals: Iterable[NDArray],
-        elemental_jacobians: list[NDArray],
+        elemental_residuals: Sequence[NDArray],
+        elemental_jacobians: Sequence[NDArray],
     ) -> tuple[NDArray, NDArray]:
         """Assemble element contributions into global R and J."""
         global_residual = np.zeros(self.n_nodes)
@@ -409,12 +394,12 @@ class BurgersBase:
     #  Analytical SGS model (VMS)
     # ------------------------------------------------------------------ #
 
-    def compute_tau(self, variable_u: float | NDArray) -> float:
+    def compute_tau(self, variable_u: float | np.floating | NDArray) -> float:
         """VMS stabilisation parameter τ."""
         term_time = (2 / self.dt) ** 2
         term_adv = (2 * abs(variable_u) / self.element_size) ** 2
         term_diff = (4 * self.viscosity / self.element_size**2) ** 2
-        return 0.5 / np.sqrt(term_time + term_adv + term_diff)
+        return float(0.5 / np.sqrt(term_time + term_adv + term_diff))
 
     # ------------------------------------------------------------------ #
     #  Newton–Raphson convergence
@@ -535,8 +520,14 @@ class BurgersBase:
     def set_initial_condition(self, initial_condition: NDArray | Callable) -> NDArray:
         """Evaluate or copy the initial condition onto the mesh."""
         if callable(initial_condition):
-            return initial_condition(self.node_coords)
+            return initial_condition(self.mesh)
         return initial_condition.copy()
+
+    @staticmethod
+    def throbber(time_step: int, _every: int = 2) -> str:
+        """Cycle through eating-animation states based on time step."""
+        states = ["nom..        ", "nom nom..    ", "nom nom nom.."]
+        return states[(time_step // _every) % len(states)]
 
     # ------------------------------------------------------------------ #
     #  FEM primitives
@@ -566,11 +557,6 @@ class BurgersBase:
         return self.simulation_mode == "les"
 
     @property
-    def _use_sgsp(self) -> bool:
-        """True only for ANN-coupled mode (sgsp)."""
-        return self.simulation_mode == "sgsp"
-
-    @property
     def total_convergence_history(self) -> tuple[NDArray, NDArray]:
         """Flattened residual and update norm history across all time steps."""
         return (
@@ -590,381 +576,6 @@ class BurgersBase:
         self.timings_performance[name] = (
             self.timings_performance.get(name, 0.0) + perf_counter() - start
         )
-
-    # ------------------------------------------------------------------ #
-    #  Logging and output
-    # ------------------------------------------------------------------ #
-
-    def _format_config_for_display(self) -> dict[str, str]:
-        """Shared config formatter used by both print and log output."""
-        formatted: dict[str, str] = {}
-        skip_keys = {
-            "simulation_mode",
-            "solution_initial",
-            "master_path",
-            "initial_condition",
-        }
-        for key, value in self.configuration.items():
-            if key in skip_keys:
-                continue
-            if key == "extract_at_times":
-                formatted[key] = (
-                    f"{len(value)} extractions, first 5: {[float(t) for t in value[:5]]}"
-                    if value is not None
-                    else "None"
-                )
-            elif key in ("convergence_tol_residual", "convergence_tol_update"):
-                formatted[key] = f"{value:.2e}"
-            elif key == "external_forcing":
-                if callable(value):
-                    formatted[key] = (
-                        f"{value.__name__} (from {getattr(value, '__module__', '')})"
-                    )
-                elif value is None:
-                    formatted[key] = "None"
-                else:
-                    formatted[key] = f"array, shape {np.array(value).shape}"
-            elif isinstance(value, float):
-                formatted[key] = f"{value:.6g}"
-            else:
-                formatted[key] = str(value)
-        return formatted
-
-    def print_configuration(self) -> None:
-        """Print run configuration in a clean tabular format."""
-        W = 72
-        COL = 30
-
-        def _row(label: str, value: str) -> None:
-            print(f"  {label:<{COL}} {value}")
-
-        def _sep(char: str = "─") -> None:
-            print(char * W)
-
-        def _section(title: str) -> None:
-            print()
-            print(f"  {title}")
-            _sep()
-
-        _sep("═")
-        print(
-            f"  Solver Configuration  ·  mode: {self.simulation_mode}  ·  integration: 2nd-order implicit Euler"
-        )
-        _sep("═")
-
-        # --- Mesh ---
-        _section("Mesh")
-        _row("nodes", str(self.n_nodes))
-        _row("elements", str(self.n_elements))
-        _row("domain length", f"{self.domain_length:.4g}")
-        _row("element size h", f"{self.element_size:.4e}")
-
-        # --- Time ---
-        _section("Time")
-        _row("timespan", f"{self.domain_timespan:.4g}")
-        _row("dt", f"{self.dt:.4e}")
-        _row("total steps", str(int(self.domain_timespan / self.dt)))
-        if self.extract_at_times is not None:
-            n_ext = len(self.extract_at_times)
-            first_five = "  ".join(f"{t:.4f}" for t in self.extract_at_times[:5])
-            _row("extractions", str(n_ext))
-            _row("  first 5 times", first_five)
-
-        # --- Physics ---
-        _section("Physics")
-        _row("viscosity ν", f"{self.viscosity:.4e}")
-        if callable(self.forcing):
-            forcing_str = f"{self.forcing.__name__} (from {getattr(self.forcing, '__module__', '')})"
-        elif self.forcing is None:
-            forcing_str = "None"
-        else:
-            forcing_str = f"array, shape {np.array(self.forcing).shape}"
-        _row("forcing", forcing_str)
-        _row("forcing steady", str(self.forcing_is_steady))
-
-        # --- Boundary conditions ---
-        _section("Boundary conditions")
-        _row("type", self.boundary_condition_type)
-        _row("value", str(self.boundary_condition_value))
-
-        # --- Solver ---
-        _section("Solver")
-        _row("max iterations", str(self.max_iterations))
-        _row("tol residual", f"{self.configuration['convergence_tol_residual']:.2e}")
-        _row("tol update", f"{self.configuration['convergence_tol_update']:.2e}")
-        _row("relaxation", str(self.relaxation_factor))
-        _row("objective", str(self.configuration.get("run_objective", "N/A")))
-
-        # --- Paths ---
-        _section("Paths")
-        _row("output", str(self.master_path))
-
-        _sep("═")
-
-    def _setup_logger(self) -> logging.Logger:
-        """Initialise a file logger for this run; skipped when suppress_file_logging is set."""
-        logger_ = logging.getLogger(str(self.run_id))
-        logger_.setLevel(logging.INFO)
-        if logger_.handlers:
-            return logger_
-
-        if self.configuration.get("suppress_file_logging", False):
-            logger_.addHandler(logging.NullHandler())
-            return logger_
-
-        formatter = logging.Formatter("[%(levelname)s] - %(message)s")
-        fh = logging.FileHandler(
-            self.master_path / f"{self.run_id}.log", encoding="utf-8"
-        )
-        fh.setFormatter(formatter)
-        fh.setLevel(logging.INFO)
-        logger_.addHandler(fh)
-        logger_.propagate = False
-        logging.getLogger("matplotlib").setLevel(logging.WARNING)
-        return logger_
-
-    def post_logging(self) -> None:
-        """Write a structured run summary to the log file."""
-        self.logger.info("=" * 60)
-        self.logger.info("RUN COMPLETE — id: %s", self.run_id)
-        self.logger.info("Time Integration: Second Order Implicit Euler")
-        self.logger.info("Simulation mode: %s", self.simulation_mode)
-        self.logger.info("-" * 40)
-
-        for key, value in self._format_config_for_display().items():
-            self.logger.info("  %-30s %s", key, value)
-
-        self.logger.info("-" * 40)
-
-        if self.timings_performance:
-            total = self.timings_performance.get("total_simulation") or sum(
-                v
-                for k, v in self.timings_performance.items()
-                if k != "total_simulation"
-            )
-            for phase, time_elapsed in sorted(self.timings_performance.items()):
-                if phase != "total_simulation":
-                    pct = (100 * time_elapsed / total) if total > 0 else float("nan")
-                    self.logger.info(
-                        "  %-25s %.4fs (%5.1f%%)", phase, time_elapsed, pct
-                    )
-            self.logger.info("  %-25s %.4fs", "TOTAL", total)
-
-        if self.residual_history:
-            res, upd = self.total_convergence_history
-            self.logger.info(
-                "Residual — initial: %.4e  final: %.4e  max: %.4e",
-                res[0],
-                res[-1],
-                np.max(res),
-            )
-            self.logger.info(
-                "Update   — initial: %.4e  final: %.4e  max: %.4e",
-                upd[0],
-                upd[-1],
-                np.max(upd),
-            )
-            tol = self.configuration.get("convergence_tol_residual", 1e-6)
-            status = (
-                "CONVERGED"
-                if res[-1] < tol
-                else f"NOT CONVERGED (final {res[-1]:.4e} > tol {tol:.4e})"
-            )
-            self.logger.info("Status: %s", status)
-
-        self.logger.info("=" * 60)
-
-    def write_config_to_json(self) -> None:
-        """Serialise run configuration to config.json in the run directory."""
-        config_serializable = {
-            k: (
-                v.tolist()
-                if isinstance(v, np.ndarray)
-                else f"<callable: {getattr(v, '__name__', repr(v))}>"
-                if callable(v)
-                else v
-            )
-            for k, v in self.configuration.items()
-            if k not in ("solution_initial", "master_path")
-        }
-        config_serializable["run_id"] = self.run_id
-        with open(self.master_path / "config.json", "w") as file_handle:
-            json.dump(config_serializable, file_handle, indent=2)
-
-    def write_solution_to_csv(self) -> None:
-        """Write extracted solution snapshots to CSV files."""
-        if self.extract_at_times is None:
-            solutions = [self.solution]
-            forcings = [self.forcing_current]
-            times = [self.simulation_time_elapsed]
-        else:
-            solutions = self.extracted_solutions
-            forcings = self.extracted_forcings
-            times = self.extract_at_times[: len(solutions)]
-
-        for solution, time_value, forcing in zip(solutions, times, forcings):
-            filepath = self.master_path / f"sol_t{time_value:.6f}.csv"
-            with open(filepath, mode="w", newline="") as file_handle:
-                writer = csv.writer(file_handle)
-                writer.writerow(["node_index", "x_coordinate", "velocity", "forcing"])
-                for i in range(len(self.nodes)):
-                    writer.writerow(
-                        [
-                            self.nodes[i],
-                            self.node_coords[i],
-                            solution[i],
-                            forcing[i],
-                        ]
-                    )
-
-        print(f"wrote {len(solutions)} snapshots at {self.master_path}")
-
-    def post_processing(self) -> None:
-        """Run post-plotting and post-logging."""
-        self.post_plotting()
-        self.post_logging()
-
-    # ------------------------------------------------------------------ #
-    #  Post-plotting
-    # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def moving_stats(arr: list, window: int = 5) -> tuple[NDArray, NDArray]:
-        """Rolling mean and std for convergence plots."""
-        arr = np.array(arr)
-        if arr.size == 0:
-            return np.array([]), np.array([])
-        w = min(window, len(arr))
-        means = np.convolve(arr, np.ones(w) / w, mode="same")
-        stds = np.array(
-            [
-                np.std(arr[max(0, i - w // 2) : min(len(arr), i + w // 2 + 1)])
-                for i in range(len(arr))
-            ]
-        )
-        return means, stds
-
-    def post_plotting(self, show_plot: bool = False) -> None:
-        """Plot solution and convergence diagnostics; save to disk."""
-        first_res = [r[0] for r in self.residual_history if r]
-        last_res = [r[-1] for r in self.residual_history if r]
-        first_upd = [u[0] for u in self.update_history if u]
-        last_upd = [u[-1] for u in self.update_history if u]
-
-        fr_mean, fr_std = self.moving_stats(first_res)
-        lr_mean, lr_std = self.moving_stats(last_res)
-        fu_mean, fu_std = self.moving_stats(first_upd)
-        lu_mean, lu_std = self.moving_stats(last_upd)
-
-        sgs_label = {
-            "dns": "DNS",
-            "les": "LES-VMS",
-            "sgsp": "LES-SGSP",
-            "avc": "LES-AVC",
-        }.get(self.simulation_mode, self.simulation_mode)
-
-        fig = plt.figure(figsize=(12, 8))
-        gs = fig.add_gridspec(3, 2)
-
-        ax0 = fig.add_subplot(gs[0, :])
-        ax0.plot(
-            self.node_coords,
-            self.solution,
-            color="royalblue",
-            linestyle="-",
-            marker="o",
-            label="Resolved solution",
-        )
-        ax0.plot(
-            self.node_coords,
-            self.initial_condition,
-            color="grey",
-            linestyle="--",
-            label="Initial solution",
-        )
-        ax0.set_xlabel(r"$x$")
-        ax0.set_ylabel("Velocity")
-        ax0.grid(True)
-        ax0.legend()
-        ax0.set_title(f"Solution  [SGS: {sgs_label}]")
-
-        ax1 = fig.add_subplot(gs[1, 0])
-        t_axis = np.arange(len(fr_mean))
-        for mean, std, color, style, label in [
-            (fr_mean, fr_std, "royalblue", "-", "Residual (first)"),
-            (lr_mean, lr_std, "navy", "--", "Residual (last)"),
-            (fu_mean, fu_std, "tab:orange", "-", "Update (first)"),
-            (lu_mean, lu_std, "darkorange", "--", "Update (last)"),
-        ]:
-            ax1.plot(t_axis, mean, color=color, linestyle=style, label=label)
-            ax1.fill_between(t_axis, mean - std, mean + std, color=color, alpha=0.15)
-        tol_r = self.configuration["convergence_tol_residual"]
-        tol_u = self.configuration["convergence_tol_update"]
-        ax1.axhline(
-            y=tol_r,
-            color="lightskyblue" if tol_r != tol_u else "lightgray",
-            linestyle="--",
-        )
-        if tol_r != tol_u:
-            ax1.axhline(y=tol_u, color="lightsalmon", linestyle="--")
-        ax1.set_yscale("log")
-        ax1.set_xlabel("Time step")
-        ax1.set_ylabel("Norm")
-        ax1.set_title("Global convergence (smoothed)")
-        ax1.grid(True)
-        ax1.legend()
-
-        ax2 = fig.add_subplot(gs[1, 1])
-        if self.residual_history:
-            ax2.plot(
-                self.residual_history[-1], "o-", label="Residual", color="royalblue"
-            )
-            if self.update_history[-1]:
-                ax2.plot(
-                    self.update_history[-1], "x--", label="Update", color="tab:orange"
-                )
-        ax2.set_yscale("log")
-        ax2.set_xlabel("Newton iteration")
-        ax2.set_ylabel("Norm")
-        ax2.set_title("Last Newton iteration convergence")
-        ax2.grid(True)
-        ax2.legend()
-
-        ax3 = fig.add_subplot(gs[2, 0])
-        ax3.plot(
-            self.time_steps, self.energy_history, color="red", label="Total energy"
-        )
-        ax3.plot(
-            self.time_steps,
-            self.dissipation_history,
-            color="purple",
-            label="Dissipation",
-        )
-        ax3.set_xlabel("Time step")
-        ax3.set_title("Energy and dissipation evolution")
-        ax3.grid(True)
-        ax3.legend()
-
-        ax4 = fig.add_subplot(gs[2, 1])
-        wn, sp = self.get_positive_spectrum(
-            *self.compute_energy_spectrum(self.solution)
-        )
-        ax4.loglog(wn[1:], sp[1:], marker="o")
-        ax4.set_xlabel("Wavenumber k")
-        ax4.set_ylabel("E(k)")
-        ax4.set_title("Spectral analysis (final state)")
-        ax4.grid(True)
-
-        plt.tight_layout()
-        plt.savefig(
-            self.master_path / f"post_plotting_{self.simulation_mode}.png",
-            dpi=300,
-            bbox_inches="tight",
-        )
-        print(
-            f"Post-simulation plot saved to: {self.master_path / f'post_plotting_{self.simulation_mode}.png'}"
-        )
-        plt.show() if show_plot else plt.close(fig)
 
     # ------------------------------------------------------------------ #
     #  Energy and spectral analysis
@@ -1021,19 +632,327 @@ class BurgersBase:
     #  Internal helpers
     # ------------------------------------------------------------------ #
 
-    def _maybe_extract_solution(self, idx_extract: int) -> int:
-        """Extract and store the current solution if the next checkpoint time is reached."""
-        if self.extract_at_times is None:
-            return idx_extract
-        if (
-            idx_extract < len(self.extract_at_times)
-            and self.simulation_time_elapsed >= self.extract_at_times[idx_extract]
-        ):
-            self.extracted_solutions.append(self.solution.copy())
-            self.extracted_forcings.append(
-                self.forcing_current.copy()
-                if self.forcing_current is not None
-                else np.zeros_like(self.solution)
+    def resolve_current_forcing(self) -> None:
+        if callable(self.forcing):
+            self.forcing_current = (
+                self.forcing(self.mesh, self.simulation_time_elapsed)
+                if not self.forcing_is_steady
+                else self.forcing(self.mesh)
             )
-            idx_extract += 1
-        return idx_extract
+        elif self.forcing is None:
+            self.forcing_current = np.zeros_like(self.solution)
+        else:
+            self.forcing_current = self.forcing
+
+    def _extract_snapshot(self) -> None:
+        """Store current solution and forcing as a snapshot."""
+        self.snapshots_solution.append(self.solution.copy())
+        self.snapshots_forcing.append(
+            self.forcing_current.copy()
+            if self.forcing_current is not None
+            else np.zeros_like(self.solution)
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Logging and output
+    # ------------------------------------------------------------------ #
+
+    def _format_config_for_display(self) -> dict[str, str]:
+        """Format solver state for display in logs and console output."""
+        if callable(self.forcing):
+            forcing_str = f"{self.forcing.__name__} (from {getattr(self.forcing, '__module__', '')})"
+        elif self.forcing is None:
+            forcing_str = "None"
+        else:
+            forcing_str = f"array, shape {np.array(self.forcing).shape}"
+
+        snapshots_str = (
+            f"{len(self.requested_snapshots)} snapshots, first 5: "
+            f"{[round(float(t), 4) for t in self.requested_snapshots[:5]]}"
+            if self.requested_snapshots is not None
+            else "None"
+        )
+
+        return {
+            "domain_timespan": f"{self.domain_timespan:.6g}",
+            "domain_length": f"{self.domain_length:.6g}",
+            "dt": f"{self.dt:.4e}",
+            "n_time_steps": str(self._n_time_steps),
+            "viscosity": f"{self.viscosity:.4e}",
+            "n_nodes": str(self.n_nodes),
+            "n_elements": str(self.n_elements),
+            "element_size": f"{self.element_size:.4e}",
+            "boundary_condition_type": self.boundary_condition_type,
+            "boundary_condition_value": str(self.boundary_condition_value),
+            "max_iterations": str(self.max_iterations),
+            "snapshot_factor": str(self.snapshot_factor),
+            "requested_snapshots": snapshots_str,
+            "forcing": forcing_str,
+            "forcing_is_steady": str(self.forcing_is_steady),
+            "problem_name": self.problem_name,
+        }
+
+    def print_configuration(self) -> None:
+        """Print run configuration in a clean tabular format."""
+        W = 72
+        COL = 30
+
+        def _row(label: str, value: str) -> None:
+            print(f"  {label:<{COL}} {value}")
+
+        def _sep(char: str = "─") -> None:
+            print(char * W)
+
+        def _section(title: str) -> None:
+            print()
+            print(f"  {title}")
+            _sep()
+
+        _sep("═")
+        print(
+            f"  Solver Configuration  ·  mode: {self.simulation_mode}  ·  integration: 2nd-order implicit Euler"
+        )
+        _sep("═")
+
+        # --- Mesh ---
+        _section("Mesh")
+        _row("nodes", str(self.n_nodes))
+        _row("elements", str(self.n_elements))
+        _row("domain length", f"{self.domain_length:.4g}")
+        _row("element size h", f"{self.element_size:.4e}")
+
+        # --- Time ---
+        _section("Time")
+        _row("timespan", f"{self.domain_timespan:.4g}")
+        _row("dt", f"{self.dt:.4e}")
+        _row("total steps", str(self._n_time_steps))
+        if self.requested_snapshots is not None:
+            n_ext = len(self.requested_snapshots)
+            first_five = "  ".join(f"{t:.4f}" for t in self.requested_snapshots[:5])
+            _row("snapshots", str(n_ext))
+            _row("  first 5 times", first_five)
+
+        # --- Physics ---
+        _section("Physics")
+        _row("viscosity ν", f"{self.viscosity:.4e}")
+        if callable(self.forcing):
+            forcing_str = f"{self.forcing.__name__} (from {getattr(self.forcing, '__module__', '')})"
+        elif self.forcing is None:
+            forcing_str = "None"
+        else:
+            forcing_str = f"array, shape {np.array(self.forcing).shape}"
+        _row("forcing", forcing_str)
+        _row("forcing steady", str(self.forcing_is_steady))
+
+        # --- Boundary conditions ---
+        _section("Boundary conditions")
+        _row("type", self.boundary_condition_type)
+        _row("value", str(self.boundary_condition_value))
+
+        # --- Solver ---
+        _section("Solver")
+        _row("max iterations", str(self.max_iterations))
+        _row("tol residual", f"{self.convergence_tol_residual:.2e}")
+        _row("tol update", f"{self.convergence_tol_update:.2e}")
+
+        # --- Paths ---
+        _section("Paths")
+        _row("output", str(self.master_path))
+
+        _sep("═")
+
+    def _setup_logger(self, suppress_file_logging: bool = False) -> logging.Logger:
+        """Initialize a file logger for this run."""
+        logger_ = logging.getLogger(str(self.run_id))
+        logger_.setLevel(logging.INFO)
+        if logger_.handlers or suppress_file_logging:
+            return logger_
+
+        formatter = logging.Formatter("[%(levelname)s] - %(message)s")
+        fh = logging.FileHandler(
+            self.master_path / f"{self.run_id}.log", encoding="utf-8"
+        )
+        fh.setFormatter(formatter)
+        fh.setLevel(logging.INFO)
+        logger_.addHandler(fh)
+        logger_.propagate = False
+        logging.getLogger("matplotlib").setLevel(logging.WARNING)
+        return logger_
+
+    def post_logging(self) -> None:
+        """Write a structured run summary to the log file."""
+        self.logger.info("=" * 60)
+        self.logger.info("RUN COMPLETE — id: %s", self.run_id)
+        self.logger.info("Time Integration: Second Order Implicit Euler")
+        self.logger.info("Simulation mode: %s", self.simulation_mode)
+        self.logger.info("-" * 40)
+
+        for key, value in self._format_config_for_display().items():
+            self.logger.info("  %-30s %s", key, value)
+
+        self.logger.info("-" * 40)
+
+        if self.timings_performance:
+            total = self.timings_performance.get("total_simulation") or sum(
+                v
+                for k, v in self.timings_performance.items()
+                if k != "total_simulation"
+            )
+            for phase, time_elapsed in sorted(self.timings_performance.items()):
+                if phase != "total_simulation":
+                    pct = (100 * time_elapsed / total) if total > 0 else float("nan")
+                    self.logger.info(
+                        "  %-25s %.4fs (%5.1f%%)", phase, time_elapsed, pct
+                    )
+            self.logger.info("  %-25s %.4fs", "TOTAL", total)
+        self.logger.info("=" * 60)
+
+    def write_config_to_json(self) -> None:
+        """Serialize run configuration to config.json in the run directory."""
+        raw_config: dict = {
+            "run_id": self.run_id,
+            "simulation_mode": self.simulation_mode,
+            "domain_timespan": self.domain_timespan,
+            "domain_length": self.domain_length,
+            "dt": self.dt,
+            "n_time_steps": self._n_time_steps,
+            "viscosity": self.viscosity,
+            "n_nodes": self.n_nodes,
+            "n_elements": self.n_elements,
+            "element_size": self.element_size,
+            "boundary_condition_type": self.boundary_condition_type,
+            "boundary_condition_value": self.boundary_condition_value,
+            "max_iterations": self.max_iterations,
+            "convergence_tol_residual": self.convergence_tol_residual,
+            "convergence_tol_update": self.convergence_tol_update,
+            "snapshot_factor": self.snapshot_factor,
+            "forcing": self.forcing,
+            "forcing_is_steady": self.forcing_is_steady,
+            "problem_name": self.problem_name,
+        }
+
+        config_serializable = {
+            k: (
+                v.tolist()
+                if isinstance(v, np.ndarray)
+                else f"<callable: {getattr(v, '__name__', repr(v))}>"
+                if callable(v)
+                else v
+            )
+            for k, v in raw_config.items()
+        }
+
+        with open(self.master_path / "config.json", "w") as file_handle:
+            json.dump(config_serializable, file_handle, indent=2)
+
+    def write_solution_to_csv(self) -> None:
+        """Write extracted solution snapshots to CSV files."""
+        solutions = self.snapshots_solution
+        forcings = self.snapshots_forcing
+        if self.requested_snapshots is None:
+            return
+
+        times = self.requested_snapshots[: len(solutions)]
+
+        for solution, time_value, forcing in zip(solutions, times, forcings):
+            filepath = self.master_path / f"sol_t{time_value:.6f}.csv"
+            with open(filepath, mode="w", newline="") as file_handle:
+                writer = csv.writer(file_handle)
+                writer.writerow(["node_index", "x_coordinate", "velocity", "forcing"])
+                for i in range(len(self.nodes)):
+                    writer.writerow(
+                        [
+                            self.nodes[i],
+                            self.mesh[i],
+                            solution[i],
+                            forcing[i],
+                        ]
+                    )
+
+        print(f"wrote {len(solutions)} snapshots at {self.master_path}")
+
+    def post_processing(self) -> None:
+        """Run post-plotting and post-logging."""
+        self.post_plotting()
+        self.post_logging()
+
+    # ------------------------------------------------------------------ #
+    #  Post-plotting
+    # ------------------------------------------------------------------ #
+
+    def post_plotting(self, show_plot: bool = False) -> None:
+        """Plot solution and convergence diagnostics; save to disk."""
+        sgs_label = {
+            "dns": "DNS",
+            "les": "LES-VMS",
+            "sgsp": "LES-SGSP",
+            "avc": "LES-AVC",
+        }.get(self.simulation_mode, self.simulation_mode)
+
+        fig = plt.figure(figsize=(12, 6))
+        gs = fig.add_gridspec(2, 2)
+
+        ax0 = fig.add_subplot(gs[0, :])
+        ax0.plot(
+            self.mesh,
+            self.solution,
+            color="royalblue",
+            linestyle="-",
+            linewidth=2.0 if self.simulation_mode == "dns" else 1.0,
+            marker="none" if self.simulation_mode == "dns" else ".",
+            label="Resolved solution",
+        )
+        ax0.plot(
+            self.mesh,
+            self.initial_condition,
+            color="grey",
+            linestyle="--",
+            label="Initial solution",
+        )
+        ax0.set_xlabel(r"$x$")
+        ax0.set_ylabel("Velocity")
+        ax0.grid(True)
+        ax0.legend()
+        ax0.set_title(f"Solution  [Mode: {sgs_label}]")
+
+        ax1 = fig.add_subplot(gs[1, 0])
+        ax1.plot(
+            self.time_steps[: len(self.energy_history)],
+            self.energy_history,
+            color="red",
+            label="Total energy",
+        )
+        ax1.plot(
+            self.time_steps[: len(self.dissipation_history)],
+            self.dissipation_history,
+            color="purple",
+            label="Dissipation",
+        )
+        ax1.set_xlabel("Time step")
+        ax1.set_title("Energy and dissipation evolution")
+        ax1.grid(True)
+        ax1.legend()
+
+        ax2 = fig.add_subplot(gs[1, 1])
+        wn, sp = self.get_positive_spectrum(
+            *self.compute_energy_spectrum(self.solution)
+        )
+        ax2.loglog(wn[1:], sp[1:], marker=".", color="orangered")
+        ax2.set_xlabel("Wavenumber k")
+        ax2.set_ylabel("E(k)")
+        ax2.set_title("Spectral analysis (final state)")
+        ax2.grid(True)
+
+        plt.tight_layout()
+        plt.savefig(
+            self.master_path / f"post_plotting_{self.simulation_mode}.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+        print(
+            f"Post-simulation plot saved to: {self.master_path / f'post_plotting_{self.simulation_mode}.png'}"
+        )
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)

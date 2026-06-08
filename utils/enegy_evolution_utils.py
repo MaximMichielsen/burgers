@@ -104,6 +104,7 @@ def plot_energy_comparison(
     output_path: Path,
     viscosity: float = 0.01,
     domain_length: float = 1.0,
+    projection_dir: Path | None = None,
 ) -> None:
     """Read solver outputs and produce a 3-panel energy comparison figure."""
     output_path = Path(output_path)
@@ -111,6 +112,7 @@ def plot_energy_comparison(
 
     solver_configs = {
         "DNS": (dns_dir, "dimgray", "-", 1.8),
+        "Proj": (projection_dir, "lightgreen", "-", 1.8),
         "LES-A": (les_a_dir, "royalblue", "--", 1.4),
         "LES-NM": (les_nm_dir, "tab:orange", "-.", 1.4),
         "LES-SGSP": (les_sgsp_dir, "crimson", ":", 1.8),
@@ -137,6 +139,34 @@ def plot_energy_comparison(
             print(f"  Loaded {label}: {len(times_read)} snapshots")
         except FileNotFoundError as err:
             print(f"  Skipping {label}: {err}")
+
+    if projection_dir is not None:
+        projection_dir = Path(projection_dir)
+        solutions_proj = np.load(projection_dir / "solutions_projection.npy")
+        times_proj = np.load(projection_dir / "times.npy")
+        coords_proj = np.linspace(0, domain_length, solutions_proj.shape[1])
+
+        solutions_proj_list = [solutions_proj[i] for i in range(len(solutions_proj))]
+        coords_proj_list = [coords_proj] * len(solutions_proj)
+
+        data["Projection"] = {
+            "times": times_proj,
+            "solutions": solutions_proj_list,
+            "coords": coords_proj_list,
+            "color": "limegreen",
+            "ls": "--",
+            "lw": 1.2,
+        }
+        data["Projection"]["energy"] = _compute_energy_series(
+            solutions_proj_list, coords_proj_list
+        )
+        data["Projection"]["dissipation"] = _compute_dissipation_series(
+            solutions_proj_list, coords_proj_list, viscosity
+        )
+        wn, sp = _compute_energy_spectrum(solutions_proj[-1], domain_length)
+        mask = wn > 0
+        data["Projection"]["wavenumbers"] = wn[mask]
+        data["Projection"]["spectrum"] = sp[mask]
 
     if len(data) < 2:
         print("Not enough data to produce comparison plot.")

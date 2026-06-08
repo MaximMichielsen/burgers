@@ -5,15 +5,11 @@ from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
-from scipy.ndimage import uniform_filter
 
-from constants import DNS_TO_LES_RATIO
+from problems_and_configurations.disc_config import DiscretisationConfig
 from utils.io_utils import read_data
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+_VALID_PROJECTION_MODES: frozenset[str] = frozenset({"l2", "L2", "nodal"})
 
 
 def _enforce_dirichlet_bcs(
@@ -30,42 +26,144 @@ def _enforce_dirichlet_bcs(
     return u_bar, uu_bar
 
 
-def box_filter(solution: NDArray, ratio: int, n_les: int) -> tuple[NDArray, NDArray]:
-    """Box-filter and downsample a DNS snapshot to the LES grid.
+def nodal_project(
+    solution_dns: NDArray,
+    mesh_dns: NDArray,
+    mesh_les: NDArray,
+) -> tuple[NDArray, NDArray]:
+    """Nodal projection of a DNS snapshot onto the LES mesh.
 
-    Returns (u_bar, uu_bar) — filtered velocity and filtered velocity squared.
+    Evaluates u_DNS at each LES node via linear interpolation.
+    Returns (u_bar, uu_bar) to match the l2_project interface.
+
+    Note: u' = 0 at nodes by construction, which makes the viscous
+    interaction term (w_x, ν u'_x) unlearnable. Use L2 projection
+    for SGSP training data. Nodal projection is provided for comparison.
     """
-    indices = np.round(np.linspace(0, len(solution) - 1, n_les)).astype(int)
-    u_bar_full = uniform_filter(solution, size=ratio, mode="nearest")
-    uu_bar_full = uniform_filter(solution**2, size=ratio, mode="nearest")
-    return u_bar_full[indices], uu_bar_full[indices]
+    u_bar = np.interp(mesh_les, mesh_dns, solution_dns)
+    uu_bar = np.interp(mesh_les, mesh_dns, solution_dns**2)
+    return u_bar, uu_bar
 
 
-def compute_du_bar_dt(
-    u_bar_now: NDArray,
-    u_bar_prev: NDArray | None,
-    dt: float,
-) -> NDArray:
-    """Backward-Euler time derivative of the filtered velocity; zero at first step."""
-    if u_bar_prev is None:
-        return np.zeros_like(u_bar_now)
-    return (u_bar_now - u_bar_prev) / dt
+def l2_project(
+    solution_dns: NDArray, mesh_dns: NDArray, mesh_les: NDArray
+) -> tuple[NDArray, NDArray]:
+    """L2-project a DNS snapshot onto the LES P1 mesh.
+
+    Solves M_LES @ u_bar = rhs, where rhs_i = ∫ u_DNS(x) φ_i(x) dx,
+    assembled by Gauss quadrature over each LES element.
+    Returns (u_bar, uu_bar) to preserve the same interface as box_filter.
+    """
+    n_les = len(mesh_les)
+    n_les_elements = n_les - 1
+
+    mass_matrix = np.zeros((n_les, n_les))
+    rhs_u = np.zeros(n_les)
+    rhs_uu = np.zeros(n_les)
+
+    gauss_points, gauss_weights = np.polynomial.legendre.leggauss(deg=2)
+
+    for elem_idx in range(n_les_elements):
+        x_left = mesh_les[elem_idx]
+        x_right = mesh_les[elem_idx + 1]
+        h_elem = x_right - x_left
+        jacobian = h_elem / 2.0
+
+        for gauss_point, gauss_weight in zip(gauss_points, gauss_weights):
+            x_phys = 0.5 * (x_left + x_right) + 0.5 * h_elem * gauss_point
+            phi = np.array([0.5 * (1.0 - gauss_point), 0.5 * (1.0 + gauss_point)])
+            u_dns_val = float(np.interp(x_phys, mesh_dns, solution_dns))
+            scale = gauss_weight * jacobian
+
+            mass_matrix[elem_idx, elem_idx] += scale * phi[0] * phi[0]
+            mass_matrix[elem_idx, elem_idx + 1] += scale * phi[0] * phi[1]
+            mass_matrix[elem_idx + 1, elem_idx] += scale * phi[1] * phi[0]
+            mass_matrix[elem_idx + 1, elem_idx + 1] += scale * phi[1] * phi[1]
+
+            rhs_u[elem_idx] += scale * phi[0] * u_dns_val
+            rhs_u[elem_idx + 1] += scale * phi[1] * u_dns_val
+            rhs_uu[elem_idx] += scale * phi[0] * u_dns_val**2
+            rhs_uu[elem_idx + 1] += scale * phi[1] * u_dns_val**2
+
+    u_bar = np.linalg.solve(mass_matrix, rhs_u)
+    uu_bar = np.linalg.solve(mass_matrix, rhs_uu)
+    return u_bar, uu_bar
 
 
-def compute_tau(u_bar: NDArray, uu_bar: NDArray, snapshot_index: int) -> NDArray:
-    """SGS stress τ_sgs = uu_bar - u_bar², clamped to zero."""
-    tau = uu_bar - u_bar**2
-    if np.any(tau < -1e-10):
+def run_projection(
+    dns_directory: str | Path,
+    output_directory: str | Path,
+    bc_mode: str,
+    bc_values: float | int | tuple[float, float] | None,
+    disc_cfg: DiscretisationConfig,
+    verify: bool = True,
+    projection_mode: str = "l2",
+) -> None:
+    """Project DNS snapshots onto the LES grid and save filtered arrays."""
+    if projection_mode not in _VALID_PROJECTION_MODES:
         raise ValueError(
-            f"Negative τ_sgs at snapshot {snapshot_index}. "
-            f"Min value: {tau.min():.3e}. Check the box-filter implementation."
+            f"Choose mode for projection, options: {_VALID_PROJECTION_MODES}"
         )
-    return np.maximum(tau, 0.0)
 
+    _project = l2_project if projection_mode in ("l2", "L2") else nodal_project
 
-# ---------------------------------------------------------------------------
-# Verification plot
-# ---------------------------------------------------------------------------
+    dns_directory = Path(dns_directory)
+    output_directory = Path(output_directory)
+
+    mesh_dns, times, solutions_dns, forcings_dns = read_data(dns_directory)
+    mesh_les = disc_cfg.mesh_les
+    n_les = disc_cfg.n_nodes_les
+
+    les_snapshot_indices = np.arange(
+        0, len(solutions_dns), disc_cfg.temporal_refinement
+    )
+
+    solutions_proj, forcing_list, dns_on_les_list = [], [], []
+    enforce_bcs = bc_mode in ("dirichlet", "fixed")
+
+    for i, (solution_dns, forcing_dns) in enumerate(zip(solutions_dns, forcings_dns)):
+        u_bar, uu_bar = _project(solution_dns, mesh_dns=mesh_dns, mesh_les=mesh_les)
+
+        if enforce_bcs and bc_values is not None:
+            u_bar, uu_bar = _enforce_dirichlet_bcs(u_bar, uu_bar, bc_values)
+
+        f_bar, _ = _project(forcing_dns, mesh_dns=mesh_dns, mesh_les=mesh_les)
+        forcing_list.append(f_bar)
+        solutions_proj.append(u_bar)
+        dns_on_les_list.append(np.interp(mesh_les, mesh_dns, solution_dns))
+
+    if verify:
+        verify_global_projection(
+            output_dir=output_directory,
+            u_dns=solutions_dns[-1],
+            u_projected=solutions_proj[-1],
+            mesh_dns=mesh_dns,
+            mesh_les=mesh_les,
+            n_dns=disc_cfg.n_nodes_dns,
+            n_les=n_les,
+            mode=projection_mode,
+        )
+
+    if les_snapshot_indices is None:
+        les_snapshot_indices = np.arange(len(solutions_proj))
+
+    np.save(
+        output_directory / "solutions_projection.npy",
+        np.array(solutions_proj)[les_snapshot_indices],
+    )
+    np.save(
+        output_directory / "forcings_projection.npy",
+        np.array(forcing_list)[les_snapshot_indices],
+    )
+    np.save(output_directory / "times.npy", np.array(times)[les_snapshot_indices])
+    np.save(
+        output_directory / "solutions_dns_raw.npy",
+        np.array(solutions_dns)[les_snapshot_indices],  # shape (T, n_dns)
+    )
+    np.save(
+        output_directory / "mesh_dns.npy",
+        mesh_dns,  # shape (n_dns,) — needed by assembly
+    )
 
 
 def verify_global_projection(
@@ -74,6 +172,7 @@ def verify_global_projection(
     u_dns: NDArray,
     mesh_les: NDArray,
     u_projected: NDArray,
+    mode: str,
     n_dns: int | None = None,
     n_les: int | None = None,
 ) -> None:
@@ -94,115 +193,17 @@ def verify_global_projection(
         u_projected,
         "x",
         label=f"LES (N={n_les})" if n_les else "LES",
-        color="orange",
+        color="lightgreen",
         markersize=8,
     )
     ax.plot(mesh_les, u_projected, "--", color="orange", alpha=0.7)
-    ax.set_title("DNS vs. Coarse LES Projection (last t)")
+    ax.set_title(f"DNS vs. Coarse LES Projection ({mode})")
     ax.set_xlabel("x")
     ax.set_ylabel("u")
     ax.legend()
     ax.grid(True, alpha=0.2)
 
-    save_path = output_dir / "projection_verification.png"
+    save_path = output_dir / f"projection_{mode}_verification.png"
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     print(f"Saved projection verification plot to '{save_path}'.")
     plt.close(fig)
-
-
-# ---------------------------------------------------------------------------
-# Main projection
-# ---------------------------------------------------------------------------
-
-
-def run_projection(
-    directory: str | Path,
-    bc_mode: str,
-    bc_values: float | int | tuple[float | int, float | int] | None,
-    output_dir: str | Path | None = None,
-    verify: bool = True,
-    les_snapshot_indices: np.ndarray | None = None,
-    n_nodes_les: int | None = None,
-) -> None:
-    """Project DNS snapshots onto the LES grid and save filtered arrays."""
-    directory = Path(directory)
-    output_dir = Path(output_dir)
-
-    mesh_dns, times, solutions_dns, forcings_dns = read_data(directory)
-
-    n_les = (
-        n_nodes_les
-        if n_nodes_les is not None
-        else (len(mesh_dns) - 1) // DNS_TO_LES_RATIO + 1
-    )
-    les_indices = np.round(np.linspace(0, len(mesh_dns) - 1, n_les)).astype(int)
-    mesh_les = mesh_dns[les_indices]
-
-    print(f"LES grid size: {n_les}")
-
-    dt_array = np.diff(times)
-    if not np.allclose(dt_array, dt_array[0], rtol=1):
-        raise ValueError("Non-uniform time stepping in DNS data.")
-    dt = float(dt_array[0])
-
-    enforce_bcs = bc_mode in ("dirichlet", "fixed")
-
-    solutions_les, tau_list, du_bar_dt_list = [], [], []
-    forcing_list, u_prime_t_list, dns_on_les_list = [], [], []
-
-    for i, (solution_dns, forcing_dns) in enumerate(zip(solutions_dns, forcings_dns)):
-        u_bar, uu_bar = box_filter(solution_dns, ratio=DNS_TO_LES_RATIO, n_les=n_les)
-
-        if enforce_bcs and bc_values is not None:
-            u_bar, uu_bar = _enforce_dirichlet_bcs(u_bar, uu_bar, bc_values)
-
-        du_dt_bar = (
-            uniform_filter(
-                (solution_dns - solutions_dns[i - 1]) / dt,
-                size=DNS_TO_LES_RATIO,
-                mode="nearest",
-            )[les_indices]
-            if i > 0
-            else np.zeros_like(u_bar)
-        )
-
-        current_du_bar_dt = compute_du_bar_dt(
-            u_bar,
-            u_bar_prev=solutions_les[-1] if solutions_les else None,
-            dt=dt,
-        )
-
-        u_prime_t_list.append(du_dt_bar - current_du_bar_dt)
-        tau_list.append(compute_tau(u_bar, uu_bar, snapshot_index=i))
-        du_bar_dt_list.append(current_du_bar_dt)
-        f_bar, _ = box_filter(forcing_dns, ratio=DNS_TO_LES_RATIO, n_les=n_les)
-        forcing_list.append(f_bar)
-        solutions_les.append(u_bar)
-        dns_on_les_list.append(solution_dns[les_indices])
-
-    if verify:
-        verify_global_projection(
-            output_dir=output_dir,
-            u_dns=solutions_dns[-1],
-            u_projected=solutions_les[-1],
-            mesh_dns=mesh_dns,
-            mesh_les=mesh_les,
-            n_dns=len(mesh_dns),
-            n_les=n_les,
-        )
-
-    if les_snapshot_indices is None:
-        les_snapshot_indices = np.arange(len(solutions_les))
-
-    np.save(
-        output_dir / "solutions_projection.npy",
-        np.array(solutions_les)[les_snapshot_indices],
-    )
-    np.save(
-        output_dir / "dns_on_les.npy", np.array(dns_on_les_list)[les_snapshot_indices]
-    )
-    np.save(
-        output_dir / "forcings_projection.npy",
-        np.array(forcing_list)[les_snapshot_indices],
-    )
-    np.save(output_dir / "times.npy", np.array(times)[les_snapshot_indices])
