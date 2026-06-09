@@ -1,8 +1,8 @@
 """SGS predictor: MLP training, loading, and diagnostics.
 
-Architecture (Research Proposal §2.3.1, Robijns 2019 / Pusuluri 2021):
-    3 × 64 ReLU hidden layers | Input: 20 | Output: 5
-    Optimizer: RMSprop | Loss: MSE | Early-stop metric: val MAE
+Architecture (Pusuluri 2021 §3.3.2):
+    5 × 256 ReLU hidden layers | Input: 20 | Output: 5
+    Optimizer: NAdam | Loss: MSE | Early-stop metric: val MAE
 """
 
 from pathlib import Path
@@ -22,6 +22,7 @@ from constants import (
     HIDDEN_UNITS,
     INPUT_UNITS,
     LEARNING_RATE,
+    NUM_HIDDEN_LAYERS,
     OUTPUT_UNITS,
 )
 
@@ -47,24 +48,24 @@ def load_split_data(data_path: Path) -> tuple[Tensor, Tensor, Tensor, Tensor]:
 
 
 class SGSPredictor(nn.Module):
-    """Three-hidden-layer MLP for SGS closure prediction (3 × 64, ReLU)."""
+    """Uniform MLP for SGS closure prediction (num_hidden_layers × hidden_dim, ReLU).
+
+    Default: 5 × 256 per Pusuluri (2021) §3.3.2.
+    """
 
     def __init__(
         self,
         input_dim: int = INPUT_UNITS,
         hidden_dim: int = HIDDEN_UNITS,
+        num_hidden_layers: int = NUM_HIDDEN_LAYERS,
         output_dim: int = OUTPUT_UNITS,
     ) -> None:
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim),
-        )
+        layer_list: list[nn.Module] = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
+        for _ in range(num_hidden_layers - 1):
+            layer_list += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
+        layer_list.append(nn.Linear(hidden_dim, output_dim))
+        self.net = nn.Sequential(*layer_list)
 
     def forward(self, x_input: Tensor) -> Tensor:
         return self.net(x_input)
@@ -120,7 +121,7 @@ def train_predictor(
     )
 
     model = SGSPredictor()
-    optimizer = optim.RMSprop(model.parameters(), lr=LEARNING_RATE)
+    optimizer = optim.NAdam(model.parameters(), lr=LEARNING_RATE)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=10
     )
@@ -135,7 +136,9 @@ def train_predictor(
     }
 
     print(f"\nTraining SGS predictor — {x_train.shape[0]} training samples")
-    print(f"Architecture: {INPUT_UNITS} → 3×{HIDDEN_UNITS} → {OUTPUT_UNITS}")
+    print(
+        f"Architecture: {INPUT_UNITS} → {NUM_HIDDEN_LAYERS}×{HIDDEN_UNITS} → {OUTPUT_UNITS}"
+    )
     print("-" * 56)
 
     for epoch_idx in range(EPOCHS):
@@ -187,6 +190,7 @@ def train_predictor(
             "model_state_dict": model.state_dict(),
             "input_dim": INPUT_UNITS,
             "hidden_dim": HIDDEN_UNITS,
+            "num_hidden_layers": NUM_HIDDEN_LAYERS,
             "output_dim": OUTPUT_UNITS,
         },
         model_save_path,
@@ -206,6 +210,7 @@ def load_predictor(model_path: Path) -> SGSPredictor:
     model = SGSPredictor(
         input_dim=checkpoint["input_dim"],
         hidden_dim=checkpoint["hidden_dim"],
+        num_hidden_layers=checkpoint["num_hidden_layers"],
         output_dim=checkpoint["output_dim"],
     )
     model.load_state_dict(checkpoint["model_state_dict"])
@@ -302,4 +307,7 @@ def plot_training_diagnostics(
     save_path = output_dir / "training_diagnostics.png"
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     print(f"Saved training diagnostics to '{save_path}'.")
-    plt.show() if show_fig else plt.close(fig)
+    if show_fig:
+        plt.show()
+    else:
+        plt.close(fig)

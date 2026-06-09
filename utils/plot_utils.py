@@ -24,9 +24,9 @@ class SolutionConfig:
     data_path: Path | str
     label: str
     color: str
-    linestyle: str = "-."
+    linestyle: str = "--"
     marker: str = "o"
-    alpha: float = 0.8
+    alpha: float = 1
     mesh: Optional[NDArray] = field(default=None, repr=False)
     solution: Optional[NDArray] = field(default=None, repr=False)
 
@@ -60,26 +60,26 @@ def build_plot_configs(
             solution=dns_solution,
         ),
         SolutionConfig(
+            data_path=paths.dns_data,
+            label="LES - projection",
+            color="lightgreen",
+            marker="x",
+            mesh=disc_cfg.mesh_les,
+            solution=projected_solution,
+        ),
+        SolutionConfig(
             data_path=paths.les_a_data,
             label="LES - A",
-            color="royalblue",
-            marker="x",
+            color="tab:orange",
+            marker="^",
             mesh=disc_cfg.mesh_les,
         ),
         SolutionConfig(
             data_path=paths.les_nm_data,
             label="LES - no model",
-            color="tab:orange",
+            color="gold",
             marker=".",
             mesh=disc_cfg.mesh_les,
-        ),
-        SolutionConfig(
-            data_path=paths.dns_data,
-            label="LES - projection",
-            color="lightgreen",
-            marker="^",
-            mesh=disc_cfg.mesh_les,
-            solution=projected_solution,
         ),
         SolutionConfig(
             data_path=les_sgsp_data_path,
@@ -126,7 +126,7 @@ def plot_solution_comparison(
     title: str = "Comparison of DNS and LES Solutions",
     xlabel: str = "Spatial Domain",
     ylabel: str = "Solution Value",
-    figsize: tuple = (10, 6),
+    figsize: tuple = (16, 9),
     filename: str = "comparison_solvers.png",
     dpi: int = 150,
 ) -> tuple[plt.Figure, plt.Axes]:
@@ -144,29 +144,16 @@ def plot_solution_comparison(
 
         node_count_labels.setdefault(len(mesh), cfg.label)
 
-        final_time = _infer_final_time_from_directory(cfg.data_path)
-        legend_label = _build_legend_label(cfg.label, final_time)
-
-        should_annotate = any(
-            substring in cfg.label for substring in _TIME_ANNOTATED_LABEL_SUBSTRINGS
-        )
-        legend_label = (
-            f"{cfg.label} (t={final_time:.4f})"
-            if should_annotate and final_time is not None
-            else cfg.label
-        )
-
         ax.plot(
             mesh,
             solution,
-            label=legend_label,
+            label=cfg.label,
             color=cfg.color,
             linestyle=cfg.linestyle,
             marker=cfg.marker,
             alpha=cfg.alpha,
         )
 
-    # Subtitle: "DNS: 1025 nodes  |  LES: 17 nodes" (sorted large → small).
     subtitle_parts = [
         f"{'DNS' if count == max(node_count_labels) else 'LES'}: {count} nodes"
         for count in sorted(node_count_labels, reverse=True)

@@ -1,6 +1,5 @@
 """Main execution file, runs all important blocks."""
 
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +11,7 @@ from constants import RUNS_FOLDER, SOLVER_DATA_FOLDER, DNS_SAVE_PATH
 from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problems, Problem
-from problems_and_configurations.solver_configs import AVCConfig, SGSPConfig
+from ml.ml_agents.solver_configs import AVCConfig, SGSPConfig
 
 from solvers.burgers_base import BurgersBase
 
@@ -39,10 +38,10 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 
-problem: Problem = Problems.raj_one
+problem: Problem = Problems.pipeline_test
 
-problem_training = replace(problem, domain_timespan=1)
-AVC_EPOCHS: int = 100
+problem_training = problem
+
 
 pipeline = PipelineConfig.all(manual_path=r"")
 
@@ -61,7 +60,9 @@ disc_cfg = DiscretisationConfig(
 
 PROJECTION_MODE: str = "l2"
 ALPHA_MAX: float = 5
-OUTPUT_SCALE: float = 2
+OUTPUT_SCALE: float = 1
+AVC_EPOCHS: int = 50
+N_SKIP: int = 10
 
 master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
 paths = RunPaths.from_master(master_path)
@@ -100,14 +101,15 @@ if __name__ == "__main__":
         solver_les_vms.run_simulation()
         solver_les_vms.post_processing()
 
-        solver_les_nm = BurgersBase(
-            problem=problem,
-            disc_cfg=disc_cfg,
-            simulation_mode="no_model",
-            master_path=paths.les_nm_data,
-        )
-        solver_les_nm.run_simulation()
-        solver_les_nm.post_processing()
+        if pipeline.run_les_no_model:
+            solver_les_nm = BurgersBase(
+                problem=problem,
+                disc_cfg=disc_cfg,
+                simulation_mode="no_model",
+                master_path=paths.les_nm_data,
+            )
+            solver_les_nm.run_simulation()
+            solver_les_nm.post_processing()
 
     # -------------------------------------- SGSP --------------------------------------- #
 
@@ -217,33 +219,34 @@ if __name__ == "__main__":
             n_wavenumber_bins=n_wavenumber_bins,
         )
         sac_config = SACConfig(
-            n_skip_steps=5,
+            n_skip_steps=N_SKIP,
             warmup_steps=200,  # ~5 full episodes of random exploration
             batch_size=64,  # fill faster — fine for this problem size
         )
-
+        avc_cfg_global = AVCConfig(
+            avc_model_path=paths.avcg_model,
+            dns_energy_spectrum=dns_positive_spectrum,
+            dns_dissipation=dns_dissipation_ref,
+            correction_mode="global",
+            n_skip_steps=sac_config.n_skip_steps,
+            exclude_diss_from_reward=exclude_diss,
+        )
         # --------------------------------------- GAVC -------------------------------------- #
-
         if pipeline.train_avc_online:
             av_corrector_global = AVCorrector(
                 alpha_max=ALPHA_MAX * problem.viscosity,
                 output_scale=problem.viscosity * OUTPUT_SCALE,
                 n_wavenumber_bins=n_wavenumber_bins,
+                correction_mode=avc_cfg_global.correction_mode,
+                n_output_nodes=1,
             )
             save_corrector(av_corrector_global, paths.avcg_model)
-            avc_cfg_global = AVCConfig(
-                avc_model_path=paths.avcg_model,
-                dns_energy_spectrum=dns_positive_spectrum,
-                dns_dissipation=dns_dissipation_ref,
-                exclude_diss_from_reward=exclude_diss,
-            )
             environment_global = BurgersAVCEnvironment(
                 problem=problem_training,
                 disc_cfg=disc_cfg,
                 sgsp_cfg=sgsp_cfg_avc,
                 avc_cfg=avc_cfg_global,
-                master_path=paths.les_avc_data
-                / "training_global",  # TODO: this is not doing anything but creating empty folders i think.
+                master_path=paths.les_avc_data / "training_global",
                 sac_config=sac_config,
                 dns_reference_schedule=dns_reference_schedule,
             )
@@ -261,23 +264,23 @@ if __name__ == "__main__":
             trainer_global.train(n_episodes=AVC_EPOCHS)
 
         # --------------------------------------- LAVC -------------------------------------- #
-
+        avc_cfg_local = AVCConfig(
+            avc_model_path=paths.avcl_model,
+            dns_energy_spectrum=dns_positive_spectrum,
+            dns_dissipation=dns_dissipation_ref,
+            correction_mode="local",
+            n_skip_steps=sac_config.n_skip_steps,
+            exclude_diss_from_reward=exclude_diss,
+        )
         if pipeline.train_avc_online:
             av_corrector_local = AVCorrector(
                 alpha_max=ALPHA_MAX * problem.viscosity,
                 output_scale=problem.viscosity * OUTPUT_SCALE,
                 n_wavenumber_bins=n_wavenumber_bins,
-                correction_mode="local",
+                correction_mode=avc_cfg_local.correction_mode,
                 n_output_nodes=disc_cfg.n_nodes_les,
             )
             save_corrector(av_corrector_local, paths.avcl_model)
-
-            avc_cfg_local = AVCConfig(
-                avc_model_path=paths.avcl_model,
-                dns_energy_spectrum=dns_positive_spectrum,
-                dns_dissipation=dns_dissipation_ref,
-                exclude_diss_from_reward=exclude_diss,
-            )
             environment_local = BurgersAVCEnvironment(
                 problem=problem_training,
                 disc_cfg=disc_cfg,
@@ -303,18 +306,13 @@ if __name__ == "__main__":
         # --------------------------------------- GAVC Run -------------------------------------- #
 
         if paths.avcg_model.exists():
-            avc_cfg_global_run = AVCConfig(
-                avc_model_path=paths.avcg_model,
-                dns_energy_spectrum=dns_positive_spectrum,
-                dns_dissipation=dns_dissipation_ref,
-            )
             solver_avc_global = BurgersAVC(
                 problem,
                 disc_cfg,
                 "avc",
                 paths.les_avc_data / "global",
                 sgsp_cfg_avc,
-                avc_cfg_global_run,
+                avc_cfg_global,
             )
             solver_avc_global.run_simulation()
             solver_avc_global.post_processing()
@@ -322,24 +320,18 @@ if __name__ == "__main__":
         # --------------------------------------- LAVC Run -------------------------------------- #
 
         if paths.avcl_model.exists():
-            avc_cfg_local_run = AVCConfig(
-                avc_model_path=paths.avcl_model,
-                dns_energy_spectrum=dns_positive_spectrum,
-                dns_dissipation=dns_dissipation_ref,
-            )
             solver_avc_local = BurgersAVC(
                 problem,
                 disc_cfg,
                 "avc",
                 paths.les_avc_data / "local",
                 sgsp_cfg_avc,
-                avc_cfg_local_run,
+                avc_cfg_local,
             )
             solver_avc_local.run_simulation()
             solver_avc_local.post_processing()
 
         # --------------------------------------- Plotting -------------------------------------- #
-
         dns_solution, _ = _read_plot(directory=paths.dns_data, final_only=True)
         projected_solution = np.load(paths.projection / "solutions_projection.npy")[-1]
 
@@ -352,8 +344,8 @@ if __name__ == "__main__":
                 SolutionConfig(
                     data_path=global_avc_path,
                     label="LES - AVC (global)",
-                    color="mediumorchid",
-                    linestyle=":",
+                    color="royalblue",
+                    linestyle="--",
                     marker="s",
                     mesh=disc_cfg.mesh_les,
                 )
@@ -365,9 +357,9 @@ if __name__ == "__main__":
                 SolutionConfig(
                     data_path=local_avc_path,
                     label="LES - AVC (local)",
-                    color="gold",
-                    linestyle="-.",
-                    marker="^",
+                    color="blueviolet",
+                    linestyle="--",
+                    marker="v",
                     mesh=disc_cfg.mesh_les,
                 )
             )
@@ -392,23 +384,12 @@ if __name__ == "__main__":
             filename="comparison_solvers.png",
         )
 
-        plot_configs_no_sgsp = [
-            cfg
-            for cfg in plot_configs_viable
-            if "SGSP" not in cfg.label and "ANN" not in cfg.label
-        ]
-        if plot_configs_no_sgsp:
-            plot_solution_comparison(
-                configs=plot_configs_no_sgsp,
-                output_path=paths.master,
-                filename="comparison_solvers_no_sgsp.png",
-                title="Comparison of DNS and LES Solutions (excl. SGSP)",
-            )
-
         plot_energy_comparison(
             dns_dir=paths.dns_data,
             les_a_dir=paths.les_a_data,
-            les_nm_dir=paths.les_nm_data,
+            les_nm_dir=paths.les_nm_data
+            if is_viable_solution_path(paths.les_nm_data)
+            else None,
             les_sgsp_dir=paths.les_sgsp_data
             if is_viable_solution_path(paths.les_sgsp_data)
             else None,

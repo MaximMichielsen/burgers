@@ -30,6 +30,8 @@ class PipelineConfig:
     run_sgsp_block: bool = True
     run_avc_block: bool = True
 
+    run_les_no_model: bool = False
+
     train_avc_online: bool = True
     train_avc_offline: bool = False
 

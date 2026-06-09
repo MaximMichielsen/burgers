@@ -52,7 +52,7 @@ from ml.ml_agents.predictor import SGSPredictor, load_predictor
 from constants import WARMUP_STEPS
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
-from problems_and_configurations.solver_configs import SGSPConfig
+from ml.ml_agents.solver_configs import SGSPConfig
 from solvers.burgers_base import BurgersBase
 
 logger = logging.getLogger(__name__)
@@ -230,6 +230,7 @@ class BurgersSGSP(BurgersBase):
         )
 
         self._artificial_viscosity_prev: float = 0.0
+        self._last_sgsp_correction: NDArray | None = None
 
         self._blown_up_path: Path = sgsp_cfg.blown_up_path
 
@@ -400,6 +401,7 @@ class BurgersSGSP(BurgersBase):
     def nr_iteration(self, solution: NDArray) -> NDArray:
         """NR iteration with frozen ANN correction added to the global residual."""
         sgsp_correction: NDArray | None = self.compute_sgsp_contribution()
+        self._last_sgsp_correction = sgsp_correction  # cache for energy diagnostics
 
         solution_n = solution.copy()
         solution_k = solution.copy()
@@ -554,6 +556,16 @@ class BurgersSGSP(BurgersBase):
             residual_modified[node_right] -= spatial_sum + temporal_right_val
 
         return residual_modified
+
+    def calc_sgsp_energy_injection(self) -> float:
+        """Compute energy injected by the SGS predictor at the current step."""
+        if self._last_sgsp_correction is None:
+            return 0.0
+        zero_residual = np.zeros(self.n_nodes, dtype=np.float64)
+        sgsp_nodal_force = self._add_sgsp_contribution_to_residual(
+            zero_residual, self._last_sgsp_correction
+        )
+        return float(np.dot(self.solution, sgsp_nodal_force))
 
     # ------------------------------------------------------------------ #
     #  Blow-up detection

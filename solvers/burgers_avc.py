@@ -38,7 +38,7 @@ from numpy.typing import NDArray
 from ml.ml_agents.corrector import AVCorrector, load_corrector
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
-from problems_and_configurations.solver_configs import SGSPConfig, AVCConfig
+from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
 from solvers.burgers_sgsp import BurgersSGSP
 
 logger = logging.getLogger(__name__)
@@ -70,13 +70,16 @@ class BurgersAVC(BurgersSGSP):
             snapshot_factor,
         )
 
+        self._avc_cfg = avc_cfg
+
         self._avc_model_path: Path = avc_cfg.avc_model_path
-        self._corrector: AVCorrector = load_corrector(avc_cfg.avc_model_path)
-        self._corrector.eval()
+        self.corrector: AVCorrector = load_corrector(avc_cfg.avc_model_path)
+        self.corrector.eval()
 
         self.av_correction: float | NDArray = 0.0
         self.av_history: list[float | NDArray] = []
         self.energy_drain_history: list[float] = []
+        self.sgsp_injection_history: list[float] = []
 
         self._dns_energy_spectrum: NDArray = np.asarray(
             avc_cfg.dns_energy_spectrum, dtype=np.float32
@@ -88,23 +91,20 @@ class BurgersAVC(BurgersSGSP):
         self.correction_is_fixed: bool = avc_cfg.correction_is_fixed
         self.use_policy_inference: bool = not avc_cfg.correction_is_fixed
 
+        self._step_counter: int = 0
+
     # ------------------------------------------------------------------ #
     #  advance_time_step
     # ------------------------------------------------------------------ #
 
     def advance_time_step(self) -> bool:
-        """Compute αₙ, inject into diffusion term, advance one LES step.
-
-        Order of operations:
-        1. Predict αₙ from current state sₙ (unless fixed mode).
-        2. Write αₙ into self.av_correction (read by _residual_integrand).
-        3. Call super().advance_time_step() — runs NR with SGS + AV.
-        4. Append αₙ and energy drain to history lists.
-        """
+        """Query policy every n_skip_steps, then advance one LES step."""
         if self.use_policy_inference:
-            self._add_avc_correction()
+            if self._step_counter % self._avc_cfg.n_skip_steps == 0:
+                self._add_avc_correction()
 
-        step_ok = super().advance_time_step()  # returns bool from BurgersSGSP
+        self._step_counter += 1
+        step_ok = super().advance_time_step()
         self.update_av_history()
         return step_ok
 
@@ -116,12 +116,13 @@ class BurgersAVC(BurgersSGSP):
         """Append current av_correction and energy drain to per-step histories."""
         self.av_history.append(self.av_correction)
         self.energy_drain_history.append(self.calc_energy_drain())
+        self.sgsp_injection_history.append(self.calc_sgsp_energy_injection())
 
     # ------------------------------------------------------------------ #
     #  AVC input / inference helpers
     # ------------------------------------------------------------------ #
 
-    def _create_avc_input_stencil(self) -> NDArray:
+    def create_avc_input_stencil(self) -> NDArray:
         """Build the MDP state sₙ ∈ ℝ^(K+2) per eq. (2.8).
 
         sₙ = (Ê₁, …, Êₖ, ε⁻ⁿ, αₙ₋₁)
@@ -170,13 +171,13 @@ class BurgersAVC(BurgersSGSP):
         -------
         alpha_n : scalar float for global mode, NDArray shape (N_nodes,) for local.
         """
-        state_array = self._create_avc_input_stencil()
+        state_array = self.create_avc_input_stencil()
         state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
 
         with torch.no_grad():
-            alpha_tensor = self._corrector(state_tensor).squeeze(0)  # (output_dim,)
+            alpha_tensor = self.corrector(state_tensor).squeeze(0)  # (output_dim,)
 
-        if self._corrector.correction_mode == "global":
+        if self.corrector.correction_mode == "global":
             return float(alpha_tensor.item())
         else:
             return alpha_tensor.numpy().astype(np.float64)  # (N_nodes,)
@@ -210,7 +211,7 @@ class BurgersAVC(BurgersSGSP):
         f_interp: float = 0.0,
     ) -> float:
         """Weak-form residual integrand with effective viscosity νeff = ν + α."""
-        if self._corrector.correction_mode == "global" or isinstance(
+        if self.corrector.correction_mode == "global" or isinstance(
             self.av_correction, float
         ):
             av_local = float(self.av_correction)
@@ -231,7 +232,7 @@ class BurgersAVC(BurgersSGSP):
         f: dict[str, float],
     ) -> float:
         """Jacobian integrand with effective viscosity νeff = ν + α."""
-        if self._corrector.correction_mode == "global" or isinstance(
+        if self.corrector.correction_mode == "global" or isinstance(
             self.av_correction, float
         ):
             av_local = float(self.av_correction)
@@ -314,8 +315,8 @@ class BurgersAVC(BurgersSGSP):
         print("  AV Corrector")
         print("─" * W)
         _row("model path", str(self._avc_model_path))
-        _row("correction mode", str(self._corrector.correction_mode))
-        _row("alpha_max", f"{self._corrector.alpha_max:.4e}")
+        _row("correction mode", str(self.corrector.correction_mode))
+        _row("alpha_max", f"{self.corrector.alpha_max:.4e}")
         _row("correction_is_fixed", str(self.correction_is_fixed))
         _row("n_wavenumber_bins", str(self._n_wavenumber_bins))
         _row("dns_dissipation", f"{self._dns_dissipation:.4e}")
@@ -330,14 +331,15 @@ class BurgersAVC(BurgersSGSP):
         super().post_processing()
         if self.av_history:
             self.plot_avc_contributions()
+            self.plot_local_avc_spatial()
 
     def post_logging(self) -> None:
         """Write run summary plus AVC-specific fields to the log file."""
         super().post_logging()
         self.logger.info(
             "AVC — alpha_max: %.4e  correction_mode: %s  correction_is_fixed: %s",
-            self._corrector.alpha_max,
-            self._corrector.correction_mode,
+            self.corrector.alpha_max,
+            self.corrector.correction_mode,
             self.correction_is_fixed,
         )
         if self.av_history:
@@ -381,8 +383,18 @@ class BurgersAVC(BurgersSGSP):
 
         axes[0].plot(time_axis, av_array, color="tab:orange", linewidth=1.5)
         axes[0].set_xlabel("Time")
-        axes[0].set_ylabel(r"$\alpha(t)$")
-        axes[0].set_title("AV correction applied by corrector policy")
+        y_label = (
+            r"$\alpha(t)$"
+            if self._avc_cfg.correction_mode == "global"
+            else r"$\alpha_{\text{mean}}(t)$"
+        )
+        axes[0].set_ylabel(y_label)
+        title = (
+            "Global AV correction applied by corrector policy"
+            if self._avc_cfg.correction_mode == "global"
+            else "Mean AV correction applied by local corrector policy"
+        )
+        axes[0].set_title(title)
         axes[0].grid(True, alpha=0.3)
 
         axes[1].plot(time_axis, drain_array, color="royalblue", linewidth=1.5)
@@ -395,4 +407,58 @@ class BurgersAVC(BurgersSGSP):
         save_path = self.master_path / f"avc_contributions_{self.run_id}.png"
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
         logger.info("AVC contribution plot saved to %s", save_path)
+        plt.close(fig)
+
+    def plot_local_avc_spatial(self, n_snapshots: int = 3) -> None:
+        """Plot α(x) spatial profile at n_snapshots time indices for local mode.
+
+        Skipped silently if correction_mode is global or av_history is empty.
+        """
+        if self._avc_cfg.correction_mode != "local":
+            return
+        if not self.av_history:
+            logger.warning("plot_local_avc_spatial: no AV history to plot, skipping.")
+            return
+
+        local_av_history = [a for a in self.av_history if isinstance(a, np.ndarray)]
+        if not local_av_history:
+            logger.warning(
+                "plot_local_avc_spatial: no local NDArray entries in av_history, skipping."
+            )
+            return
+
+        n_available = len(local_av_history)
+        n_snapshots = min(n_snapshots, n_available)
+        snapshot_indices = np.linspace(0, n_available - 1, n_snapshots, dtype=int)
+
+        colors = ["royalblue", "tab:orange", "lightgreen"]
+        fig, ax = plt.subplots(figsize=(8, 4))
+
+        for plot_idx, history_idx in enumerate(snapshot_indices):
+            alpha_spatial = local_av_history[history_idx]
+            time_val = (
+                self.time_steps[history_idx + 1]
+                if history_idx + 1 < len(self.time_steps)
+                else history_idx * self.dt
+            )
+            ax.plot(
+                self.mesh,
+                alpha_spatial,
+                color=colors[plot_idx % len(colors)],
+                linewidth=1.5,
+                marker="o",
+                markersize=4,
+                label=f"t = {time_val:.3f}",
+            )
+
+        ax.set_xlabel("x")
+        ax.set_ylabel(r"$\alpha(x, t)$")
+        ax.set_title("Local AV correction spatial profile")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        save_path = self.master_path / f"avc_local_spatial_{self.run_id}.png"
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        logger.info("Local AVC spatial plot saved to %s", save_path)
         plt.close(fig)

@@ -3,7 +3,6 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torch import Tensor
-from typing_extensions import Literal
 
 from constants import HIDDEN_UNITS
 
@@ -20,6 +19,8 @@ def load_corrector_training_data(data_path: Path) -> dict:
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
+
+_VALID_CORRECTION_MODES = frozenset({"global", "local"})
 
 
 class AVCorrector(nn.Module):
@@ -40,11 +41,16 @@ class AVCorrector(nn.Module):
         alpha_max: float,
         n_wavenumber_bins: int,
         hidden_dim: int = HIDDEN_UNITS,
-        correction_mode: Literal["global", "local"] = "global",
+        correction_mode: str = "global",
         n_output_nodes: int = 1,  # ignored for global; N_LES for local.
-        output_scale: float | None = None,  # sigmoid scale; defaults to alpha_max
+        output_scale: float | None = None,
     ) -> None:
         super().__init__()
+
+        if correction_mode not in _VALID_CORRECTION_MODES:
+            raise ValueError(
+                f"Correction mode {correction_mode} not in valid modes: {_VALID_CORRECTION_MODES}"
+            )
 
         if n_output_nodes <= 0:
             raise ValueError(
@@ -84,23 +90,11 @@ class AVCorrector(nn.Module):
             nn.Linear(hidden_dim, output_dim),
         )
 
-        # TODO: rethink this whole alpha max thing
-
     def forward(self, state_input: Tensor) -> Tensor:
         """Sigmoid-bounded output, hard-clamped to alpha_max as a safety ceiling."""
         raw_output = self.network(state_input)
         scaled_output = self.output_scale * torch.sigmoid(raw_output)
         return torch.clamp(scaled_output, max=self.alpha_max)
-
-
-# ---------------------------------------------------------------------------
-# Training
-# ---------------------------------------------------------------------------
-
-
-def train_corrector() -> None:
-    """RL algorithm for training the AVCorrector."""
-    pass
 
 
 # ---------------------------------------------------------------------------

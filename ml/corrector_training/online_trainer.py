@@ -43,7 +43,7 @@ import logging
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import numpy as np
 import torch
@@ -56,7 +56,7 @@ from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.ml_agents.corrector import AVCorrector, save_corrector
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
-from problems_and_configurations.solver_configs import SGSPConfig, AVCConfig
+from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
 from solvers.burgers_base import compute_adjusted_dt
 from solvers.burgers_avc import BurgersAVC
 
@@ -149,7 +149,9 @@ class ReplayBuffer:
 
     def sample(self, batch_size: int) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Return a random minibatch as float32 tensors."""
-        indices = np.random.choice(len(self._buffer), size=batch_size, replace=False)
+        indices = cast(
+            NDArray, np.random.choice(len(self._buffer), size=batch_size, replace=False)
+        )
         batch = [self._buffer[idx] for idx in indices]
 
         states_tensor = torch.tensor(
@@ -247,11 +249,11 @@ class BurgersAVCEnvironment:
         self._avc_cfg = avc_cfg
         self._master_path = master_path
         self._sac_config = sac_config
-        self._dns_reference_schedule = dns_reference_schedule
+        self.dns_reference_schedule = dns_reference_schedule
 
         self.exclude_diss_from_reward = avc_cfg.exclude_diss_from_reward
 
-        self._solver: BurgersAVC | None = None
+        self._solver: BurgersAVC
         self._total_les_steps: int = 0
 
         _, self._n_time_steps = compute_adjusted_dt(
@@ -261,6 +263,15 @@ class BurgersAVCEnvironment:
 
         self.n_wavenumber_bins: int = len(avc_cfg.dns_energy_spectrum)
         self.state_dim: int = self.n_wavenumber_bins + 2
+
+        self.correction_mode: str = avc_cfg.correction_mode
+        self._n_skip_steps: int = avc_cfg.n_skip_steps
+
+        self._n_output_nodes: int = (
+            1 if avc_cfg.correction_mode == "global" else disc_cfg.n_nodes_les
+        )
+
+        self._solver: BurgersAVC | None = None
 
     def reset(self) -> NDArray:
         """Instantiate a fresh BurgersAVC solver and return initial state sₙ."""
@@ -276,22 +287,29 @@ class BurgersAVCEnvironment:
             False  # trainer drives av_correction externally
         )
         self._total_les_steps = 0
-        self._correction_mode = self._solver._corrector.correction_mode
-        self._n_output_nodes = self._solver._corrector.output_dim
-        return self._solver._create_avc_input_stencil()
+        if self._solver is None:
+            raise ValueError("Something went wrong with setting the solver :(")
 
-    def step(self, alpha_action: float) -> tuple[NDArray, float, bool]:
+        return self._solver.create_avc_input_stencil()
+
+    def step(self, alpha_action: float | NDArray) -> tuple[NDArray, float, bool]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done)."""
         assert self._solver is not None, "Call reset() before step()."
 
-        alpha_array = np.asarray(alpha_action, dtype=np.float64)
-        if self._correction_mode == "local":
+        if self.correction_mode == "local":
+            alpha_array = np.asarray(alpha_action, dtype=np.float64).reshape(-1)
+            assert alpha_array.shape == (self._n_output_nodes,), (
+                f"Local mode expects action shape ({self._n_output_nodes},), "
+                f"got {alpha_array.shape}"
+            )
             self._solver.av_correction = alpha_array
         else:
-            self._solver.av_correction = float(alpha_array.item())
+            self._solver.av_correction = float(
+                np.asarray(alpha_action, dtype=np.float64).item()
+            )
 
         blown_up = False
-        for _ in range(self._sac_config.n_skip_steps):
+        for _ in range(self._n_skip_steps):
             step_ok = self._solver.advance_time_step()
             self._total_les_steps += 1
             if not step_ok:
@@ -300,7 +318,7 @@ class BurgersAVCEnvironment:
 
         reward_val = self._compute_reward(blown_up=blown_up)
         done_flag = blown_up or self._total_les_steps >= self._max_les_steps
-        next_state_array = self._solver._create_avc_input_stencil()
+        next_state_array = self._solver.create_avc_input_stencil()
 
         return next_state_array, reward_val, done_flag
 
@@ -308,9 +326,9 @@ class BurgersAVCEnvironment:
         """Return (dns_spectrum_k, dns_dissipation) for the current solver time."""
         assert self._solver is not None
 
-        if self._dns_reference_schedule is not None:
+        if self.dns_reference_schedule is not None:
             current_time = self._solver.simulation_time_elapsed
-            return self._dns_reference_schedule.query(current_time)
+            return self.dns_reference_schedule.query(current_time)
 
         return (
             np.asarray(self._avc_cfg.dns_energy_spectrum, dtype=np.float64),
@@ -338,7 +356,7 @@ class BurgersAVCEnvironment:
         w_eps = self._sac_config.reward_weight_dissipation
         gamma_exp = self._sac_config.reward_spectral_exponent
 
-        # Normalise spectra by total energy to compare shape only
+        # Normalize spectra by total energy to compare shape only
         normalised_les = spectrum_k / max(spectrum_k.sum(), 1e-12)
         normalised_dns = dns_spectrum_k / max(dns_spectrum_k.sum(), 1e-12)
 
@@ -418,7 +436,7 @@ class SACAgent:
         state_dim: int,
         sac_config: SACConfig,
     ) -> None:
-        self._policy = av_corrector
+        self.policy = av_corrector
         self._config = sac_config
 
         action_dim = av_corrector.output_dim
@@ -439,7 +457,7 @@ class SACAgent:
             param_tensor.requires_grad = False
 
         self._actor_optimizer = optim.Adam(
-            self._policy.parameters(), lr=sac_config.lr_actor
+            self.policy.parameters(), lr=sac_config.lr_actor
         )
         self._critic_optimizer = optim.Adam(
             self._critic.parameters(), lr=sac_config.lr_critic
@@ -464,16 +482,16 @@ class SACAgent:
         """
         state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
         with torch.no_grad():
-            action_tensor = self._policy(state_tensor).squeeze(0)  # (action_dim,)
+            action_tensor = self.policy(state_tensor).squeeze(0)  # (action_dim,)
 
         if deterministic:
             return action_tensor.numpy()
 
-        noise_std = 0.05 * self._policy.alpha_max
+        noise_std = 0.05 * self.policy.alpha_max
         noisy_action = action_tensor.numpy() + np.random.normal(
             0.0, noise_std, size=action_tensor.shape
         )
-        return np.clip(noisy_action, 0.0, self._policy.alpha_max).astype(np.float32)
+        return np.clip(noisy_action, 0.0, self.policy.alpha_max).astype(np.float32)
 
     def update(self, replay_buffer: ReplayBuffer) -> tuple[float, float, float]:
         """One SAC gradient step on critic, actor, and temperature.
@@ -492,12 +510,12 @@ class SACAgent:
 
         # ---- Critic update ----
         with torch.no_grad():
-            next_actions_batch = self._policy(next_states_batch)
+            next_actions_batch = self.policy(next_states_batch)
             target_noise = (
-                torch.randn_like(next_actions_batch) * 0.05 * self._policy.alpha_max
+                torch.randn_like(next_actions_batch) * 0.05 * self.policy.alpha_max
             )
             next_actions_batch = (next_actions_batch + target_noise).clamp(
-                0.0, self._policy.alpha_max
+                0.0, self.policy.alpha_max
             )
             q1_next_val, q2_next_val = self._critic_target(
                 next_states_batch, next_actions_batch
@@ -517,7 +535,7 @@ class SACAgent:
         self._critic_optimizer.step()
 
         # ---- Actor update ----
-        predicted_actions_batch = self._policy(states_batch)
+        predicted_actions_batch = self.policy(states_batch)
         q1_policy_val = self._critic.q1_only(states_batch, predicted_actions_batch)
         actor_loss_val = -q1_policy_val.mean()
 
@@ -601,9 +619,9 @@ class OnlineAVTrainer:
         -------
         TrainingStats with per-episode and per-update diagnostics.
         """
-        using_schedule = self._env._dns_reference_schedule is not None
+        using_schedule = self._env.dns_reference_schedule is not None
         print(
-            f"\nOnline SAC training — {n_episodes} episodes "
+            f"\nOnline SAC training (AVC - {self._env.correction_mode}) — {n_episodes} episodes "
             f"| warmup: {self._config.warmup_steps} steps "
             f"| Nₛₖᵢₚ: {self._config.n_skip_steps} "
             f"| DNS ref: {'time-varying' if using_schedule else 'static terminal'}"
@@ -619,9 +637,9 @@ class OnlineAVTrainer:
             while not done_flag:
                 if self._stats.total_env_steps < self._config.warmup_steps:
                     random_scalar = float(
-                        np.random.uniform(0.0, self._agent._policy.alpha_max)
+                        np.random.uniform(0.0, self._agent.policy.alpha_max)
                     )
-                    action_dim = self._agent._policy.output_dim
+                    action_dim = self._agent.policy.output_dim
                     alpha_action_val = np.full(
                         action_dim, random_scalar, dtype=np.float32
                     )
@@ -686,5 +704,5 @@ class OnlineAVTrainer:
         """Save policy weights to a .pt file."""
         suffix = tag if tag else f"ep{episode_idx:04d}"
         checkpoint_path = self._output_dir / f"av_corrector_{suffix}.pt"
-        save_corrector(self._agent._policy, checkpoint_path)
+        save_corrector(self._agent.policy, checkpoint_path)
         logger.info("Checkpoint saved to %s", checkpoint_path)

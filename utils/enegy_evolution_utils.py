@@ -71,22 +71,64 @@ def _compute_energy_spectrum(
     return wavenumbers, spectrum
 
 
+def _smooth_series(values: NDArray, window: int = 15) -> NDArray:
+    """Rolling mean with edge-preserving same-length output."""
+    kernel = np.ones(window) / window
+    return np.convolve(values, kernel, mode="same")
+
+
+# Labels for solvers that exhibit oscillatory SGSP-coupled behaviour.
+_OSCILLATORY_LABELS = frozenset({"LES-SGSP", "LES-AVCG", "LES-AVCL"})
+
+
 def _plot_series(
     ax: plt.Axes,
     data: dict,
     x_key: str,
     y_key: str,
+    smooth_window: int = 15,
 ) -> None:
-    """Plot x_key vs y_key for all entries in data."""
+    """Plot x_key vs y_key for all entries in data.
+
+    Oscillatory solvers (SGSP-coupled) are drawn with a faded raw line and
+    an opaque smoothed overlay so the trend remains readable.
+    """
     for label, entry in data.items():
-        ax.plot(
-            entry[x_key],
-            entry[y_key],
-            color=entry["color"],
-            linestyle=entry["ls"],
-            linewidth=entry["lw"],
-            label=label,
-        )
+        x_values = entry[x_key]
+        y_values = entry[y_key]
+        color = entry["color"]
+        ls = entry["ls"]
+        lw = entry["lw"]
+
+        if label in _OSCILLATORY_LABELS:
+            # Raw oscillatory line, faded
+            ax.plot(
+                x_values,
+                y_values,
+                color=color,
+                linestyle=ls,
+                linewidth=lw * 0.6,
+                alpha=0.25,
+            )
+            # Smoothed trend overlay, full opacity
+            ax.plot(
+                x_values,
+                _smooth_series(y_values, window=smooth_window),
+                color=color,
+                linestyle=ls,
+                linewidth=lw,
+                alpha=1.0,
+                label=label,
+            )
+        else:
+            ax.plot(
+                x_values,
+                y_values,
+                color=color,
+                linestyle=ls,
+                linewidth=lw,
+                label=label,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +139,7 @@ def _plot_series(
 def plot_energy_comparison(
     dns_dir: Path,
     les_a_dir: Path,
-    les_nm_dir: Path,
+    les_nm_dir: Path | None,
     les_sgsp_dir: Path | None,
     les_avcg_dir: Path | None,
     les_avcl_dir: Path | None,
@@ -111,17 +153,18 @@ def plot_energy_comparison(
     output_path.mkdir(parents=True, exist_ok=True)
 
     solver_configs = {
-        "DNS": (dns_dir, "dimgray", "-", 1.8),
-        "Proj": (projection_dir, "lightgreen", "-", 1.8),
-        "LES-A": (les_a_dir, "royalblue", "--", 1.4),
-        "LES-NM": (les_nm_dir, "tab:orange", "-.", 1.4),
-        "LES-SGSP": (les_sgsp_dir, "crimson", ":", 1.8),
-        "LES-AVCG": (les_avcg_dir, "mediumorchid", ":", 1.8),
-        "LES-AVCL": (les_avcl_dir, "gold", "-.", 1.8),
+        "DNS": (dns_dir, "gray", "-", 1.8),
+        "LES-A": (les_a_dir, "tab:orange", "--", 1.4),
+        "LES-NM": (les_nm_dir, "gold", "-.", 1.4),
+        "LES-SGSP": (les_sgsp_dir, "salmon", "-", 1.8),
+        "LES-AVCG": (les_avcg_dir, "royalblue", "-", 1.8),
+        "LES-AVCL": (les_avcl_dir, "blueviolet", "--", 1.8),
     }
 
     data: dict = {}
     for label, (directory, color, ls, lw) in solver_configs.items():
+        if directory is None:
+            continue
         directory = Path(directory)
         if not directory.exists():
             print(f"  Skipping {label}: directory not found at {directory}")
@@ -153,8 +196,8 @@ def plot_energy_comparison(
             "times": times_proj,
             "solutions": solutions_proj_list,
             "coords": coords_proj_list,
-            "color": "limegreen",
-            "ls": "--",
+            "color": "lightgreen",
+            "ls": "-",
             "lw": 1.2,
         }
         data["Projection"]["energy"] = _compute_energy_series(
@@ -168,19 +211,32 @@ def plot_energy_comparison(
         data["Projection"]["wavenumbers"] = wn[mask]
         data["Projection"]["spectrum"] = sp[mask]
 
+    ordered_keys = []
+    for key in data:
+        ordered_keys.append(key)
+        if key == "DNS" and "Projection" in data:
+            ordered_keys.append("Projection")
+
+    data = {k: data[k] for k in ordered_keys if k in data}
+
     if len(data) < 2:
         print("Not enough data to produce comparison plot.")
         return
 
     for label, entry in data.items():
-        entry["energy"] = _compute_energy_series(entry["solutions"], entry["coords"])
-        entry["dissipation"] = _compute_dissipation_series(
-            entry["solutions"], entry["coords"], viscosity
-        )
-        wn, sp = _compute_energy_spectrum(entry["solutions"][-1], domain_length)
-        mask = wn > 0
-        entry["wavenumbers"] = wn[mask]
-        entry["spectrum"] = sp[mask]
+        if "energy" not in entry:
+            entry["energy"] = _compute_energy_series(
+                entry["solutions"], entry["coords"]
+            )
+        if "dissipation" not in entry:
+            entry["dissipation"] = _compute_dissipation_series(
+                entry["solutions"], entry["coords"], viscosity
+            )
+        if "wavenumbers" not in entry:
+            wn, sp = _compute_energy_spectrum(entry["solutions"][-1], domain_length)
+            mask = wn > 0
+            entry["wavenumbers"] = wn[mask]
+            entry["spectrum"] = sp[mask]
 
     fig = plt.figure(figsize=(15, 5))
     gs = GridSpec(1, 3, figure=fig, wspace=0.32)

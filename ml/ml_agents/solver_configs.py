@@ -19,5 +19,7 @@ class AVCConfig:
     avc_model_path: Path
     dns_energy_spectrum: NDArray
     dns_dissipation: float
+    correction_mode: str = "global"
+    n_skip_steps: int = 5
     correction_is_fixed: bool = False
     exclude_diss_from_reward: bool = False

@@ -30,7 +30,8 @@ DNS_TO_LES_RATIO: int = 2**6
 # Predictor agent hyperparameters
 # ---------------------------------------------------------------------------
 
-HIDDEN_UNITS: int = 64
+NUM_HIDDEN_LAYERS = 5
+HIDDEN_UNITS: int = 256
 INPUT_UNITS: int = 20
 OUTPUT_UNITS: int = 5
 BATCH_SIZE: int = 128
