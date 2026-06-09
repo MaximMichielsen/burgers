@@ -1,0 +1,21 @@
+{
+  "run_id": "0609_122144",
+  "simulation_mode": "dns",
+  "domain_timespan": 1.0,
+  "domain_length": 1.0,
+  "dt": 0.00125,
+  "n_time_steps": 800,
+  "viscosity": 0.01,
+  "n_nodes": 576,
+  "n_elements": 575,
+  "element_size": 0.0017391304347826088,
+  "boundary_condition_type": "dirichlet",
+  "boundary_condition_value": 0.0,
+  "max_iterations": 50,
+  "convergence_tol_residual": 1e-06,
+  "convergence_tol_update": 1e-06,
+  "snapshot_factor": 1,
+  "forcing": "<callable: uniform_steady_forcing>",
+  "forcing_is_steady": true,
+  "problem_name": "raj_one"
+}

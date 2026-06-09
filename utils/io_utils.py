@@ -40,3 +40,17 @@ def read_data(
         return list(solutions)[-1], mesh
 
     return mesh, list(times), list(solutions), list(forcings)
+
+
+def compute_adjusted_dt(
+    dt_nominal: float, time_end: float | int, time_start: float = 0.0
+) -> tuple[float, int]:
+    """Adjust dt so that time_end is hit exactly.
+
+    Rounds to the nearest integer step count and recomputes dt.
+    The relative change in dt is O(1/n_steps), negligible in practice.
+    """
+    time_span = time_end - time_start
+    n_steps = max(1, round(time_span / dt_nominal))
+    dt_adjusted = time_span / n_steps
+    return dt_adjusted, n_steps

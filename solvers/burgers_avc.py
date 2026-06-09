@@ -75,7 +75,7 @@ class BurgersAVC(BurgersSGSP):
         self._corrector.eval()
 
         self.av_correction: float | NDArray = 0.0
-        self.av_history: list[float] = []
+        self.av_history: list[float | NDArray] = []
         self.energy_drain_history: list[float] = []
 
         self._dns_energy_spectrum: NDArray = np.asarray(
@@ -125,7 +125,7 @@ class BurgersAVC(BurgersSGSP):
         """Build the MDP state sₙ ∈ ℝ^(K+2) per eq. (2.8).
 
         sₙ = (Ê₁, …, Êₖ, ε⁻ⁿ, αₙ₋₁)
-        where Êₖ = E(k, t) / E_DNS(k) is the DNS-normalised spectral energy.
+        where Êₖ = E(k, t) / E_DNS(k) is the DNS-normalized spectral energy.
         For local mode αₙ₋₁ is the mean correction over all nodes.
 
         Returns

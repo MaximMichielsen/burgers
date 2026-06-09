@@ -1,0 +1,27 @@
+[INFO] - ============================================================
+[INFO] - RUN COMPLETE — id: 0609_112318
+[INFO] - Time Integration: Second Order Implicit Euler
+[INFO] - Simulation mode: dns
+[INFO] - ----------------------------------------
+[INFO] -   domain_timespan                1
+[INFO] -   domain_length                  1
+[INFO] -   dt                             5.0000e-03
+[INFO] -   n_time_steps                   200
+[INFO] -   viscosity                      1.0000e-02
+[INFO] -   n_nodes                        576
+[INFO] -   n_elements                     575
+[INFO] -   element_size                   1.7391e-03
+[INFO] -   boundary_condition_type        dirichlet
+[INFO] -   boundary_condition_value       0.0
+[INFO] -   max_iterations                 50
+[INFO] -   snapshot_factor                1
+[INFO] -   requested_snapshots            201 snapshots, first 5: [0.0, 0.005, 0.01, 0.015, 0.02]
+[INFO] -   forcing                        uniform_steady_forcing (from problems_and_configurations.forcings)
+[INFO] -   forcing_is_steady              True
+[INFO] -   problem_name                   raj_one
+[INFO] - ----------------------------------------
+[INFO] -   elemental_iterations      43.1840s ( 62.5%)
+[INFO] -   global_assembly           1.2259s (  1.8%)
+[INFO] -   linear_solve              22.7691s ( 33.0%)
+[INFO] -   TOTAL                     69.0697s
+[INFO] - ============================================================

@@ -138,7 +138,7 @@ def diagnose_sgsp_predictions(
             print(f"  {step_idx:>4}  (blow-up: {exc})")
             break
 
-        ann_correction_array = solver._compute_sgsp_contribution()
+        ann_correction_array = solver.compute_sgsp_contribution()
 
         if ann_correction_array is None:
             print(f"  {step_idx:>4}  {'(warmup)':>12}")
@@ -154,8 +154,8 @@ def diagnose_sgsp_predictions(
 
     print()
     print("  Normalisation stats from loaded model:")
-    print(f"    y_mean : {solver._y_mean}")
-    print(f"    y_std  : {solver._y_std}")
+    print(f"    y_mean : {solver.y_mean}")
+    print(f"    y_std  : {solver.y_std}")
     print()
     print("  Solver flags:")
     print(f"    clip_pusuluri  : {solver.clip_pusuluri}")

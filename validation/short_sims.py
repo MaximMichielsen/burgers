@@ -103,7 +103,7 @@ paths.projection.mkdir(parents=True, exist_ok=True)
 if pipeline.run_projection:
     if not paths.dns_data.exists():
         raise FileNotFoundError(f"DNS data not found at: {paths.dns_data}")
-    from ml.data_curation.projection import run_projection
+    from ml.data_assembly.projection import run_projection
     from utils.io_utils import read_data as _read
 
     _, dns_times, _, _ = _read(paths.dns_data)
@@ -122,7 +122,7 @@ if pipeline.run_projection:
 # ---------------------------------------------------------------------------
 
 if pipeline.run_training_assembly:
-    from ml.data_curation.training_data_assembly import run_training_data_assembly
+    from ml.data_assembly.training_data_assembly import run_training_data_assembly
 
     run_training_data_assembly(
         projection_path=paths.projection,
@@ -165,7 +165,7 @@ if pipeline.run_sgsp:
         forcing_fn=problem.external_forcing if not problem.forcing_steady else None,
     )
 
-    correction = solver_sgsp._compute_sgsp_contribution()
+    correction = solver_sgsp.compute_sgsp_contribution()
     net_convective = correction[:, 0] + correction[:, 1]
     net_temporal = correction[:, 2] + correction[:, 3]
     net_viscous = correction[:, 4]
@@ -183,7 +183,7 @@ if pipeline.run_sgsp:
     print(f"net temporal sum:   {net_temporal.sum():.4e}")
     print(f"net viscous sum:    {net_viscous.sum():.4e}")
 
-    from ml.data_curation.training_data_assembly import (
+    from ml.data_assembly.training_data_assembly import (
         compute_element_output_terms,
         compute_u_prime_field,
         compute_du_prime_dx,

@@ -1,5 +1,5 @@
-"""Entry point: DNS → LES → projection → training → SGSP → AVC pipeline."""
-import dataclasses
+"""Main execution file, runs all important blocks."""
+
 from dataclasses import replace
 from pathlib import Path
 
@@ -7,8 +7,8 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ml.data_curation.training_data_assembly import run_training_data_assembly
-from constants import RUNS_FOLDER, AVC_EPOCHS, SOLVER_DATA_FOLDER, DNS_SAVE_PATH
+from ml.data_assembly.training_data_assembly import run_training_data_assembly
+from constants import RUNS_FOLDER, SOLVER_DATA_FOLDER, DNS_SAVE_PATH
 from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problems, Problem
@@ -25,8 +25,8 @@ from utils.plot_utils import (
     plot_solution_comparison,
 )
 
-from ml.data_curation.a_priori_verificiation import run_apriori_verification
-from ml.data_curation.projection import run_projection
+from ml.data_assembly.a_priori_verificiation import run_apriori_verification
+from ml.data_assembly.projection import run_projection
 from ml.ml_agents.predictor import (
     plot_training_diagnostics,
     train_predictor,
@@ -41,8 +41,8 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 
 problem: Problem = Problems.raj_one
 
-problem_training = replace(problem, domain_timespan=0.5)
-
+problem_training = replace(problem, domain_timespan=1)
+AVC_EPOCHS: int = 100
 
 pipeline = PipelineConfig.all(manual_path=r"")
 
@@ -54,21 +54,25 @@ exclude_diss = False
 disc_cfg = DiscretisationConfig(
     n_nodes_les=9,
     temporal_refinement=1,
-    courant_les=0.04,
+    courant_les=0.01,
     domain_length=problem.domain_length,
     initial_condition_fn=problem.initial_condition,
 )
 
 PROJECTION_MODE: str = "l2"
-ALPHA_MAX: float = 1
-OUTPUT_SCALE: float = 1
+ALPHA_MAX: float = 5
+OUTPUT_SCALE: float = 2
 
 master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
 paths = RunPaths.from_master(master_path)
 paths.create_master()
 
-manual_load_dns = Path(r"")
-paths.dns_data = manual_load_dns / SOLVER_DATA_FOLDER / DNS_SAVE_PATH if manual_load_dns.exists() else paths.dns_data
+manual_load_dns: str = ""
+paths.dns_data = (
+    Path(manual_load_dns) / SOLVER_DATA_FOLDER / DNS_SAVE_PATH
+    if manual_load_dns != ""
+    else paths.dns_data
+)
 
 
 if __name__ == "__main__":

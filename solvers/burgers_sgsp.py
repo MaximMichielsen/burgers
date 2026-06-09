@@ -19,12 +19,6 @@ the research proposal (Eq. 2.8): raw E(k,t), dissipation rate, and the
 previous artificial viscosity α_{n-1}. On termination the buffer is flushed
 to a .npz archive and .txt summary regardless of exit reason.
 
-Output path structure
----------------------
-    solver_data/LES_ANN/<clip_variant>/
-        stable/     ← clean run
-        blown_up/   ← blown-up run
-
 References: Robijns (2019), Pusuluri (2021), Rajampeta (2022),
             Research Proposal Sec. 2.3.
 """
@@ -50,8 +44,8 @@ from constants import (
     BLOWUP_BUFFER_SIZE,
     BLOWUP_THRESHOLD,
 )
-from ml.data_curation.training_data_assembly import (
-    _gradient_basis_functions,
+from ml.data_assembly.training_data_assembly import (
+    gradient_basis_functions,
     build_input_stencil,
 )
 from ml.ml_agents.predictor import SGSPredictor, load_predictor
@@ -142,7 +136,7 @@ def diagnose_sgsp_predictions(
 
     for step_idx in range(n_steps):
         solver.advance_time_step()
-        sgsp_output = solver._compute_sgsp_contribution()
+        sgsp_output = solver.compute_sgsp_contribution()
 
         if sgsp_output is None:
             print(f"Step {step_idx:03d}: correction=None (warmup)")
@@ -154,13 +148,13 @@ def diagnose_sgsp_predictions(
 
         print(
             f"Step {step_idx:03d}: "
-            f"||correction||={global_norm:.3e} | "
+            f"||correction||={float(global_norm):.3e}"
             + " | ".join(f"{name}={val:.3e}" for name, val in zip(col_names, col_norms))
         )
 
     # Also print normalization stats for context
-    print(f"\ny_mean: {solver._y_mean}")
-    print(f"y_std:  {solver._y_std}")
+    print(f"\ny_mean: {solver.y_mean}")
+    print(f"y_std:  {solver.y_std}")
 
 
 # ---------------------------------------------------------------------------
@@ -211,8 +205,8 @@ class BurgersSGSP(BurgersBase):
         norm_data = np.load(sgsp_cfg.normalization_path)
         self._x_mean: NDArray = norm_data["X_mean"].astype(np.float32)
         self._x_std: NDArray = norm_data["X_std"].astype(np.float32)
-        self._y_mean: NDArray = norm_data["y_mean"].astype(np.float32)
-        self._y_std: NDArray = norm_data["y_std"].astype(np.float32)
+        self.y_mean: NDArray = norm_data["y_mean"].astype(np.float32)
+        self.y_std: NDArray = norm_data["y_std"].astype(np.float32)
 
         self._u_bar_history: list[NDArray] = []
         self._du_bar_dt_history: list[NDArray] = []
@@ -220,14 +214,14 @@ class BurgersSGSP(BurgersBase):
 
         self._sgsp_warmup_steps: int = WARMUP_STEPS
         self._step_count: int = 0
-        self._grad_basis: NDArray = _gradient_basis_functions(self.element_size)
+        self._grad_basis: NDArray = gradient_basis_functions(self.element_size)
 
         if self.clip_pusuluri:
             self._y_lower_bound: NDArray = (
-                self._y_mean - sgsp_cfg.sigma_multiplier * self._y_std
+                self.y_mean - sgsp_cfg.sigma_multiplier * self.y_std
             )
             self._y_upper_bound: NDArray = (
-                self._y_mean + sgsp_cfg.sigma_multiplier * self._y_std
+                self.y_mean + sgsp_cfg.sigma_multiplier * self.y_std
             )
 
         self._blowup_threshold: float = BLOWUP_THRESHOLD
@@ -405,7 +399,7 @@ class BurgersSGSP(BurgersBase):
 
     def nr_iteration(self, solution: NDArray) -> NDArray:
         """NR iteration with frozen ANN correction added to the global residual."""
-        sgsp_correction: NDArray | None = self._compute_sgsp_contribution()
+        sgsp_correction: NDArray | None = self.compute_sgsp_contribution()
 
         solution_n = solution.copy()
         solution_k = solution.copy()
@@ -470,7 +464,7 @@ class BurgersSGSP(BurgersBase):
     #  SGS_ANN helpers
     # ------------------------------------------------------------------ #
 
-    def _compute_sgsp_contribution(self) -> NDArray | None:
+    def compute_sgsp_contribution(self) -> NDArray | None:
         """Build element input stencils and run a batched ANN forward pass.
 
         Returns (n_elements, 5) array of interaction terms, or None during warm-up.
@@ -503,7 +497,7 @@ class BurgersSGSP(BurgersBase):
         with torch.no_grad():
             y_norm = self._predictor(torch.from_numpy(x_batch_norm)).numpy()
 
-        y_phys = y_norm * self._y_std + self._y_mean
+        y_phys = y_norm * self.y_std + self.y_mean
 
         if self.clip_pusuluri:
             y_phys = np.clip(y_phys, self._y_lower_bound, self._y_upper_bound)
@@ -647,10 +641,10 @@ class BurgersSGSP(BurgersBase):
             f"Max |u| at end     : {np.max(np.abs(final_amp)):.4e}"
             if final_amp is not None
             else "Max |u| at end     : N/A",
-            f"NaN in u           : {np.any(np.isnan(final_amp))}"
+            f"NaN in u           : {bool(np.any(np.isnan(final_amp)))}"
             if final_amp is not None
             else "",
-            f"Inf in u           : {np.any(np.isinf(final_amp))}"
+            f"Inf in u           : {bool(np.any(np.isinf(final_amp)))}"
             if final_amp is not None
             else "",
             f"Final residual norm: {buf.residual_norms_last[-1]:.4e}"
@@ -861,4 +855,7 @@ class BurgersSGSP(BurgersBase):
         save_path = self.master_path / f"{filename_tag}.png"
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         logger.info("Blow-up diagnostic plot saved to %s", save_path)
-        plt.show() if show_plot else plt.close(fig)
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)

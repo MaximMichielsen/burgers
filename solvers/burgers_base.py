@@ -2,10 +2,12 @@
 
 Simulation modes
 ----------------
-dns      - Pure Galerkin, no SGS model.
-no_model - Same as dns; use when solver settings are coarse (LES-like).
-les      - Galerkin + analytic VMS/SGS stabilisation (τ-based).
-sgsp      - Galerkin + ANN-predicted SGS corrections; analytic VMS disabled.
+dns             - Pure Galerkin, no SGS model.
+no_model        - Same as dns; use when solver settings are coarse (LES-like).
+les             - Galerkin + analytic VMS/SGS stabilisation (τ-based).
+sgsp            - Galerkin + ANN-predicted SGS corrections (SGSP); analytic VMS disabled.
+avc, avcg, acvl - Galerkin + ANN-predicted SGS corrections (SGSP); analytical VMS disabled;
+                  ANN-predicted AV corrections (AVC)
 """
 
 import csv
@@ -32,22 +34,9 @@ from constants import (
 )
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
+from utils.io_utils import compute_adjusted_dt
 
 logger = logging.getLogger(__name__)
-
-
-def compute_adjusted_dt(
-    dt_nominal: float, time_end: float | int, time_start: float = 0.0
-) -> tuple[float, int]:
-    """Adjust dt so that time_end is hit exactly.
-
-    Rounds to the nearest integer step count and recomputes dt.
-    The relative change in dt is O(1/n_steps), negligible in practice.
-    """
-    time_span = time_end - time_start
-    n_steps = max(1, round(time_span / dt_nominal))
-    dt_adjusted = time_span / n_steps
-    return dt_adjusted, n_steps
 
 
 class BurgersBase:
@@ -170,10 +159,6 @@ class BurgersBase:
         self.logger = self._setup_logger(
             suppress_file_logging=disc_cfg.suppress_file_logging
         )
-
-    # ------------------------------------------------------------------ #
-    #  Main solver loop
-    # ------------------------------------------------------------------ #
 
     def run_simulation(self) -> None:
         """Run the full time-marching simulation and write output."""
@@ -598,15 +583,12 @@ class BurgersBase:
         return energy
 
     def compute_dissipation(self, solution: NDArray) -> float:
-        """Integrate ν(∂u/∂x)² over the domain via Gaussian quadrature."""
+        """Integrate ν(∂u/∂x)² over the domain."""
         dissipation = 0.0
-        jacobian = self.element_size / 2
         dn_dx = self.reference_gradient_basis_functions()
-        points, weights = self.gauss_legendre(2)
         for element in self.elements:
             u_e = solution[element]
-            for g_p, g_w in zip(points, weights):
-                dissipation += self.viscosity * g_w * abs(jacobian) * (dn_dx @ u_e) ** 2
+            dissipation += self.viscosity * self.element_size * (dn_dx @ u_e) ** 2
         return dissipation
 
     def compute_energy_spectrum(self, solution: NDArray) -> tuple[NDArray, NDArray]:
