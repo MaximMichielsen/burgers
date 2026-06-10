@@ -129,7 +129,8 @@ def plot_solution_comparison(
     figsize: tuple = (16, 9),
     filename: str = "comparison_solvers.png",
     dpi: int = 150,
-) -> tuple[plt.Figure, plt.Axes]:
+    show_fig: bool = False,
+) -> None:
     """Plot and save a comparison of multiple solver solutions."""
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -166,11 +167,12 @@ def plot_solution_comparison(
     ax.grid(True, which="both", linestyle=":", alpha=0.5)
     ax.legend(loc="upper left")
     plt.tight_layout()
-
     save_path = output_path / filename if output_path.is_dir() else output_path
     plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
-    plt.show()
-    return fig, ax
+    if show_fig:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def plot_solutions_from_directory_animated(

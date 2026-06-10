@@ -446,8 +446,9 @@ class BurgersAVC(BurgersSGSP):
                 alpha_spatial,
                 color=colors[plot_idx % len(colors)],
                 linewidth=1.5,
+                linestyle=":",
                 marker="o",
-                markersize=4,
+                markersize=3,
                 label=f"t = {time_val:.3f}",
             )
 

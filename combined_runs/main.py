@@ -1,5 +1,3 @@
-"""Main execution file, runs all important blocks."""
-
 from pathlib import Path
 
 import numpy as np
@@ -33,50 +31,51 @@ from ml.ml_agents.predictor import (
 from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_sgsp import BurgersSGSP
 
-
 CURRENT_DIR = Path(__file__).parent.resolve()
 
-# -------------------- Problem and pipeline configuration ------------------------------ #
 
-problem: Problem = Problems.raj_one
+def run_pipeline(
+    problem: Problem,
+    n_nodes_les: int = 9,
+    base_dir: Path | None = None,
+) -> None:
+    """Run the full pipeline for a single problem."""
+    disc_cfg = DiscretisationConfig(
+        n_nodes_les=n_nodes_les,
+        temporal_refinement=1,
+        courant_les=0.01,
+        domain_length=problem.domain_length,
+        initial_condition_fn=problem.initial_condition,
+    )
 
-problem_training = problem
+    pipeline = PipelineConfig.all(manual_path=r"")
+    pipeline.clip_pusuluri = True
+    pipeline.clip_rajampeta = False
 
+    exclude_diss = True
+    PROJECTION_MODE: str = "l2"
+    ALPHA_MAX: float = 5
+    OUTPUT_SCALE: float = 1
+    AVC_EPOCHS: int = 20
+    N_SKIP: int = 10
 
-pipeline = PipelineConfig.all(manual_path=r"")
+    current_dir = base_dir or Path(__file__).parent.resolve()
 
+    master_path = (
+        current_dir / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
+    )
+    paths = RunPaths.from_master(master_path)
+    paths.create_master()
 
-pipeline.clip_pusuluri = True
-pipeline.clip_rajampeta = False
-exclude_diss = True
+    manual_load_dns: str = ""
+    paths.dns_data = (
+        Path(manual_load_dns) / SOLVER_DATA_FOLDER / DNS_SAVE_PATH
+        if manual_load_dns != ""
+        else paths.dns_data
+    )
 
-disc_cfg = DiscretisationConfig(
-    n_nodes_les=9,
-    temporal_refinement=1,
-    courant_les=0.01,
-    domain_length=problem.domain_length,
-    initial_condition_fn=problem.initial_condition,
-)
+    problem_training = problem
 
-PROJECTION_MODE: str = "l2"
-ALPHA_MAX: float = 5
-OUTPUT_SCALE: float = 1
-AVC_EPOCHS: int = 20
-N_SKIP: int = 10
-
-master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
-paths = RunPaths.from_master(master_path)
-paths.create_master()
-
-manual_load_dns: str = ""
-paths.dns_data = (
-    Path(manual_load_dns) / SOLVER_DATA_FOLDER / DNS_SAVE_PATH
-    if manual_load_dns != ""
-    else paths.dns_data
-)
-
-
-if __name__ == "__main__":
     # --------------------------------------- DNS --------------------------------------- #
 
     if pipeline.run_dns:
@@ -404,3 +403,7 @@ if __name__ == "__main__":
             domain_length=problem.domain_length,
             projection_dir=paths.projection,
         )
+
+
+if __name__ == "__main__":
+    run_pipeline(problem=Problems.raj_one)

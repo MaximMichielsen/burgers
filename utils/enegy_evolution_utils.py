@@ -72,9 +72,12 @@ def _compute_energy_spectrum(
 
 
 def _smooth_series(values: NDArray, window: int = 15) -> NDArray:
-    """Rolling mean with edge-preserving same-length output."""
+    """Rolling mean with edge-replication padding to avoid boundary artifacts."""
+    pad_width = window // 2
+    padded = np.pad(values, pad_width, mode="edge")
     kernel = np.ones(window) / window
-    return np.convolve(values, kernel, mode="same")
+    smoothed = np.convolve(padded, kernel, mode="valid")
+    return smoothed[: len(values)]
 
 
 # Labels for solvers that exhibit oscillatory SGSP-coupled behaviour.
