@@ -38,7 +38,7 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 
-problem: Problem = Problems.raj_one
+problem: Problem = Problems.raj_two
 
 problem_training = problem
 
@@ -60,9 +60,11 @@ disc_cfg = DiscretisationConfig(
 
 PROJECTION_MODE: str = "l2"
 ALPHA_MAX: float = 10
-OUTPUT_SCALE: float = 5
+OUTPUT_SCALE: float = 1
 AVC_EPOCHS: int = 50
 N_SKIP: int = 5
+
+DEBUG_ONLINE_TRAINING: bool = False
 
 master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
 paths = RunPaths.from_master(master_path)
@@ -264,6 +266,9 @@ if __name__ == "__main__":
                 output_dir=paths.model_output / "avcg_checkpoints",
             )
             trainer_global.train(n_episodes=AVC_EPOCHS)
+
+            if DEBUG_ONLINE_TRAINING:
+                quit()
 
         # --------------------------------------- LAVC -------------------------------------- #
         avc_cfg_local = AVCConfig(

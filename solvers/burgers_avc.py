@@ -126,15 +126,12 @@ class BurgersAVC(BurgersSGSP):
     # ------------------------------------------------------------------ #
 
     def create_avc_input_stencil(self) -> NDArray:
-        """Build the MDP state sₙ ∈ ℝ^(K+2) per eq. (2.8).
+        """Build the MDP state s_n in R^(K+2) per eq. (2.8), revised.
 
-        sₙ = (Ê₁, …, Êₖ, ε⁻ⁿ, αₙ₋₁)
-        where Êₖ = E(k, t) / E_DNS(k) is the DNS-normalized spectral energy.
-        For local mode αₙ₋₁ is the mean correction over all nodes.
-
-        Returns
-        -------
-        state_vector : float32 array of shape (K+2,).
+        s_n = (Ehat_1, ..., Ehat_K, eps^-n, alpha_{n-1})
+        where Ehat_k = E_LES(k,t) / sum_k(E_LES(k,t)) is the normalised
+        LES spectral energy fraction (shape of the spectrum, not absolute
+        magnitude), bounded in [0, 1] by construction.
         """
         if not np.all(np.isfinite(self.solution)):
             return np.zeros(self._n_wavenumber_bins + 2, dtype=np.float32)
@@ -145,10 +142,8 @@ class BurgersAVC(BurgersSGSP):
         )
         spectrum_k = positive_spectrum[: self._n_wavenumber_bins].astype(np.float32)
 
-        dns_safe = np.where(
-            self._dns_energy_spectrum > 0.0, self._dns_energy_spectrum, 1.0
-        )
-        normalised_spectrum = spectrum_k / dns_safe
+        total_les_energy = float(spectrum_k.sum())
+        normalised_spectrum = spectrum_k / max(total_les_energy, 1e-12)
 
         dissipation_val = np.float32(
             self.dissipation_history[-1] if self.dissipation_history else 0.0
@@ -369,20 +364,26 @@ class BurgersAVC(BurgersSGSP):
             logger.warning("plot_avc_contributions: no AV history to plot, skipping.")
             return
 
-        n_plot_points = min(len(self.time_steps), len(self.av_history)) - self._sgsp_warmup_steps
+        n_plot_points = (
+            min(len(self.time_steps), len(self.av_history)) - self._sgsp_warmup_steps
+        )
         if n_plot_points == 0:
             logger.warning("plot_avc_contributions: no data points to plot, skipping.")
             return
 
-        time_axis = self.time_steps[self._sgsp_warmup_steps + self._avc_cfg.n_skip_steps : n_plot_points]
+        time_axis = self.time_steps[
+            self._sgsp_warmup_steps + self._avc_cfg.n_skip_steps : n_plot_points
+        ]
         av_raw = self.av_history[:n_plot_points]
         av_array = np.array(
             [np.mean(a) if isinstance(a, np.ndarray) else a for a in av_raw],
             dtype=np.float64,
         )
-        av_array = av_array[self._sgsp_warmup_steps + self._avc_cfg.n_skip_steps:]
+        av_array = av_array[self._sgsp_warmup_steps + self._avc_cfg.n_skip_steps :]
         drain_array = np.cumsum(self.energy_drain_history[:n_plot_points])
-        drain_array = drain_array[self._sgsp_warmup_steps + self._avc_cfg.n_skip_steps:]
+        drain_array = drain_array[
+            self._sgsp_warmup_steps + self._avc_cfg.n_skip_steps :
+        ]
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 

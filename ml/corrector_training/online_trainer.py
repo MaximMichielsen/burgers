@@ -488,6 +488,11 @@ class SACAgent:
         noisy_action = action_tensor.numpy() + np.random.normal(
             0.0, noise_std, size=action_tensor.shape
         )
+        logger.debug("Selecting action:"
+                       f"| state tensor: {state_tensor} "
+                       f"| action_tensor: {action_tensor} "
+                       f"\n noisy action: {noisy_action}"
+)
         return np.clip(noisy_action, 0.0, self.policy.alpha_max).astype(np.float32)
 
     def update(self, replay_buffer: ReplayBuffer) -> tuple[float, float, float]:
@@ -555,6 +560,14 @@ class SACAgent:
         ):
             param_target.data.mul_(1.0 - tau_val)
             param_target.data.add_(tau_val * param_online.data)
+
+        logger.debug("Within agent.update()"
+                       f"\nq next_min: {q_next_min} "
+                       f"next_actions_batch: {next_actions_batch} "
+                       f"target_noise: {target_noise} "
+                       f"bellman target: {bellman_target} "
+                       f"q1_pred_val: {q1_pred_val} "
+                       f"q2_pred_val: {q2_pred_val}")
 
         return (
             float(critic_loss_val.item()),
@@ -647,6 +660,13 @@ class OnlineAVTrainer:
                     alpha_action_val
                 )
 
+                logger.debug("Online training step:"
+                    f"\nCurrent state: {state_current} "
+                    f"| Action: {alpha_action_val} "
+                    f"| Reward: {reward_val} "
+                    f"| next state: {next_state_array}"
+                )
+
                 self._replay_buffer.push(
                     Transition(
                         state=state_current,
@@ -672,6 +692,12 @@ class OnlineAVTrainer:
                     for _ in range(self._config.updates_per_step):
                         critic_loss_val, actor_loss_val, alpha_temp_val = (
                             self._agent.update(self._replay_buffer)
+                        )
+                        logger.debug(
+                            "Online training - Updating agent:"
+                            f"\ncritic loss: {critic_loss_val} "
+                            f"actor loss: {actor_loss_val} "
+                            f"alpha temp: {alpha_temp_val}"
                         )
                         self._stats.critic_losses.append(critic_loss_val)
                         self._stats.actor_losses.append(actor_loss_val)
