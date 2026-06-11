@@ -24,7 +24,7 @@ PROJECTION_GAUSS_POINTS: int = 5
 
 DNS_SPATIAL_FACTOR: float = 0.5
 DNS_POINTS_FACTOR: float = 1.1
-DNS_TO_LES_RATIO: int = 2**6
+DNS_TO_LES_RATIO: int = 2**5
 
 # ---------------------------------------------------------------------------
 # Predictor agent hyperparameters

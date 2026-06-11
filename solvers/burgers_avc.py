@@ -99,9 +99,12 @@ class BurgersAVC(BurgersSGSP):
 
     def advance_time_step(self) -> bool:
         """Query policy every n_skip_steps, then advance one LES step."""
-        if self.use_policy_inference:
+        sgsp_is_warmed_up = self._step_counter >= self._sgsp_warmup_steps
+        if self.use_policy_inference and sgsp_is_warmed_up:
             if self._step_counter % self._avc_cfg.n_skip_steps == 0:
                 self._add_avc_correction()
+        elif not sgsp_is_warmed_up:
+            self.av_correction = 0.0
 
         self._step_counter += 1
         step_ok = super().advance_time_step()
@@ -366,18 +369,20 @@ class BurgersAVC(BurgersSGSP):
             logger.warning("plot_avc_contributions: no AV history to plot, skipping.")
             return
 
-        n_plot_points = min(len(self.time_steps), len(self.av_history))
+        n_plot_points = min(len(self.time_steps), len(self.av_history)) - self._sgsp_warmup_steps
         if n_plot_points == 0:
             logger.warning("plot_avc_contributions: no data points to plot, skipping.")
             return
 
-        time_axis = self.time_steps[1 : n_plot_points + 1]
+        time_axis = self.time_steps[self._sgsp_warmup_steps + self._avc_cfg.n_skip_steps : n_plot_points]
         av_raw = self.av_history[:n_plot_points]
         av_array = np.array(
             [np.mean(a) if isinstance(a, np.ndarray) else a for a in av_raw],
             dtype=np.float64,
         )
+        av_array = av_array[self._sgsp_warmup_steps + self._avc_cfg.n_skip_steps:]
         drain_array = np.cumsum(self.energy_drain_history[:n_plot_points])
+        drain_array = drain_array[self._sgsp_warmup_steps + self._avc_cfg.n_skip_steps:]
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 

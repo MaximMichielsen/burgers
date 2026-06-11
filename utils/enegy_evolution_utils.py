@@ -159,7 +159,7 @@ def plot_energy_comparison(
         "DNS": (dns_dir, "gray", "-", 1.8),
         "LES-A": (les_a_dir, "tab:orange", "--", 1.4),
         "LES-NM": (les_nm_dir, "gold", "-.", 1.4),
-        "LES-SGSP": (les_sgsp_dir, "salmon", "-", 1.8),
+        "LES-SGSP": (les_sgsp_dir, "crimson", "-", 1.8),
         "LES-AVCG": (les_avcg_dir, "royalblue", "-", 1.8),
         "LES-AVCL": (les_avcl_dir, "blueviolet", "--", 1.8),
     }

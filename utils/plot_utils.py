@@ -84,7 +84,7 @@ def build_plot_configs(
         SolutionConfig(
             data_path=les_sgsp_data_path,
             label="LES - SGSP",
-            color="salmon",
+            color="crimson",
             marker="d",
             mesh=disc_cfg.mesh_les,
         ),

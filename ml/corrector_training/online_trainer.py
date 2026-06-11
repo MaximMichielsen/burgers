@@ -253,7 +253,6 @@ class BurgersAVCEnvironment:
 
         self.exclude_diss_from_reward = avc_cfg.exclude_diss_from_reward
 
-        self._solver: BurgersAVC
         self._total_les_steps: int = 0
 
         _, self._n_time_steps = compute_adjusted_dt(
@@ -265,8 +264,6 @@ class BurgersAVCEnvironment:
         self.state_dim: int = self.n_wavenumber_bins + 2
 
         self.correction_mode: str = avc_cfg.correction_mode
-        self._n_skip_steps: int = avc_cfg.n_skip_steps
-
         self._n_output_nodes: int = (
             1 if avc_cfg.correction_mode == "global" else disc_cfg.n_nodes_les
         )
@@ -309,7 +306,7 @@ class BurgersAVCEnvironment:
             )
 
         blown_up = False
-        for _ in range(self._n_skip_steps):
+        for _ in range(self._sac_config.n_skip_steps):
             step_ok = self._solver.advance_time_step()
             self._total_les_steps += 1
             if not step_ok:

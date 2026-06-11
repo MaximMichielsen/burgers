@@ -1,4 +1,5 @@
 """Run the full pipeline for all Rajampeta problems."""
+
 from pathlib import Path
 
 from problems_and_configurations.problems import Problems

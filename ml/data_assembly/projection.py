@@ -193,7 +193,7 @@ def verify_global_projection(
         u_projected,
         "x",
         label=f"LES (N={n_les})" if n_les else "LES",
-        color="lightgreen",
+        color="orange",
         markersize=8,
     )
     ax.plot(mesh_les, u_projected, "--", color="orange", alpha=0.7)

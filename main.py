@@ -53,16 +53,16 @@ exclude_diss = True
 disc_cfg = DiscretisationConfig(
     n_nodes_les=9,
     temporal_refinement=1,
-    courant_les=0.01,
+    courant_les=0.04,
     domain_length=problem.domain_length,
     initial_condition_fn=problem.initial_condition,
 )
 
 PROJECTION_MODE: str = "l2"
-ALPHA_MAX: float = 5
-OUTPUT_SCALE: float = 1
-AVC_EPOCHS: int = 20
-N_SKIP: int = 10
+ALPHA_MAX: float = 10
+OUTPUT_SCALE: float = 5
+AVC_EPOCHS: int = 50
+N_SKIP: int = 5
 
 master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
 paths = RunPaths.from_master(master_path)
@@ -86,6 +86,7 @@ if __name__ == "__main__":
             simulation_mode="dns",
             master_path=paths.dns_data,
         )
+        solver_dns.print_configuration()
         solver_dns.run_simulation()
         solver_dns.post_processing()
 
@@ -154,6 +155,7 @@ if __name__ == "__main__":
             dataset_label="Validation",
             n_elements=disc_cfg.n_elements_les,
         )
+
         sgsp_cfg = SGSPConfig(
             sgsp_model_path=paths.sgsp_model,
             normalization_path=paths.normalization,
