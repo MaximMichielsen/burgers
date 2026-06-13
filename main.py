@@ -51,12 +51,12 @@ pipeline = PipelineConfig.all(manual_path=r"")
 pipeline.clip_pusuluri = True
 pipeline.clip_rajampeta = False
 exclude_diss = True
-set_off_predictor = True
+set_off_predictor = False
 
 disc_cfg = DiscretisationConfig(
     n_nodes_les=9,
     temporal_refinement=1,
-    courant_les=0.04,
+    courant_les=0.01,
     domain_length=problem.domain_length,
     initial_condition_fn=problem.initial_condition,
 )
