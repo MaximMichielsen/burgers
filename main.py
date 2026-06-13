@@ -38,7 +38,7 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 
-problem: Problem = Problems.raj_two
+problem: Problem = Problems.raj_one
 
 problem_training = problem
 
