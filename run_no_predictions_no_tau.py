@@ -40,7 +40,7 @@ matplotlib.use('Agg')
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 
-problem: Problem = Problems.pipeline_test
+problem: Problem = Problems.raj_one
 
 problem_training = problem
 
