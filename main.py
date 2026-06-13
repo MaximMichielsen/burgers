@@ -165,6 +165,7 @@ if __name__ == "__main__":
             blown_up_path=paths.les_sgsp_data / "blown_up",
             clip_pusuluri=pipeline.clip_pusuluri,
             clip_rajampeta=pipeline.clip_rajampeta,
+            set_off_predictor=set_off_predictor
         )
         solver_sgsp = BurgersSGSP(
             problem=problem,

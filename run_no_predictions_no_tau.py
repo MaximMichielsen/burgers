@@ -165,7 +165,7 @@ if __name__ == "__main__":
             blown_up_path=paths.les_sgsp_data / "blown_up",
             clip_pusuluri=pipeline.clip_pusuluri,
             clip_rajampeta=pipeline.clip_rajampeta,
-
+            set_off_predictions=set_off_predictor,
         )
         solver_sgsp = BurgersSGSP(
             problem=problem,
@@ -173,7 +173,7 @@ if __name__ == "__main__":
             simulation_mode="sgsp",
             master_path=paths.les_sgsp_data,
             sgsp_cfg=sgsp_cfg,
-            set_off_predictions=True,
+
         )
         solver_sgsp.run_simulation()
         solver_sgsp.post_processing()
@@ -218,7 +218,7 @@ if __name__ == "__main__":
             blown_up_path=paths.les_avc_data / "blown_up",
             clip_pusuluri=pipeline.clip_pusuluri,
             clip_rajampeta=pipeline.clip_rajampeta,
-            set_off_predictor=True
+            set_off_predictor=set_off_predictor
         )
         dns_reference_schedule = DNSReferenceSchedule.from_projection_directory(
             projection_dir=paths.projection,
