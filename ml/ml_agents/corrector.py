@@ -23,7 +23,7 @@ def load_corrector_training_data(data_path: Path) -> dict:
 _VALID_CORRECTION_MODES = frozenset({"global", "local"})
 
 
-class AVCorrector(nn.Module):
+class AVController(nn.Module):
     """MLP policy πθ : S → A for the Global AV corrector.
 
     Maps state sₙ = (Ê₁..Êₖ, ε⁻ⁿ, αₙ₋₁) ∈ ℝ^(K+2) to a scalar
@@ -102,7 +102,7 @@ class AVCorrector(nn.Module):
 # ---------------------------------------------------------------------------
 
 
-def save_corrector(model: AVCorrector, save_path: Path) -> None:
+def save_corrector(model: AVController, save_path: Path) -> None:
     torch.save(
         {
             "model_state_dict": model.state_dict(),
@@ -117,9 +117,9 @@ def save_corrector(model: AVCorrector, save_path: Path) -> None:
     )
 
 
-def load_corrector(model_path: Path) -> AVCorrector:
+def load_corrector(model_path: Path) -> AVController:
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
-    model = AVCorrector(
+    model = AVController(
         alpha_max=checkpoint["alpha_max"],
         n_wavenumber_bins=checkpoint["n_wavenumber_bins"],
         hidden_dim=checkpoint["hidden_dim"],

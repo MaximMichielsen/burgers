@@ -1,5 +1,8 @@
+"""Main execution file, runs all important blocks."""
+
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 import torch
 from numpy.typing import NDArray
@@ -31,51 +34,52 @@ from ml.ml_agents.predictor import (
 from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_sgsp import BurgersSGSP
 
+
 CURRENT_DIR = Path(__file__).parent.resolve()
+matplotlib.use('Agg')
+
+# -------------------- Problem and pipeline configuration ------------------------------ #
+
+problem: Problem = Problems.pipeline_test
+
+problem_training = problem
 
 
-def run_pipeline(
-    problem: Problem,
-    n_nodes_les: int = 9,
-    base_dir: Path | None = None,
-) -> None:
-    """Run the full pipeline for a single problem."""
-    disc_cfg = DiscretisationConfig(
-        n_nodes_les=n_nodes_les,
-        temporal_refinement=1,
-        courant_les=0.01,
-        domain_length=problem.domain_length,
-        initial_condition_fn=problem.initial_condition,
-    )
+pipeline = PipelineConfig.all(manual_path=r"")
 
-    pipeline = PipelineConfig.all(manual_path=r"")
-    pipeline.clip_pusuluri = True
-    pipeline.clip_rajampeta = False
 
-    exclude_diss = True
-    PROJECTION_MODE: str = "l2"
-    ALPHA_MAX: float = 5
-    OUTPUT_SCALE: float = 1
-    AVC_EPOCHS: int = 20
-    N_SKIP: int = 10
+pipeline.clip_pusuluri = True
+pipeline.clip_rajampeta = False
+exclude_diss = True
+set_off_predictor = True
 
-    current_dir = base_dir or Path(__file__).parent.resolve()
+disc_cfg = DiscretisationConfig(
+    n_nodes_les=9,
+    temporal_refinement=1,
+    courant_les=0.04,
+    domain_length=problem.domain_length,
+    initial_condition_fn=problem.initial_condition,
+)
 
-    master_path = (
-        current_dir / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
-    )
-    paths = RunPaths.from_master(master_path)
-    paths.create_master()
+PROJECTION_MODE: str = "nodal"
+ALPHA_MAX: float = 10
+OUTPUT_SCALE: float = 1
+AVC_EPOCHS: int = 50
+N_SKIP: int = 5
 
-    manual_load_dns: str = ""
-    paths.dns_data = (
-        Path(manual_load_dns) / SOLVER_DATA_FOLDER / DNS_SAVE_PATH
-        if manual_load_dns != ""
-        else paths.dns_data
-    )
+master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
+paths = RunPaths.from_master(master_path)
+paths.create_master()
 
-    problem_training = problem
+manual_load_dns: str = ""
+paths.dns_data = (
+    Path(manual_load_dns) / SOLVER_DATA_FOLDER / DNS_SAVE_PATH
+    if manual_load_dns != ""
+    else paths.dns_data
+)
 
+
+if __name__ == "__main__":
     # --------------------------------------- DNS --------------------------------------- #
 
     if pipeline.run_dns:
@@ -85,6 +89,7 @@ def run_pipeline(
             simulation_mode="dns",
             master_path=paths.dns_data,
         )
+        solver_dns.print_configuration()
         solver_dns.run_simulation()
         solver_dns.post_processing()
 
@@ -153,6 +158,7 @@ def run_pipeline(
             dataset_label="Validation",
             n_elements=disc_cfg.n_elements_les,
         )
+
         sgsp_cfg = SGSPConfig(
             sgsp_model_path=paths.sgsp_model,
             normalization_path=paths.normalization,
@@ -308,7 +314,7 @@ def run_pipeline(
             solver_avc_global = BurgersAVC(
                 problem,
                 disc_cfg,
-                "avc",
+                "les",
                 paths.les_avc_data / "global",
                 sgsp_cfg_avc,
                 avc_cfg_global,
@@ -322,7 +328,7 @@ def run_pipeline(
             solver_avc_local = BurgersAVC(
                 problem,
                 disc_cfg,
-                "avc",
+                "les",
                 paths.les_avc_data / "local",
                 sgsp_cfg_avc,
                 avc_cfg_local,
@@ -403,7 +409,3 @@ def run_pipeline(
             domain_length=problem.domain_length,
             projection_dir=paths.projection,
         )
-
-
-if __name__ == "__main__":
-    run_pipeline(problem=Problems.raj_one)

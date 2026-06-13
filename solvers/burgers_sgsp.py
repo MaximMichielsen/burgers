@@ -186,6 +186,7 @@ class BurgersSGSP(BurgersBase):
         master_path: Path,
         sgsp_cfg: SGSPConfig,
         snapshot_factor: int | None = 1,
+        set_off_predictions: bool = False
     ) -> None:
         super().__init__(
             problem, disc_cfg, simulation_mode, master_path, snapshot_factor
@@ -233,6 +234,8 @@ class BurgersSGSP(BurgersBase):
         self._last_sgsp_correction: NDArray | None = None
 
         self._blown_up_path: Path = sgsp_cfg.blown_up_path
+
+        self.set_off_predictions = set_off_predictions
 
     # ------------------------------------------------------------------ #
     #  run_simulation — blow-up guard around parent loop
@@ -431,7 +434,7 @@ class BurgersSGSP(BurgersBase):
                     elemental_residuals, elemental_jacobians
                 )
 
-            if sgsp_correction is not None:
+            if sgsp_correction is not None and not self.set_off_predictions:
                 global_residual = self._add_sgsp_contribution_to_residual(
                     global_residual, sgsp_correction
                 )

@@ -51,6 +51,7 @@ pipeline = PipelineConfig.all(manual_path=r"")
 pipeline.clip_pusuluri = True
 pipeline.clip_rajampeta = False
 exclude_diss = True
+set_off_predictor = True
 
 disc_cfg = DiscretisationConfig(
     n_nodes_les=9,
@@ -190,7 +191,7 @@ if __name__ == "__main__":
             SACConfig,
         )
         from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
-        from ml.ml_agents.corrector import AVCorrector, save_corrector
+        from ml.ml_agents.corrector import AVController, save_corrector
 
         projected_solutions = np.load(paths.projection / "solutions_projection.npy")
         dns_solution_on_les = projected_solutions[0]
@@ -237,7 +238,7 @@ if __name__ == "__main__":
         )
         # --------------------------------------- GAVC -------------------------------------- #
         if pipeline.train_avc_online:
-            av_corrector_global = AVCorrector(
+            av_corrector_global = AVController(
                 alpha_max=ALPHA_MAX * problem.viscosity,
                 output_scale=problem.viscosity * OUTPUT_SCALE,
                 n_wavenumber_bins=n_wavenumber_bins,
@@ -277,7 +278,7 @@ if __name__ == "__main__":
             exclude_diss_from_reward=exclude_diss,
         )
         if pipeline.train_avc_online:
-            av_corrector_local = AVCorrector(
+            av_corrector_local = AVController(
                 alpha_max=ALPHA_MAX * problem.viscosity,
                 output_scale=problem.viscosity * OUTPUT_SCALE,
                 n_wavenumber_bins=n_wavenumber_bins,

@@ -35,7 +35,7 @@ import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-from ml.ml_agents.corrector import AVCorrector, load_corrector
+from ml.ml_agents.corrector import AVController, load_corrector
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
@@ -73,7 +73,7 @@ class BurgersAVC(BurgersSGSP):
         self._avc_cfg = avc_cfg
 
         self._avc_model_path: Path = avc_cfg.avc_model_path
-        self.corrector: AVCorrector = load_corrector(avc_cfg.avc_model_path)
+        self.corrector: AVController = load_corrector(avc_cfg.avc_model_path)
         self.corrector.eval()
 
         self.av_correction: float | NDArray = 0.0

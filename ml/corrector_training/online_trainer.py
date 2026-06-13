@@ -53,7 +53,7 @@ from numpy.typing import NDArray
 from torch import Tensor
 
 from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
-from ml.ml_agents.corrector import AVCorrector, save_corrector
+from ml.ml_agents.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
@@ -429,7 +429,7 @@ class SACAgent:
 
     def __init__(
         self,
-        av_corrector: AVCorrector,
+        av_corrector: AVController,
         state_dim: int,
         sac_config: SACConfig,
     ) -> None:
