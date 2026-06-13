@@ -12,6 +12,7 @@ class SGSPConfig:
     clip_pusuluri: bool = True
     clip_rajampeta: bool = False
     sigma_multiplier: float = 3.0
+    set_off_predictor : bool = False
 
 
 @dataclass(frozen=True)

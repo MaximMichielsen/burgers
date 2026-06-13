@@ -186,7 +186,6 @@ class BurgersSGSP(BurgersBase):
         master_path: Path,
         sgsp_cfg: SGSPConfig,
         snapshot_factor: int | None = 1,
-        set_off_predictions: bool = False
     ) -> None:
         super().__init__(
             problem, disc_cfg, simulation_mode, master_path, snapshot_factor
@@ -235,7 +234,9 @@ class BurgersSGSP(BurgersBase):
 
         self._blown_up_path: Path = sgsp_cfg.blown_up_path
 
-        self.set_off_predictions = set_off_predictions
+        self.set_off_predictions = sgsp_cfg.set_off_predictor
+
+        print('predictions set off:', self.set_off_predictions)
 
     # ------------------------------------------------------------------ #
     #  run_simulation — blow-up guard around parent loop
