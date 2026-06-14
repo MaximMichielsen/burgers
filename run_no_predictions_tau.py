@@ -56,15 +56,15 @@ set_off_predictor = True
 disc_cfg = DiscretisationConfig(
     n_nodes_les=9,
     temporal_refinement=1,
-    courant_les=0.04,
+    courant_les=0.01,
     domain_length=problem.domain_length,
     initial_condition_fn=problem.initial_condition,
 )
 
 PROJECTION_MODE: str = "nodal"
-ALPHA_MAX: float = 10
+ALPHA_MAX: float = 100
 OUTPUT_SCALE: float = 1
-AVC_EPOCHS: int = 50
+AVC_EPOCHS: int = 200
 N_SKIP: int = 5
 
 master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
@@ -227,8 +227,8 @@ if __name__ == "__main__":
         )
         sac_config = SACConfig(
             n_skip_steps=N_SKIP,
-            warmup_steps=200,  # ~5 full episodes of random exploration
-            batch_size=64,  # fill faster — fine for this problem size
+            warmup_steps=500,  # ~5 full episodes of random exploration
+            batch_size=64*2,  # fill faster — fine for this problem size
         )
         avc_cfg_global = AVCConfig(
             avc_model_path=paths.avcg_model,
