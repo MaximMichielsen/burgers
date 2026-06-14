@@ -236,8 +236,6 @@ class BurgersSGSP(BurgersBase):
 
         self.set_off_predictions = sgsp_cfg.set_off_predictor
 
-        print('predictions set off:', self.set_off_predictions)
-
     # ------------------------------------------------------------------ #
     #  run_simulation — blow-up guard around parent loop
     # ------------------------------------------------------------------ #

@@ -35,10 +35,6 @@ def nodal_project(
 
     Evaluates u_DNS at each LES node via linear interpolation.
     Returns (u_bar, uu_bar) to match the l2_project interface.
-
-    Note: u' = 0 at nodes by construction, which makes the viscous
-    interaction term (w_x, ν u'_x) unlearnable. Use L2 projection
-    for SGSP training data. Nodal projection is provided for comparison.
     """
     u_bar = np.interp(mesh_les, mesh_dns, solution_dns)
     uu_bar = np.interp(mesh_les, mesh_dns, solution_dns**2)
