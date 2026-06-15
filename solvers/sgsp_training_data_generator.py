@@ -1,3 +1,13 @@
+"""Current implementation:
+u, u_bar and u_prime calculations
+stencil input creation
+
+Still to do:
+sgs terms computation and assembly
+holistic overview and congruency
+wall handling
+post-simulation validation: recreate dns solution from u_bar and sgs_terms"""
+
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -18,6 +28,8 @@ from problems_and_configurations.problems import Problem, Problems
 from solvers.burgers_base import BurgersBase
 
 _VALID_PROJECTION_MODES: frozenset[str] = frozenset({"l2", "L2", "nodal"})
+
+
 
 
 def nodal_project(
