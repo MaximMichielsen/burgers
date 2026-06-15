@@ -8,7 +8,7 @@ import torch
 from numpy.typing import NDArray
 
 from ml.data_assembly.training_data_assembly import run_training_data_assembly
-from constants import RUNS_FOLDER, SOLVER_DATA_FOLDER, DNS_SAVE_PATH
+from constants import RUNS_FOLDER
 from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problems, Problem
@@ -58,8 +58,7 @@ pipeline.run_les_no_model = True
 pipeline.clip_pusuluri = True
 pipeline.clip_rajampeta = False
 exclude_diss = True
-set_off_predictor = True
-train_local_hybrid = False
+set_off_predictor = False
 
 disc_cfg = DiscretisationConfig(
     n_nodes_les=9,
@@ -72,7 +71,7 @@ disc_cfg = DiscretisationConfig(
 PROJECTION_MODE: str = "nodal"
 ALPHA_MAX: float = 100 * problem.viscosity
 OUTPUT_SCALE: float = 1
-AVC_EPOCHS: int = 40
+AVC_EPOCHS: int = 20
 N_SKIP: int = 5
 
 master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
@@ -80,11 +79,7 @@ paths = RunPaths.from_master(master_path)
 paths.create_master()
 
 manual_load_dns: str = r""
-paths.dns_data = (
-    Path(manual_load_dns)
-    if manual_load_dns != ""
-    else paths.dns_data
-)
+paths.dns_data = Path(manual_load_dns) if manual_load_dns != "" else paths.dns_data
 
 
 if __name__ == "__main__":
@@ -228,6 +223,7 @@ if __name__ == "__main__":
             correction_mode="global",
             n_skip_steps=sac_config.n_skip_steps,
             exclude_diss_from_reward=exclude_diss,
+            simulation_mode="avc",
         )
         # --------------------------------------- GAVC -------------------------------------- #
         if pipeline.train_avc_online:

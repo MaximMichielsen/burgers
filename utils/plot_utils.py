@@ -233,3 +233,95 @@ def is_viable_solution_path(data_path: Path | str | None) -> bool:
         return False
     path = Path(data_path)
     return path.exists() and any(path.glob("sol_t*.csv"))
+
+
+RESULTS_ROOT = Path(
+    "solver_data/LES_SGSP"
+)  # <- where sol_t*.csv output dirs live, per run_id
+PROJECTION_ROOT = Path(
+    "training_data/pre_split"
+)  # <- where solutions_projection.npy / times.npy live, per run_id
+ROOT = Path(r"C:\Users\poopy\PycharmProjects\burgers\runs")
+
+
+def plot_solutions_from_run_id_animated(
+    run_id: str,
+    interval: int = 100,
+    repeat: bool = True,
+) -> FuncAnimation:
+    """Animate SGSP solution vs. the projected (filtered-DNS) reference for run_id."""
+    sgsp_directory = ROOT / run_id / RESULTS_ROOT
+    projection_directory = ROOT / run_id / PROJECTION_ROOT
+
+    # --- SGSP solution (sol_t*.csv) ---
+    sgsp_files = sorted(sgsp_directory.glob("sol_t*.csv"))
+    if not sgsp_files:
+        raise FileNotFoundError(f"No sol_t*.csv files found in {sgsp_directory}")
+
+    sgsp_times_list: list[float] = []
+    sgsp_solutions_list: list[NDArray] = []
+    mesh: NDArray | None = None
+    for file_path in sgsp_files:
+        sgsp_times_list.append(float(file_path.stem.split("t")[-1]))
+        data = np.loadtxt(file_path, delimiter=",", skiprows=1)
+        if mesh is None:
+            mesh = data[:, 1]
+        sgsp_solutions_list.append(data[:, 2])
+
+    sgsp_times_list, sgsp_solutions_list = zip(
+        *sorted(zip(sgsp_times_list, sgsp_solutions_list))
+    )
+    sgsp_times = np.array(sgsp_times_list)
+    sgsp_solutions = list(sgsp_solutions_list)
+
+    # --- Projected (filtered-DNS) reference ---
+    projection_times = np.load(projection_directory / "times.npy")
+    projection_solutions = np.load(projection_directory / "solutions_projection.npy")
+
+    # Match each SGSP frame to the nearest projection snapshot in time
+    projection_indices = np.searchsorted(projection_times, sgsp_times)
+    projection_indices = np.clip(projection_indices, 0, len(projection_times) - 1)
+
+    n_frames = len(sgsp_times)
+    all_values = np.concatenate(
+        [np.array(sgsp_solutions), projection_solutions[projection_indices]]
+    )
+    u_min, u_max = float(all_values.min()), float(all_values.max())
+    pad = 0.05 * (u_max - u_min)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    (sgsp_line,) = ax.plot(
+        mesh, sgsp_solutions[0], lw=2, color="royalblue", label="SGSP"
+    )
+    (projection_line,) = ax.plot(
+        mesh,
+        projection_solutions[projection_indices[0]],
+        lw=2,
+        ls="--",
+        color="black",
+        label="Projected DNS",
+    )
+    time_text = ax.text(
+        0.02, 0.95, "", transform=ax.transAxes, fontsize=12, verticalalignment="top"
+    )
+    ax.set_xlim(mesh[0], mesh[-1])
+    ax.set_ylim(u_min - pad, u_max + pad)
+    ax.set_xlabel("x")
+    ax.set_ylabel("u")
+    ax.set_title(f"Solution evolution — run {run_id}")
+    ax.legend()
+    ax.grid(True)
+
+    def update(frame_idx: int) -> tuple[Any, Any, Any]:
+        """Update animation frame."""
+        sgsp_line.set_ydata(sgsp_solutions[frame_idx])
+        projection_line.set_ydata(projection_solutions[projection_indices[frame_idx]])
+        time_text.set_text(f"t = {sgsp_times[frame_idx]:.4f}")
+        return sgsp_line, projection_line, time_text
+
+    ani = animation.FuncAnimation(
+        fig, update, frames=n_frames, interval=interval, blit=True, repeat=repeat
+    )
+    plt.tight_layout()
+    plt.show()
+    return ani

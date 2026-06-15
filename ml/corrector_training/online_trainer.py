@@ -394,6 +394,7 @@ class BurgersAVCEnvironment:
         total_penalty = spectral_penalty + dissipation_penalty
         return -(total_penalty / (1.0 + total_penalty))
 
+
 # ---------------------------------------------------------------------------
 # SAC agent
 # ---------------------------------------------------------------------------
@@ -578,6 +579,7 @@ class SACAgent:
             float(actor_loss_val.item()),
             float(self.alpha_temp.item()),
         )
+
 
 class OnlineAVTrainer:
     """Online SAC training loop for the AV corrector.

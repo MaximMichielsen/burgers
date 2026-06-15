@@ -112,7 +112,7 @@ class BurgersAVC(BurgersSGSP):
         self.energy_drain_history.append(self.calc_energy_drain())
         self.sgsp_injection_history.append(self.calc_sgsp_energy_injection())
 
-    #TODO: Handle local mode.
+    # TODO: Handle local mode.
     def create_avc_input_stencil(self) -> NDArray:
         """Build the MDP state s_n in R^(K+2) per eq. (2.8), revised.
 
@@ -135,7 +135,7 @@ class BurgersAVC(BurgersSGSP):
             self.dissipation_history[-1] if self.dissipation_history else 0.0
         )
         if self._avc_cfg.correction_mode == "local":
-            #TODO: Fix previous observed correction if in local mode.
+            # TODO: Fix previous observed correction if in local mode.
             alpha_prev_val = np.float64(float(np.mean(self.av_correction)))
         else:
             alpha_prev_val = np.float64(self.av_correction)
