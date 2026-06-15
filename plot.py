@@ -1,3 +1,3 @@
 from utils.plot_utils import plot_solutions_from_run_id_animated
 
-plot_solutions_from_run_id_animated("run_raj_one_0615_134328")
+plot_solutions_from_run_id_animated("run_raj_one_0610_163743")

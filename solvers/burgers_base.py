@@ -141,7 +141,6 @@ class BurgersBase:
             else None
         )
 
-        self.snapshots: list[NDArray] = []
         self.snapshots_solution: list[NDArray] = []
         self.snapshots_forcing: list[NDArray] = []
 
@@ -548,6 +547,11 @@ class BurgersBase:
             np.array(list(chain.from_iterable(self.residual_history))),
             np.array(list(chain.from_iterable(self.update_history))),
         )
+
+    @property
+    def snapshots(self) -> NDArray:
+        """Combine solution and forcing snapshots into one array, per timestep."""
+        return np.stack((self.snapshots_solution, self.snapshots_forcing), axis=1)
 
     # ------------------------------------------------------------------ #
     #  Timing
