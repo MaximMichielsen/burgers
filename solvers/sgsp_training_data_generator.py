@@ -20,16 +20,12 @@ from tqdm import tqdm
 
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.initial_conditions import (
-    zero_initial_condition,
-    uniform_initial_condition,
     sin_initial_condition,
 )
 from problems_and_configurations.problems import Problem, Problems
 from solvers.burgers_base import BurgersBase
 
 _VALID_PROJECTION_MODES: frozenset[str] = frozenset({"l2", "L2", "nodal"})
-
-
 
 
 def nodal_project(
@@ -144,6 +140,7 @@ class BurgersDataGenerator(BurgersBase):
         self.forcing_history: list[NDArray] = []
 
         self.assembled_input_stencils: list[NDArray] = []
+        self.assembled_sgs_terms: list[NDArray] = []
 
     def advance_time_step(self) -> None:
         self.resolve_current_forcing()
@@ -173,7 +170,9 @@ class BurgersDataGenerator(BurgersBase):
         # add IC and projections to snapshots
         self.resolve_current_forcing()
         self._extract_snapshot()
-        self.u_bar_now, self.interp_les_to_dns_u, self.projected_forcing = self.project_u_to_les()
+        self.u_bar_now, self.interp_les_to_dns_u, self.projected_forcing = (
+            self.project_u_to_les()
+        )
         self.u_prime_now = self.compute_u_prime(
             interpolated_les_solution=self.interp_les_to_dns_u
         )
@@ -195,8 +194,9 @@ class BurgersDataGenerator(BurgersBase):
                         time_step + 1
                     ) in self._snapshot_step_indices and time_step > self.warmup_steps:
                         self._extract_snapshot()
-                        input_stencils = self.create_training_data()
+                        input_stencils, sgs_terms = self.create_training_data_at_t()
                         self.assembled_input_stencils.append(input_stencils)
+                        self.assembled_sgs_terms.append(sgs_terms)
 
                     pbar.set_description(f"Eating Burgers | {self.throbber(time_step)}")
                     pbar.update(1)
@@ -211,16 +211,17 @@ class BurgersDataGenerator(BurgersBase):
             self.write_config_to_json()
             self.write_solution_to_csv()
 
-    def create_training_data(self):
+    def create_training_data_at_t(self) -> tuple[list[NDArray], list[NDArray]]:
         input_stencils = []
+        sgs_terms = []
         for node in self.nodes_les:
             input_stencil = self.create_input_stencil(node)
-            self.compute_sgs_terms(node)
+            node_sgs_terms = self.compute_sgs_terms(node)
 
             input_stencils.append(input_stencil)
+            sgs_terms.append(node_sgs_terms)
 
-
-        return input_stencils
+        return input_stencils, sgs_terms
 
     def create_input_stencil(self, node_idx: int):
         # if i = 0 or [-1] set wall 'nodes' to 0.
@@ -232,12 +233,10 @@ class BurgersDataGenerator(BurgersBase):
         if len(self.u_bar_history) < self.warmup_steps:
             return None
 
-        stencil_nodes = np.array(
-            [node_idx - 2, node_idx - 1, node_idx, node_idx + 1]
-        )
+        stencil_nodes = np.array([node_idx - 2, node_idx - 1, node_idx, node_idx + 1])
 
         if stencil_nodes[0] < 0 or stencil_nodes[-1] >= self._n_nodes_les:
-            #TODO add wall handling
+            # TODO add wall handling
             return None
 
         return np.concatenate(
@@ -252,8 +251,6 @@ class BurgersDataGenerator(BurgersBase):
 
     def compute_sgs_terms(self, element: int):
         pass
-
-
 
     def compute_du_bar_dt(self, u_bar_now, u_bar_prev) -> NDArray:
         return (u_bar_now - u_bar_prev) / self._disc_cfg.dt_les
