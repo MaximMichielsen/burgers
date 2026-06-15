@@ -15,13 +15,14 @@ class DiscretisationConfig:
 
     Derives all mesh and time-step quantities from the LES element count,
     Courant number, and DNS-to-LES refinement ratios.
+    Domain length only to be used internally for calculating element size,
+    Setting this parameter for the simulation should follow from Problem!
     """
 
     n_nodes_les: int
     temporal_refinement: int
     courant_les: float
     domain_length: float
-    initial_condition_fn: Callable
     suppress_file_logging: bool = False
 
     def __post_init__(self) -> None:
@@ -37,7 +38,4 @@ class DiscretisationConfig:
         self.dt_dns: float = self.dt_les / self.temporal_refinement
 
         self.mesh_les = np.linspace(0, self.domain_length, self.n_nodes_les)
-        self.initial_solution_les: NDArray = self.initial_condition_fn(self.mesh_les)
-
         self.mesh_dns = np.linspace(0, self.domain_length, self.n_nodes_dns)
-        self.initial_solution_dns: NDArray = self.initial_condition_fn(self.mesh_dns)

@@ -102,7 +102,7 @@ class BurgersBase:
         self.nodes: NDArray = np.arange(0, self.n_nodes)
         self.boundary_nodes: set[int] = {int(self.nodes[0]), int(self.nodes[-1])}
         self.mesh: NDArray = np.linspace(0, self.domain_length, self.n_nodes)
-        self.elements: NDArray = self.initialize_elements()
+        self.elements: NDArray = self.initialize_elements(self.nodes)
         self.element_size: float = self.domain_length / (self.n_nodes - 1)
 
         # Boundary conditions
@@ -497,9 +497,9 @@ class BurgersBase:
     #  Initialisation
     # ------------------------------------------------------------------ #
 
-    def initialize_elements(self) -> NDArray:
+    def initialize_elements(self, nodes) -> NDArray:
         """Build element connectivity array [[0,1], [1,2], …]."""
-        return np.column_stack((self.nodes[:-1], self.nodes[1:]))
+        return np.column_stack((nodes[:-1], nodes[1:]))
 
     def set_initial_condition(self, initial_condition: NDArray | Callable) -> NDArray:
         """Evaluate or copy the initial condition onto the mesh."""

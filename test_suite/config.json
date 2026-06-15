@@ -1,0 +1,21 @@
+{
+  "run_id": "0615_231012",
+  "simulation_mode": "dns",
+  "domain_timespan": 0.5,
+  "domain_length": 6.283185307179586,
+  "dt": 0.08333333333333333,
+  "n_time_steps": 6,
+  "viscosity": 0.3141592653589793,
+  "n_nodes": 288,
+  "n_elements": 287,
+  "element_size": 0.021892631732333055,
+  "boundary_condition_type": "fixed",
+  "boundary_condition_value": 1.0,
+  "max_iterations": 50,
+  "convergence_tol_residual": 1e-06,
+  "convergence_tol_update": 1e-06,
+  "snapshot_factor": 1,
+  "forcing": "<callable: uniform_steady_forcing>",
+  "forcing_is_steady": true,
+  "problem_name": "pipeline_test"
+}

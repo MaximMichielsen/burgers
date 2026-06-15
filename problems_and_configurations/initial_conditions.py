@@ -12,3 +12,8 @@ def uniform_initial_condition(mesh: NDArray, alpha: float = 1.0) -> NDArray:
 def zero_initial_condition(mesh: NDArray) -> NDArray:
     """Return a zero field."""
     return np.zeros_like(mesh)
+
+
+def sin_initial_condition(mesh: NDArray) -> NDArray:
+    """Return a sin field."""
+    return np.sin(mesh)
