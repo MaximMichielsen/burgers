@@ -38,7 +38,7 @@ from numpy.typing import NDArray
 from ml.ml_agents.corrector import AVController, load_corrector
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
-from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
+from ml.ml_agents.solver_configs import SGSPConfig, AVCRunConfig, AVCTrainerConfig
 from solvers.burgers_sgsp import BurgersSGSP
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class BurgersAVC(BurgersSGSP):
         simulation_mode: str,
         master_path: Path,
         sgsp_cfg: SGSPConfig,
-        avc_cfg: AVCConfig,
+        avc_cfg: AVCRunConfig | AVCTrainerConfig,
         snapshot_factor: int | None = 1,
     ) -> None:
         super().__init__(
@@ -81,39 +81,30 @@ class BurgersAVC(BurgersSGSP):
         self.energy_drain_history: list[float] = []
         self.sgsp_injection_history: list[float] = []
 
-        self._dns_energy_spectrum: NDArray = np.asarray(
-            avc_cfg.dns_energy_spectrum, dtype=np.float32
-        )
-        self._dns_dissipation: float = float(avc_cfg.dns_dissipation)
-        self._n_wavenumber_bins: int = len(self._dns_energy_spectrum)
+        self._n_wavenumber_bins: int = (self.n_nodes + 1) // 2
         self._current_element: tuple[int, int] = (0, 1)
-
-        self.correction_is_fixed: bool = avc_cfg.correction_is_fixed
-        self.use_policy_inference: bool = not avc_cfg.correction_is_fixed
 
         self._step_counter: int = 0
 
-    # ------------------------------------------------------------------ #
-    #  advance_time_step
-    # ------------------------------------------------------------------ #
-
     def advance_time_step(self) -> bool:
-        """Query policy every n_skip_steps, then advance one LES step."""
-        sgsp_is_warmed_up = self._step_counter >= self._sgsp_warmup_steps
-        if self.use_policy_inference and sgsp_is_warmed_up:
+        """Query policy every n_skip_steps, then advance one LES step.
+
+        For AVCTrainerConfig, av_correction is driven externally by
+        BurgersAVCEnvironment.step() and must not be overwritten here.
+        """
+        if not isinstance(self._avc_cfg, AVCTrainerConfig):
             if self._step_counter % self._avc_cfg.n_skip_steps == 0:
-                self._add_avc_correction()
-        elif not sgsp_is_warmed_up:
-            self.av_correction = 0.0
+                self.av_correction = self._calc_avc_correction()
+                logger.debug(
+                    "AVC correction applied: α=%s  (t=%.4f)",
+                    self.av_correction,
+                    self.simulation_time_elapsed,
+                )
 
         self._step_counter += 1
         step_ok = super().advance_time_step()
         self.update_av_history()
         return step_ok
-
-    # ------------------------------------------------------------------ #
-    #  History update
-    # ------------------------------------------------------------------ #
 
     def update_av_history(self) -> None:
         """Append current av_correction and energy drain to per-step histories."""
@@ -121,44 +112,38 @@ class BurgersAVC(BurgersSGSP):
         self.energy_drain_history.append(self.calc_energy_drain())
         self.sgsp_injection_history.append(self.calc_sgsp_energy_injection())
 
-    # ------------------------------------------------------------------ #
-    #  AVC input / inference helpers
-    # ------------------------------------------------------------------ #
-
+    #TODO: Handle local mode.
     def create_avc_input_stencil(self) -> NDArray:
         """Build the MDP state s_n in R^(K+2) per eq. (2.8), revised.
 
         s_n = (Ehat_1, ..., Ehat_K, eps^-n, alpha_{n-1})
-        where Ehat_k = E_LES(k,t) / sum_k(E_LES(k,t)) is the normalised
+        where Ehat_k = E_LES(k,t) / sum_k(E_LES(k,t)) is the normalized
         LES spectral energy fraction (shape of the spectrum, not absolute
         magnitude), bounded in [0, 1] by construction.
         """
         if not np.all(np.isfinite(self.solution)):
-            return np.zeros(self._n_wavenumber_bins + 2, dtype=np.float32)
+            return np.zeros(self._n_wavenumber_bins + 2, dtype=np.float64)
 
         wavenumbers_all, raw_spectrum_all = self.compute_energy_spectrum(self.solution)
         _, positive_spectrum = self.get_positive_spectrum(
             wavenumbers_all, raw_spectrum_all
         )
-        spectrum_k = positive_spectrum[: self._n_wavenumber_bins].astype(np.float32)
-
+        spectrum_k = positive_spectrum.astype(np.float32)
         total_les_energy = float(spectrum_k.sum())
         normalised_spectrum = spectrum_k / max(total_les_energy, 1e-12)
-
-        dissipation_val = np.float32(
+        dissipation_val = np.float64(
             self.dissipation_history[-1] if self.dissipation_history else 0.0
         )
-
-        av_corr = self.av_correction
-        if isinstance(av_corr, np.ndarray):
-            alpha_prev_val = np.float32(float(np.mean(av_corr)))
+        if self._avc_cfg.correction_mode == "local":
+            #TODO: Fix previous observed correction if in local mode.
+            alpha_prev_val = np.float64(float(np.mean(self.av_correction)))
         else:
-            alpha_prev_val = np.float32(av_corr)
+            alpha_prev_val = np.float64(self.av_correction)
 
         return np.concatenate(
             [
                 normalised_spectrum,
-                np.array([dissipation_val, alpha_prev_val], dtype=np.float32),
+                np.array([dissipation_val, alpha_prev_val], dtype=np.float64),
             ]
         )
 
@@ -178,22 +163,7 @@ class BurgersAVC(BurgersSGSP):
         if self.corrector.correction_mode == "global":
             return float(alpha_tensor.item())
         else:
-            return alpha_tensor.numpy().astype(np.float64)  # (N_nodes,)
-
-    def _add_avc_correction(self) -> None:
-        """Predict αₙ and write it into self.av_correction.
-
-        self.av_correction is read by the overridden _residual_integrand and
-        _jacobian_integrand at element-assembly time, so it must be set before
-        super().advance_time_step() is called.
-        """
-        self.av_correction = self._calc_avc_correction()
-
-        logger.debug(
-            "AVC correction applied: α=%s  (t=%.4f)",
-            self.av_correction,
-            self.simulation_time_elapsed,
-        )
+            return alpha_tensor.numpy().astype(np.float64)
 
     # ------------------------------------------------------------------ #
     #  AVC-adjusted elemental integrands (eq. 2.7)
@@ -315,9 +285,7 @@ class BurgersAVC(BurgersSGSP):
         _row("model path", str(self._avc_model_path))
         _row("correction mode", str(self.corrector.correction_mode))
         _row("alpha_max", f"{self.corrector.alpha_max:.4e}")
-        _row("correction_is_fixed", str(self.correction_is_fixed))
         _row("n_wavenumber_bins", str(self._n_wavenumber_bins))
-        _row("dns_dissipation", f"{self._dns_dissipation:.4e}")
         print("═" * W)
 
     # ------------------------------------------------------------------ #
@@ -335,10 +303,9 @@ class BurgersAVC(BurgersSGSP):
         """Write run summary plus AVC-specific fields to the log file."""
         super().post_logging()
         self.logger.info(
-            "AVC — alpha_max: %.4e  correction_mode: %s  correction_is_fixed: %s",
+            "AVC — alpha_max: %.4e  correction_mode: %s",
             self.corrector.alpha_max,
             self.corrector.correction_mode,
-            self.correction_is_fixed,
         )
         if self.av_history:
             # For local mode each entry is an NDArray; flatten to a single array

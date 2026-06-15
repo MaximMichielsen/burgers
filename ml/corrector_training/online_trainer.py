@@ -56,12 +56,13 @@ from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.ml_agents.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
-from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
+from ml.ml_agents.solver_configs import SGSPConfig, AVCTrainerConfig
 from solvers.burgers_base import compute_adjusted_dt
 from solvers.burgers_avc import BurgersAVC
 
 logger = logging.getLogger(__name__)
 
+BLOWN_UP_PENALTY: float = 10.0
 
 # ---------------------------------------------------------------------------
 # Hyperparameter config
@@ -238,7 +239,7 @@ class BurgersAVCEnvironment:
         problem: Problem,
         disc_cfg: DiscretisationConfig,
         sgsp_cfg: SGSPConfig,
-        avc_cfg: AVCConfig,
+        avc_cfg: AVCTrainerConfig,
         master_path: Path,
         sac_config: SACConfig,
         dns_reference_schedule: DNSReferenceSchedule | None = None,
@@ -260,7 +261,7 @@ class BurgersAVCEnvironment:
         )
         self._max_les_steps: int = self._n_time_steps
 
-        self.n_wavenumber_bins: int = len(avc_cfg.dns_energy_spectrum)
+        self.n_wavenumber_bins: int = (disc_cfg.n_nodes_les + 1) // 2
         self.state_dim: int = self.n_wavenumber_bins + 2
 
         self.correction_mode: str = avc_cfg.correction_mode
@@ -275,13 +276,10 @@ class BurgersAVCEnvironment:
         self._solver = BurgersAVC(
             problem=self._problem,
             disc_cfg=dataclasses.replace(self._disc_cfg, suppress_file_logging=True),
-            simulation_mode="avc",
+            simulation_mode=self._avc_cfg.simulation_mode,
             master_path=self._master_path,
             sgsp_cfg=self._sgsp_cfg,
             avc_cfg=self._avc_cfg,
-        )
-        self._solver.use_policy_inference = (
-            False  # trainer drives av_correction externally
         )
         self._total_les_steps = 0
         if self._solver is None:
@@ -304,6 +302,8 @@ class BurgersAVCEnvironment:
             self._solver.av_correction = float(
                 np.asarray(alpha_action, dtype=np.float64).item()
             )
+
+        logger.info(f"Applying correction of: {self._solver.av_correction}")
 
         blown_up = False
         for _ in range(self._sac_config.n_skip_steps):
@@ -335,7 +335,7 @@ class BurgersAVCEnvironment:
     def _compute_reward(self, blown_up: bool) -> float:
         """Compute rₙ from eq. (2.10); large terminal penalty on blow-up."""
         if blown_up:
-            return -1.0
+            return BLOWN_UP_PENALTY
 
         assert self._solver is not None
 
@@ -345,24 +345,26 @@ class BurgersAVCEnvironment:
         _, positive_spectrum = self._solver.get_positive_spectrum(
             wavenumbers_all, raw_spectrum_all
         )
-        spectrum_k = positive_spectrum[: self.n_wavenumber_bins].astype(np.float64)
-        dns_spectrum_k, dns_dissipation = self._get_dns_targets()
+        spectrum_k = positive_spectrum.astype(np.float64)
+
+        proj_spectrum_k, proj_dissipation = self._get_dns_targets()
 
         wavenumber_indices = np.arange(1, self.n_wavenumber_bins + 1, dtype=np.float64)
-        w_e = self._sac_config.reward_weight_energy
-        w_eps = self._sac_config.reward_weight_dissipation
+
+        w_energy = self._sac_config.reward_weight_energy
+        w_diss = self._sac_config.reward_weight_dissipation
         gamma_exp = self._sac_config.reward_spectral_exponent
 
         # Normalize spectra by total energy to compare shape only
         normalised_les = spectrum_k / max(spectrum_k.sum(), 1e-12)
-        normalised_dns = dns_spectrum_k / max(dns_spectrum_k.sum(), 1e-12)
+        normalised_dns = proj_spectrum_k / max(proj_spectrum_k.sum(), 1e-12)
 
         compensated_les = wavenumber_indices**gamma_exp * normalised_les
         compensated_dns = wavenumber_indices**gamma_exp * normalised_dns
 
         dns_safe = np.where(compensated_dns > 0.0, compensated_dns, 1.0)
         spectral_penalty = float(
-            w_e * np.mean(((compensated_les - compensated_dns) / dns_safe) ** 2)
+            w_energy * np.mean(((compensated_les - compensated_dns) / dns_safe) ** 2)
         )
 
         if self.exclude_diss_from_reward:
@@ -379,11 +381,11 @@ class BurgersAVCEnvironment:
             else 0.0
         )
 
-        dns_diss_safe = max(abs(dns_dissipation), 1e-12)
+        dns_diss_safe = max(abs(proj_dissipation), 1e-12)
         dissipation_penalty = float(
-            w_eps
+            w_diss
             * (
-                (current_dissipation + current_av_drain - dns_dissipation)
+                (current_dissipation + current_av_drain - proj_dissipation)
                 / dns_diss_safe
             )
             ** 2
@@ -391,7 +393,6 @@ class BurgersAVCEnvironment:
 
         total_penalty = spectral_penalty + dissipation_penalty
         return -(total_penalty / (1.0 + total_penalty))
-
 
 # ---------------------------------------------------------------------------
 # SAC agent
@@ -488,11 +489,12 @@ class SACAgent:
         noisy_action = action_tensor.numpy() + np.random.normal(
             0.0, noise_std, size=action_tensor.shape
         )
-        logger.debug("Selecting action:"
-                       f"| state tensor: {state_tensor} "
-                       f"| action_tensor: {action_tensor} "
-                       f"\n noisy action: {noisy_action}"
-)
+        logger.debug(
+            "Selecting action:"
+            f"| state tensor: {state_tensor} "
+            f"| action_tensor: {action_tensor} "
+            f"\n noisy action: {noisy_action}"
+        )
         return np.clip(noisy_action, 0.0, self.policy.alpha_max).astype(np.float32)
 
     def update(self, replay_buffer: ReplayBuffer) -> tuple[float, float, float]:
@@ -561,25 +563,21 @@ class SACAgent:
             param_target.data.mul_(1.0 - tau_val)
             param_target.data.add_(tau_val * param_online.data)
 
-        logger.debug("Within agent.update()"
-                       f"\nq next_min: {q_next_min} "
-                       f"next_actions_batch: {next_actions_batch} "
-                       f"target_noise: {target_noise} "
-                       f"bellman target: {bellman_target} "
-                       f"q1_pred_val: {q1_pred_val} "
-                       f"q2_pred_val: {q2_pred_val}")
+        logger.debug(
+            "Within agent.update()"
+            f"\nq next_min: {q_next_min} "
+            f"next_actions_batch: {next_actions_batch} "
+            f"target_noise: {target_noise} "
+            f"bellman target: {bellman_target} "
+            f"q1_pred_val: {q1_pred_val} "
+            f"q2_pred_val: {q2_pred_val}"
+        )
 
         return (
             float(critic_loss_val.item()),
             float(actor_loss_val.item()),
             float(self.alpha_temp.item()),
         )
-
-
-# ---------------------------------------------------------------------------
-# Online trainer
-# ---------------------------------------------------------------------------
-
 
 class OnlineAVTrainer:
     """Online SAC training loop for the AV corrector.
@@ -647,11 +645,11 @@ class OnlineAVTrainer:
             while not done_flag:
                 if self._stats.total_env_steps < self._config.warmup_steps:
                     random_scalar = float(
-                        np.random.uniform(0.0, self._agent.policy.alpha_max)
+                        np.random.uniform(0.0, self._agent.policy.alpha_max / 10)
                     )
                     action_dim = self._agent.policy.output_dim
                     alpha_action_val = np.full(
-                        action_dim, random_scalar, dtype=np.float32
+                        action_dim, random_scalar, dtype=np.float64
                     )
                 else:
                     alpha_action_val = self._agent.select_action(state_current)
@@ -660,7 +658,8 @@ class OnlineAVTrainer:
                     alpha_action_val
                 )
 
-                logger.debug("Online training step:"
+                logger.debug(
+                    "Online training step:"
                     f"\nCurrent state: {state_current} "
                     f"| Action: {alpha_action_val} "
                     f"| Reward: {reward_val} "

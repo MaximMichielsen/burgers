@@ -198,15 +198,6 @@ class BurgersSGSP(BurgersBase):
             raise ValueError("clip_rajampeta requires clip_pusuluri to be enabled.")
 
         self._sgsp_model_path = sgsp_cfg.sgsp_model_path
-        self._predictor: SGSPredictor = load_predictor(sgsp_cfg.sgsp_model_path)
-        self._predictor.eval()
-
-        self._normalization_path = sgsp_cfg.normalization_path
-        norm_data = np.load(sgsp_cfg.normalization_path)
-        self._x_mean: NDArray = norm_data["X_mean"].astype(np.float32)
-        self._x_std: NDArray = norm_data["X_std"].astype(np.float32)
-        self.y_mean: NDArray = norm_data["y_mean"].astype(np.float32)
-        self.y_std: NDArray = norm_data["y_std"].astype(np.float32)
 
         self._u_bar_history: list[NDArray] = []
         self._du_bar_dt_history: list[NDArray] = []
@@ -215,14 +206,6 @@ class BurgersSGSP(BurgersBase):
         self._sgsp_warmup_steps: int = WARMUP_STEPS
         self._step_count: int = 0
         self._grad_basis: NDArray = gradient_basis_functions(self.element_size)
-
-        if self.clip_pusuluri:
-            self._y_lower_bound: NDArray = (
-                self.y_mean - sgsp_cfg.sigma_multiplier * self.y_std
-            )
-            self._y_upper_bound: NDArray = (
-                self.y_mean + sgsp_cfg.sigma_multiplier * self.y_std
-            )
 
         self._blowup_threshold: float = BLOWUP_THRESHOLD
         self._blowup_buffer: _BlowupBuffer = _BlowupBuffer(
@@ -234,7 +217,41 @@ class BurgersSGSP(BurgersBase):
 
         self._blown_up_path: Path = sgsp_cfg.blown_up_path
 
-        self.set_off_predictions = sgsp_cfg.set_off_predictor
+        self._sgsp_model_path = sgsp_cfg.sgsp_model_path
+        self._normalization_path = sgsp_cfg.normalization_path
+        self.set_off_predictions: bool = sgsp_cfg.set_off_predictor
+
+        if self.set_off_predictions:
+            self._predictor: SGSPredictor | None = None
+            self._x_mean: NDArray | None = None
+            self._x_std: NDArray | None = None
+            self.y_mean: NDArray | None = None
+            self.y_std: NDArray | None = None
+        else:
+            self._predictor = load_predictor(sgsp_cfg.sgsp_model_path)
+            self._predictor.eval()
+
+            norm_data = np.load(sgsp_cfg.normalization_path)
+            self._x_mean = norm_data["X_mean"].astype(np.float32)
+            self._x_std = norm_data["X_std"].astype(np.float32)
+            self.y_mean = norm_data["y_mean"].astype(np.float32)
+            self.y_std = norm_data["y_std"].astype(np.float32)
+
+        self._u_bar_history: list[NDArray] = []
+        self._du_bar_dt_history: list[NDArray] = []
+        self._forcing_history: list[NDArray] = []
+
+        self._sgsp_warmup_steps: int = WARMUP_STEPS
+        self._step_count: int = 0
+        self._grad_basis: NDArray = gradient_basis_functions(self.element_size)
+
+        if self.clip_pusuluri and not self.set_off_predictions:
+            self._y_lower_bound: NDArray = (
+                self.y_mean - sgsp_cfg.sigma_multiplier * self.y_std
+            )
+            self._y_upper_bound: NDArray = (
+                self.y_mean + sgsp_cfg.sigma_multiplier * self.y_std
+            )
 
     # ------------------------------------------------------------------ #
     #  run_simulation — blow-up guard around parent loop
@@ -474,6 +491,9 @@ class BurgersSGSP(BurgersBase):
         Returns (n_elements, 5) array of interaction terms, or None during warm-up.
         Columns: [cross, Reynolds, temporal_L, temporal_R, viscous].
         """
+        if self.set_off_predictions:
+            return None
+
         if self._step_count < self._sgsp_warmup_steps or len(self._u_bar_history) < 3:
             return None
 

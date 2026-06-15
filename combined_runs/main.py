@@ -9,7 +9,7 @@ from constants import RUNS_FOLDER, SOLVER_DATA_FOLDER, DNS_SAVE_PATH
 from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problems, Problem
-from ml.ml_agents.solver_configs import AVCConfig, SGSPConfig
+from ml.ml_agents.solver_configs import AVCTrainerConfig, SGSPConfig
 
 from solvers.burgers_base import BurgersBase
 
@@ -222,7 +222,7 @@ def run_pipeline(
             warmup_steps=200,  # ~5 full episodes of random exploration
             batch_size=64,  # fill faster — fine for this problem size
         )
-        avc_cfg_global = AVCConfig(
+        avc_cfg_global = AVCTrainerConfig(
             avc_model_path=paths.avcg_model,
             dns_energy_spectrum=dns_positive_spectrum,
             dns_dissipation=dns_dissipation_ref,
@@ -263,7 +263,7 @@ def run_pipeline(
             trainer_global.train(n_episodes=AVC_EPOCHS)
 
         # --------------------------------------- LAVC -------------------------------------- #
-        avc_cfg_local = AVCConfig(
+        avc_cfg_local = AVCTrainerConfig(
             avc_model_path=paths.avcl_model,
             dns_energy_spectrum=dns_positive_spectrum,
             dns_dissipation=dns_dissipation_ref,

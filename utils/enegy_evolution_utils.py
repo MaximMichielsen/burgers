@@ -145,11 +145,11 @@ def plot_energy_comparison(
     les_nm_dir: Path | None,
     les_sgsp_dir: Path | None,
     les_avcg_dir: Path | None,
-    les_avcl_dir: Path | None,
     output_path: Path,
     viscosity: float = 0.01,
     domain_length: float = 1.0,
     projection_dir: Path | None = None,
+    les_avcl_dir: Path | None = None,
 ) -> None:
     """Read solver outputs and produce a 3-panel energy comparison figure."""
     output_path = Path(output_path)

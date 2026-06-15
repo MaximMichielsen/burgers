@@ -327,27 +327,23 @@ def _compute_spectrum_bins(
     domain_length: float,
     n_wavenumber_bins: int,
 ) -> NDArray:
-    """Return the first *n_wavenumber_bins* positive-wavenumber spectral energies.
+    """Positive-wavenumber spectral energies, mirroring get_positive_spectrum.
 
-    Mirrors BurgersBase.compute_energy_spectrum + get_positive_spectrum,
-    keeping only bins k = 1 … K (DC component at index 0 is dropped).
-
-    Returns
-    -------
-    spectrum_k : float64 array, shape (n_wavenumber_bins,)
+    Index i corresponds to wavenumber k=i (DC included at i=0), matching the
+    LES state vector exactly — n_wavenumber_bins must equal (n_nodes+1)//2.
     """
     n_nodes = len(velocity_array)
     u_hat = np.fft.fft(velocity_array)
     spectrum_full = 0.5 * np.abs(u_hat) ** 2 / n_nodes
 
-    # Positive wavenumber indices (excluding DC at index 0).
-    positive_indices = np.arange(1, n_nodes // 2 + 1)
-    positive_spectrum = spectrum_full[positive_indices]
+    positive_indices = np.arange(0, (n_nodes + 1) // 2)
+    spectrum_k = spectrum_full[positive_indices].astype(np.float64)
 
-    # Trim or zero-pad to exactly n_wavenumber_bins.
-    spectrum_k = np.zeros(n_wavenumber_bins, dtype=np.float64)
-    n_available = min(len(positive_spectrum), n_wavenumber_bins)
-    spectrum_k[:n_available] = positive_spectrum[:n_available]
+    if len(spectrum_k) != n_wavenumber_bins:
+        raise ValueError(
+            f"Computed {len(spectrum_k)} bins but expected n_wavenumber_bins="
+            f"{n_wavenumber_bins} for n_nodes={n_nodes}."
+        )
     return spectrum_k
 
 
