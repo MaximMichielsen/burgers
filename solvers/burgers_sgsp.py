@@ -573,9 +573,9 @@ class BurgersSGSP(BurgersBase):
             temporal_right_val = sgsp_correction[elem_idx, 3]
             viscous_val = sgsp_correction[elem_idx, 4]
 
-            spatial_sum = cross_val + reynolds_val + viscous_val
-            residual_modified[node_left] += spatial_sum - temporal_left_val
-            residual_modified[node_right] -= spatial_sum + temporal_right_val
+            spatial_sum = cross_val + reynolds_val + self.viscosity * viscous_val
+            residual_modified[node_left] += spatial_sum  # - temporal_left_val
+            residual_modified[node_right] -= spatial_sum
 
         return residual_modified
 

@@ -497,7 +497,8 @@ class BurgersBase:
     #  Initialisation
     # ------------------------------------------------------------------ #
 
-    def initialize_elements(self, nodes) -> NDArray:
+    @staticmethod
+    def initialize_elements(nodes) -> NDArray:
         """Build element connectivity array [[0,1], [1,2], …]."""
         return np.column_stack((nodes[:-1], nodes[1:]))
 

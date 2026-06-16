@@ -51,7 +51,7 @@ matplotlib.use("Agg")
 
 problem: Problem = Problems.raj_one
 
-problem = replace(problem, domain_timespan=3.0)
+problem = replace(problem, domain_timespan=1.0)
 
 pipeline = PipelineConfig.all(manual_path=r"")
 pipeline.run_les_no_model = True
@@ -66,7 +66,6 @@ disc_cfg = DiscretisationConfig(
     temporal_refinement=1,
     courant_les=0.01,
     domain_length=problem.domain_length,
-    initial_condition_fn=problem.initial_condition,
 )
 
 PROJECTION_MODE: str = "nodal"
