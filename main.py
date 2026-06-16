@@ -51,7 +51,7 @@ matplotlib.use("Agg")
 
 problem: Problem = Problems.raj_one
 
-problem = replace(problem, domain_timespan=1.0)
+problem = replace(problem, domain_timespan=5.0)
 
 pipeline = PipelineConfig.all(manual_path=r"")
 pipeline.run_les_no_model = True
