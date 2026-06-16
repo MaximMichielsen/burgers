@@ -49,7 +49,7 @@ from ml.data_assembly.training_data_assembly import (
     build_input_stencil,
 )
 from ml.ml_agents.predictor import SGSPredictor, load_predictor
-from constants import WARMUP_STEPS
+
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig
@@ -160,7 +160,7 @@ def diagnose_sgsp_predictions(
 # ---------------------------------------------------------------------------
 # Coupled solver
 # ---------------------------------------------------------------------------
-
+WARMUP_STEPS = 3
 
 class BurgersSGSP(BurgersBase):
     """Burgers FEM solver with ANN-predicted SGS closure.
@@ -554,28 +554,42 @@ class BurgersSGSP(BurgersBase):
         global_residual: NDArray,
         sgsp_correction: NDArray,
     ) -> NDArray:
-        """Scatter per-element ANN predictions into the global residual.
+        """Scatter per-element SGSP predictions into the global residual.
 
-        Columns: 0=cross, 1=Reynolds, 2=temporal_L, 3=temporal_R, 4=viscous.
-        Cross, Reynolds, and viscous terms integrate against w_x (equal
-        magnitude, opposite sign at left/right nodes). Temporal terms
-        integrate against their respective shape functions directly.
+        Columns: 0=cross, 1=reynolds, 2=temporal_L, 3=temporal_R, 4=viscous.
+        Spatial terms (cross, reynolds, viscous) integrate against w_x:
+        opposite sign at left (-1/h) and right (+1/h) nodes.
+        Temporal terms integrate against their respective shape functions.
         """
         if not np.all(np.isfinite(sgsp_correction)):
             return global_residual
 
         residual_modified = global_residual.copy()
-        for elem_idx, element in enumerate(self.elements):
-            node_left, node_right = int(element[0]), int(element[1])
-            cross_val = sgsp_correction[elem_idx, 0]
-            reynolds_val = sgsp_correction[elem_idx, 1]
-            temporal_left_val = sgsp_correction[elem_idx, 2]
-            temporal_right_val = sgsp_correction[elem_idx, 3]
-            viscous_val = sgsp_correction[elem_idx, 4]
+        n_boundary_node: int = (
+            int(self.nodes_les[-1]) if hasattr(self, "nodes_les") else self.n_nodes - 1
+        )
 
-            spatial_sum = cross_val + reynolds_val + self.viscosity * viscous_val
-            residual_modified[node_left] += spatial_sum  # - temporal_left_val
-            residual_modified[node_right] -= spatial_sum
+        for elem_idx, element in enumerate(self.elements):
+            node_left: int = int(element[0])
+            node_right: int = int(element[1])
+
+            cross_val: float = sgsp_correction[elem_idx, 0]
+            reynolds_val: float = sgsp_correction[elem_idx, 1]
+            temporal_left_val: float = sgsp_correction[elem_idx, 2]
+            temporal_right_val: float = sgsp_correction[elem_idx, 3]
+            viscous_val: float = sgsp_correction[elem_idx, 4]
+
+            spatial_contribution: float = (
+                cross_val + reynolds_val - self.viscosity * viscous_val
+            )
+
+            for local_node, global_node in enumerate([node_left, node_right]):
+                if global_node in (0, n_boundary_node):
+                    continue
+                w_x: float = float(self._grad_basis[local_node])  # -1/h or +1/h
+                residual_modified[global_node] -= (
+                    w_x * self.element_size * spatial_contribution
+                )
 
         return residual_modified
 

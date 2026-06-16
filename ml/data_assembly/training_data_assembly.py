@@ -21,9 +21,10 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from constants import PROJECTION_GAUSS_POINTS
+
 from problems_and_configurations.disc_config import DiscretisationConfig
 
+PROJECTION_GAUSS_POINTS = 6
 
 def _basis_functions(ksi: float) -> NDArray:
     """Linear basis functions on the reference element [-1, 1]."""

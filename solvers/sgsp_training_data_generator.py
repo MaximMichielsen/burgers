@@ -1,12 +1,4 @@
-"""Current implementation:
-u, u_bar and u_prime calculations
-stencil input creation
-
-Still to do:
-sgs terms computation and assembly
-holistic overview and congruency
-wall handling
-post-simulation validation: recreate dns solution from u_bar and sgs_terms"""
+"""Generate DNS and SGSP training data, validate closure terms by recreating DNS from Galerkin LES + closure terms."""
 
 import sys
 from dataclasses import replace
@@ -182,7 +174,7 @@ class BurgersDataGenerator(BurgersBase):
         Stencil: [ū^{n,n-1,n-2}_{i-2:i+1}, (∂ū/∂t)^n_{i-2:i+1}, f^n_{i-2:i+1}].
         Out-of-domain nodes are zero-padded (wall condition).
         """
-        if len(self.u_bar_history) < self.warmup_steps:
+        if len(self.u_bar_history) < 3 or len(self.du_bar_dt_history) < 1:
             return None
 
         stencil_nodes = np.array([node_idx - 2, node_idx - 1, node_idx, node_idx + 1])
