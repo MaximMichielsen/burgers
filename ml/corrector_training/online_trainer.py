@@ -35,6 +35,8 @@ Haarnoja et al. (2018) "Soft Actor–Critic: Off-Policy Maximum Entropy Deep
 Research Proposal §2.3.2, §3.1.
 """
 
+# TODO: change random sampling in buffer filling
+
 from __future__ import annotations
 
 import copy

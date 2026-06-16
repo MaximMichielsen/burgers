@@ -162,6 +162,7 @@ def diagnose_sgsp_predictions(
 # ---------------------------------------------------------------------------
 WARMUP_STEPS = 3
 
+
 class BurgersSGSP(BurgersBase):
     """Burgers FEM solver with ANN-predicted SGS closure.
 

@@ -48,6 +48,8 @@ class BurgersDataGenerator(BurgersBase):
         disc_cfg: DiscretisationConfig,
         simulation_mode: str,
         master_path: Path,
+        dns_save_path: Path,
+        sgsp_training_data_path: Path,
         snapshot_factor: int | None = 1,
         projection_mode: str = "nodal",
         warmup_steps: int = WARMUP_STEPS,
