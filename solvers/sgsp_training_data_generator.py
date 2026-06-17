@@ -48,8 +48,8 @@ class BurgersDataGenerator(BurgersBase):
         disc_cfg: DiscretisationConfig,
         simulation_mode: str,
         master_path: Path,
-        dns_save_path: Path,
-        sgsp_training_data_path: Path,
+        dns_save_path: Path | None = None,
+        sgsp_training_data_path: Path | None = None,
         snapshot_factor: int | None = 1,
         projection_mode: str = "nodal",
         warmup_steps: int = WARMUP_STEPS,
@@ -339,6 +339,14 @@ class ProjDNSReconstructor(BurgersBase):
         update_history_loop: list = []
 
         self.max_iterations = 1
+
+        if self.time_steps_stepped == 3:  # same as WARMUP_STEPS
+            print("\n--- Reconstructor closure sample ---")
+            for elem_idx in range(len(self.closure_terms[3])):
+                t = self.closure_terms[3][elem_idx]
+                print(
+                    f"elem {elem_idx}: left=[{t[0, 0]:.4e}, {t[0, 1]:.4e}, {t[0, 4]:.4e}] right=[{t[1, 0]:.4e}, {t[1, 1]:.4e}, {t[1, 4]:.4e}]"
+                )
 
         for _ in range(self.max_iterations):
             elemental_residuals, elemental_jacobians = zip(

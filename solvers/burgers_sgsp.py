@@ -428,6 +428,12 @@ class BurgersSGSP(BurgersBase):
         residual_history_loop: list = []
         update_history_loop: list = []
 
+        if self._step_count == self._sgsp_warmup_steps:
+            print("\n--- SGSP prediction sample (step 0) ---")
+            print(f"cross:    {sgsp_correction[:, 0]}")
+            print(f"reynolds: {sgsp_correction[:, 1]}")
+            print(f"viscous:  {sgsp_correction[:, 4]}")
+
         for _ in range(self.max_iterations):
             with self.timer("elemental_iterations"):
                 elemental_residuals, elemental_jacobians = zip(
@@ -584,13 +590,11 @@ class BurgersSGSP(BurgersBase):
                 cross_val + reynolds_val - self.viscosity * viscous_val
             )
 
-            for local_node, global_node in enumerate([node_left, node_right]):
+            for global_node in [node_left, node_right]:
                 if global_node in (0, n_boundary_node):
                     continue
-                w_x: float = float(self._grad_basis[local_node])  # -1/h or +1/h
-                residual_modified[global_node] -= (
-                    w_x * self.element_size * spatial_contribution
-                )
+                sign = 1.0 if global_node == node_right else -1.0
+                residual_modified[global_node] -= sign * spatial_contribution
 
         return residual_modified
 
