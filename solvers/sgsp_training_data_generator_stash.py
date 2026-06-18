@@ -831,7 +831,7 @@ if __name__ == "__main__":
         domain_length=1,
     )
     _path = Path(__file__).parent.parent / "test_suite"
-    _problem = replace(Problems.raj_one, domain_timespan=2.0)
+    _problem = replace(Problems.raj_one, domain_timespan=10.0)
 
     _solver = BurgersDataGenerator(
         _problem,
