@@ -249,7 +249,6 @@ class BurgersDataGenerator(BurgersBase):
                             "step_time": f"{perf_counter() - step_start:.3f}s",
                         }
                     )
-
             self.write_config_to_json()
             self.save_all_data()
 
@@ -628,6 +627,7 @@ class ProjDNSReconstructor(BurgersBase):
         simulation_mode: str = "no_model",
         snapshot_factor: int = 1,
         use_closure_terms: bool = True,
+        use_temporal_terms: bool = True,
     ) -> None:
         super().__init__(
             problem, disc_cfg, simulation_mode, master_path, snapshot_factor
@@ -640,6 +640,7 @@ class ProjDNSReconstructor(BurgersBase):
         self.u_bar_solutions = u_bar_solutions
         self.closure_terms = closure_terms
         self.use_closure_terms = use_closure_terms
+        self.use_temporal_terms = use_temporal_terms
 
         self.time_steps_stepped: int = 0
 
@@ -739,9 +740,14 @@ class ProjDNSReconstructor(BurgersBase):
                     continue
                 cross_term: float = element_terms.scatter[local_node, 0]
                 reynolds_term: float = element_terms.scatter[local_node, 1]
-                temporal_l_term: float = element_terms.scatter[local_node, 2]
-                temporal_r_term: float = element_terms.scatter[local_node, 3]
+                if self.use_temporal_terms:
+                    temporal_l_term: float = element_terms.scatter[local_node, 2]
+                    temporal_r_term: float = element_terms.scatter[local_node, 3]
+                else:
+                    temporal_l_term = 0
+                    temporal_r_term = 0
                 viscous_term: float = element_terms.scatter[local_node, 4]
+
                 correction: float = (
                     cross_term
                     + reynolds_term
@@ -749,6 +755,7 @@ class ProjDNSReconstructor(BurgersBase):
                     + temporal_r_term
                     - self.viscosity * viscous_term
                 )
+
                 residual[global_node] -= correction
         return residual
 
@@ -806,22 +813,23 @@ class ProjDNSReconstructor(BurgersBase):
 
 if __name__ == "__main__":
     _disc_cfg = DiscretisationConfig(
-        n_nodes_les=9,
+        n_nodes_les=17,
         temporal_refinement=1,
-        courant_les=1,
+        courant_les=0.1,
         domain_length=1,
     )
     _path = Path(__file__).parent.parent / "test_suite"
-    _problem = replace(Problems.raj_one, domain_timespan=2.0)
+    _problem = replace(Problems.raj_two, domain_timespan=4.0)
 
     _solver = BurgersDataGenerator(
         _problem,
         disc_cfg=_disc_cfg,
         simulation_mode="dns",
         master_path=_path,
-        warmup_steps=0,
+        warmup_steps=3,
     )
     _solver.run_simulation()
+    _solver.plotting_interpolation_and_projection()
 
     _recreator_no_model = ProjDNSReconstructor(
         dns_solutions=_solver.solution_history,
@@ -844,6 +852,7 @@ if __name__ == "__main__":
         simulation_mode="no_model",
         master_path=_path,
         use_closure_terms=True,
+        use_temporal_terms=True,
     )
     _recreator.recreate_solution()
     _recreator.plot_solution_comparison(
