@@ -827,11 +827,11 @@ if __name__ == "__main__":
     _disc_cfg = DiscretisationConfig(
         n_nodes_les=9,
         temporal_refinement=1,
-        courant_les=0.01,
+        courant_les=1,
         domain_length=1,
     )
     _path = Path(__file__).parent.parent / "test_suite"
-    _problem = replace(Problems.raj_one, domain_timespan=1.0)
+    _problem = replace(Problems.raj_one, domain_timespan=2.0)
 
     _solver = BurgersDataGenerator(
         _problem,
