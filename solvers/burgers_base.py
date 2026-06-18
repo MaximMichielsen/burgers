@@ -53,7 +53,7 @@ class BurgersBase:
         disc_cfg: DiscretisationConfig,
         simulation_mode: str,
         master_path: Path,
-        snapshot_factor: int | None = 1,
+        snapshot_factor: int = 1,
     ) -> None:
 
         if simulation_mode not in self._VALID_SIMULATION_MODES:
@@ -61,6 +61,7 @@ class BurgersBase:
                 f"Unknown simulation_mode {simulation_mode!r}. "
                 f"Expected one of {self._VALID_SIMULATION_MODES}."
             )
+
         if problem.boundary_condition_type not in self._VALID_BC_TYPES:
             raise ValueError(
                 f"Unknown boundary_condition_type {problem.boundary_condition_type!r}. "
@@ -124,16 +125,14 @@ class BurgersBase:
 
         # Output
         self.snapshot_factor = snapshot_factor
-        self._snapshot_step_indices: frozenset[int] = (
-            frozenset(range(0, self._n_time_steps + 1, snapshot_factor))
-            if snapshot_factor is not None
-            else frozenset()
+
+        self._snapshot_step_indices: frozenset[int] = frozenset(
+            range(0, self._n_time_steps + 1, snapshot_factor)
         )
-        self.requested_snapshots: NDArray | None = (
-            self.time_steps[sorted(self._snapshot_step_indices)]
-            if snapshot_factor is not None
-            else None
-        )
+
+        self.requested_snapshots: NDArray = self.time_steps[
+            sorted(self._snapshot_step_indices)
+        ]
 
         self.is_written_at_times: list[bool] | None = (
             [False] * len(self.requested_snapshots)

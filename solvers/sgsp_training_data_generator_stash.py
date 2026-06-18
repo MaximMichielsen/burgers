@@ -1,8 +1,6 @@
 """Generate DNS and SGSP data.
 
-Replaces the old projection.py + training_data_assembly.py pipeline.
-BurgersDataGenerator now assembles, normalises, and saves (X, y) CSV data
-directly during the DNS run, making npy projection intermediates obsolete.
+BurgersDataGenerator assembles, normalizes, and saves (X, y) CSV data directly during the DNS run.
 
 Output stencil follows Rajampeta (2022) / Research Proposal formulation.
 Per element e, the 5 interaction terms are:
@@ -56,7 +54,7 @@ class ElementSGSTerms:
     """
 
     scatter: NDArray  # (2, 5)
-    label: NDArray    # (5,)
+    label: NDArray  # (5,)
 
 
 def nodal_project(
@@ -95,9 +93,7 @@ def build_input_stencil_wall_padded(
     if len(u_bar_history) < 3 or len(du_bar_dt_history) < 1:
         return None
 
-    stencil_nodes = np.array(
-        [node_idx - 2, node_idx - 1, node_idx, node_idx + 1]
-    )
+    stencil_nodes = np.array([node_idx - 2, node_idx - 1, node_idx, node_idx + 1])
 
     def _gather(field: NDArray) -> NDArray:
         values = np.zeros(4)
@@ -133,7 +129,7 @@ class BurgersDataGenerator(BurgersBase):
         master_path: Path,
         dns_save_path: Path | None = None,
         sgsp_training_data_path: Path | None = None,
-        snapshot_factor: int | None = 1,
+        snapshot_factor: int = 1,
         projection_mode: str = "nodal",
         warmup_steps: int = WARMUP_STEPS,
     ) -> None:
@@ -244,9 +240,7 @@ class BurgersDataGenerator(BurgersBase):
                             self.assembled_input_stencils.append(input_stencils)
                             self.assembled_sgs_terms.append(sgs_terms)
 
-                    pbar.set_description(
-                        f"Eating Burgers | {self.throbber(time_step)}"
-                    )
+                    pbar.set_description(f"Eating Burgers | {self.throbber(time_step)}")
                     pbar.update(1)
                     pbar.set_postfix(
                         {
@@ -266,22 +260,13 @@ class BurgersDataGenerator(BurgersBase):
     def create_snapshot_training_data(
         self,
     ) -> tuple[list[NDArray | None], list[ElementSGSTerms]]:
-        """Compute input stencils and closure terms for all elements at the current snapshot.
-
-        Returns:
-            input_stencils: (n_elements,) list of (20,) arrays or None.
-            sgs_terms: (n_elements,) list of ElementSGSTerms.
-        """
+        """Compute input stencils and closure terms for all elements at the current snapshot."""
         input_stencils: list[NDArray | None] = []
         sgs_terms: list[ElementSGSTerms] = []
 
         for element_left_node in self.nodes_les[:-1]:
-            input_stencils.append(
-                self.create_input_stencil(node_idx=element_left_node)
-            )
-            sgs_terms.append(
-                self.compute_element_closure_terms(element_left_node)
-            )
+            input_stencils.append(self.create_input_stencil(node_idx=element_left_node))
+            sgs_terms.append(self.compute_element_closure_terms(element_left_node))
 
         return input_stencils, sgs_terms
 
@@ -295,9 +280,7 @@ class BurgersDataGenerator(BurgersBase):
             n_nodes=self._n_nodes_les,
         )
 
-    def compute_element_closure_terms(
-        self, element_left_node: int
-    ) -> ElementSGSTerms:
+    def compute_element_closure_terms(self, element_left_node: int) -> ElementSGSTerms:
         """Integrate SGS terms over element [i, i+1].
 
         Returns an ElementSGSTerms with:
@@ -339,16 +322,8 @@ class BurgersDataGenerator(BurgersBase):
         temporal_r_scatter = np.zeros(2)
         viscous_scatter = np.zeros(2)
 
-        # element-level accumulators for SGSP label (right-node gradient weight)
-        cross_label = reynolds_label = temporal_l_label = temporal_r_label = (
-            viscous_label
-        ) = 0.0
-        w_x_right = grad_basis[1]  # +1/h
-
         for gauss_pt, gauss_wt in zip(gauss_pts, gauss_wts):
-            x_phys = (
-                0.5 * (x_left + x_right) + 0.5 * self._disc_cfg.h_les * gauss_pt
-            )
+            x_phys = 0.5 * (x_left + x_right) + 0.5 * self._disc_cfg.h_les * gauss_pt
             basis_vals = _basis_functions(gauss_pt)
             scale = gauss_wt * jacobian
 
@@ -367,19 +342,25 @@ class BurgersDataGenerator(BurgersBase):
             temporal_l_scatter[0] += scale * basis_vals[0] * du_prime_dt_gp
             temporal_r_scatter[1] += scale * basis_vals[1] * du_prime_dt_gp
 
-            # element-level label (right-node w_x, separate left/right temporal)
-            cross_label += scale * w_x_right * u_bar_gp * u_prime_gp
-            reynolds_label += scale * w_x_right * 0.5 * u_prime_gp**2
-            temporal_l_label += scale * basis_vals[0] * du_prime_dt_gp
-            temporal_r_label += scale * basis_vals[1] * du_prime_dt_gp
-            viscous_label += scale * w_x_right * du_prime_dx_gp
-
         scatter_array = np.stack(
-            [cross_scatter, reynolds_scatter, temporal_l_scatter, temporal_r_scatter, viscous_scatter],
+            [
+                cross_scatter,
+                reynolds_scatter,
+                temporal_l_scatter,
+                temporal_r_scatter,
+                viscous_scatter,
+            ],
             axis=1,
         )
+
         label_array = np.array(
-            [cross_label, reynolds_label, temporal_l_label, temporal_r_label, viscous_label]
+            [
+                cross_scatter[1],
+                reynolds_scatter[1],
+                temporal_l_scatter[0],
+                temporal_r_scatter[1],
+                viscous_scatter[1],
+            ]
         )
 
         return ElementSGSTerms(scatter=scatter_array, label=label_array)
@@ -388,9 +369,7 @@ class BurgersDataGenerator(BurgersBase):
     # Utility
     # ------------------------------------------------------------------
 
-    def compute_du_bar_dt(
-        self, u_bar_now: NDArray, u_bar_prev: NDArray
-    ) -> NDArray:
+    def compute_du_bar_dt(self, u_bar_now: NDArray, u_bar_prev: NDArray) -> NDArray:
         """First-order backward difference du_bar/dt."""
         return (u_bar_now - u_bar_prev) / self._disc_cfg.dt_les
 
@@ -399,7 +378,7 @@ class BurgersDataGenerator(BurgersBase):
         u_bar_now = nodal_project(
             self.solution, mesh_les=self._mesh_les, mesh_dns=self._mesh_dns
         )
-        u_les_to_dns = np.interp(self._mesh_dns, self._mesh_les, u_bar_now)
+        u_les_to_dns = np.array(np.interp(self._mesh_dns, self._mesh_les, u_bar_now))
         projected_forcing = (
             nodal_project(
                 self.forcing_current,
@@ -431,7 +410,7 @@ class BurgersDataGenerator(BurgersBase):
         train_fraction: float = 0.8,
         random_seed: int = 42,
     ) -> None:
-        """Flatten assembled stencils/labels, normalise, split, and save to CSV.
+        """Flatten assembled stencils/labels, normalize, split, and save to CSV.
 
         Skips (snapshot, element) pairs where the input stencil is None (warmup / boundary).
         Saves:
@@ -537,7 +516,7 @@ class BurgersDataGenerator(BurgersBase):
         y_mean: NDArray,
         y_std: NDArray,
     ) -> None:
-        """Save normalisation stats to CSV; rows = [stat_name, *values]."""
+        """Save normalization stats to CSV; rows = [stat_name, *values]."""
         with open(save_path, mode="w", newline="") as file_handle:
             writer = csv.writer(file_handle)
             writer.writerow(["stat"] + _INPUT_COLS + _OUTPUT_COLS)
@@ -580,7 +559,7 @@ class BurgersDataGenerator(BurgersBase):
 def load_sgsp_training_csv(
     data_path: Path,
 ) -> tuple[NDArray, NDArray, NDArray, NDArray]:
-    """Load normalised (X_train, y_train, X_val, y_val) from CSV files.
+    """Load normalized (X_train, y_train, X_val, y_val) from CSV files.
 
     Returns float64 arrays; callers should convert to float32 for PyTorch.
     """
@@ -600,7 +579,7 @@ def load_sgsp_training_csv(
 def load_normalisation_stats_csv(
     data_path: Path,
 ) -> dict[str, NDArray]:
-    """Load normalisation stats saved by BurgersDataGenerator.
+    """Load normalization stats saved by BurgersDataGenerator.
 
     Returns dict with keys: x_mean, x_std (shape 20), y_mean, y_std (shape 5).
     Raises ValueError if shapes are inconsistent with expected stencil dimensions.
@@ -647,7 +626,7 @@ class ProjDNSReconstructor(BurgersBase):
         disc_cfg: DiscretisationConfig,
         master_path: Path,
         simulation_mode: str = "no_model",
-        snapshot_factor: int | None = 1,
+        snapshot_factor: int = 1,
         use_closure_terms: bool = True,
     ) -> None:
         super().__init__(
@@ -750,7 +729,9 @@ class ProjDNSReconstructor(BurgersBase):
         """Scatter all five SGS contributions from each element to both nodes."""
         snapshot_idx = min(time_step, len(self.closure_terms) - 1)
         for element_idx, element_left_node in enumerate(self.nodes_les[:-1]):
-            element_terms: ElementSGSTerms = self.closure_terms[snapshot_idx][element_idx]
+            element_terms: ElementSGSTerms = self.closure_terms[snapshot_idx][
+                element_idx
+            ]
             for local_node, global_node in enumerate(
                 [element_left_node, element_left_node + 1]
             ):
@@ -831,7 +812,7 @@ if __name__ == "__main__":
         domain_length=1,
     )
     _path = Path(__file__).parent.parent / "test_suite"
-    _problem = replace(Problems.raj_one, domain_timespan=10.0)
+    _problem = replace(Problems.raj_one, domain_timespan=2.0)
 
     _solver = BurgersDataGenerator(
         _problem,
