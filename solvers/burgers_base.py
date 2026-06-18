@@ -832,7 +832,7 @@ class BurgersBase:
         with open(self.master_path / "config.json", "w") as file_handle:
             json.dump(config_serializable, file_handle, indent=2)
 
-    def write_solution_to_csv(self) -> None:
+    def write_solution_to_csv(self, save_path: Path | None = None) -> None:
         """Write extracted solution snapshots to CSV files."""
         solutions = self.snapshots_solution
         forcings = self.snapshots_forcing
@@ -842,7 +842,8 @@ class BurgersBase:
         times = self.requested_snapshots[: len(solutions)]
 
         for solution, time_value, forcing in zip(solutions, times, forcings):
-            filepath = self.master_path / f"sol_t{time_value:.6f}.csv"
+            master_path = save_path if save_path is not None else self.master_path
+            filepath = master_path / f"sol_t{time_value:.6f}.csv"
             with open(filepath, mode="w", newline="") as file_handle:
                 writer = csv.writer(file_handle)
                 writer.writerow(["node_index", "x_coordinate", "velocity", "forcing"])
