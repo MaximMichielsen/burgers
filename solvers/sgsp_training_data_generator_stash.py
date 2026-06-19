@@ -129,6 +129,7 @@ class BurgersDataGenerator(BurgersBase):
         master_path: Path,
         dns_save_path: Path | None = None,
         sgsp_training_data_path: Path | None = None,
+        projection_save_path: Path | None = None,
         snapshot_factor: int = 1,
         projection_mode: str = "nodal",
         warmup_steps: int = WARMUP_STEPS,
@@ -146,6 +147,11 @@ class BurgersDataGenerator(BurgersBase):
             sgsp_training_data_path
             if sgsp_training_data_path is not None
             else master_path / "training_data" / "sgsp"
+        )
+        self.projection_save_path = (
+            projection_save_path
+            if projection_save_path is not None
+            else master_path / "solver_data" / "projection"
         )
 
         self._projection_mode = projection_mode
@@ -402,7 +408,33 @@ class BurgersDataGenerator(BurgersBase):
         self.dns_save_path.mkdir(parents=True, exist_ok=True)
         self.sgs_save_path.mkdir(parents=True, exist_ok=True)
         self.write_solution_to_csv(save_path=self.dns_save_path)
+        self.write_projected_solution_to_csv(save_path=self.projection_save_path)
         self.save_sgsp_training_csv()
+
+    def write_projected_solution_to_csv(self, save_path: Path | None = None) -> None:
+        """Write extracted solution snapshots to CSV files."""
+        solutions = self.u_bar_history
+        if self.requested_snapshots is None:
+            return
+
+        times = self.requested_snapshots[: len(solutions)]
+
+        for solution, time_value in zip(solutions, times):
+            master_path = save_path if save_path is not None else self.master_path
+            filepath = master_path / f"sol_t{time_value:.6f}.csv"
+            with open(filepath, mode="w", newline="") as file_handle:
+                writer = csv.writer(file_handle)
+                writer.writerow(["node_index", "x_coordinate", "velocity"])
+                for i in range(len(solution)):
+                    writer.writerow(
+                        [
+                            self.nodes_les[i],
+                            self._mesh_les[i],
+                            solution[i],
+                        ]
+                    )
+
+        print(f"wrote {len(solutions)} snapshots at {self.master_path}")
 
     def save_sgsp_training_csv(
         self,

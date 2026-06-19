@@ -17,7 +17,7 @@ from constants import (
     LES_SGSP_SAVE_PATH,
     LES_AVC_SAVE_PATH,
     BLOWN_UP_FOLDER,
-    NORM_STATS,
+    NORM_STATS, PROJECTION_SAVE_PATH,
 )
 
 
@@ -96,7 +96,7 @@ class RunPaths:
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
             les_sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,
-            projection=master_path / TRAINING_DATA_FOLDER / PRE_SPLIT_FOLDER,
+            projection=master_path / SOLVER_DATA_FOLDER / PROJECTION_SAVE_PATH,
             training=master_path / TRAINING_DATA_FOLDER / POST_SPLIT_FOLDER,
             normalization=master_path
             / TRAINING_DATA_FOLDER
