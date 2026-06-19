@@ -25,16 +25,16 @@ matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 
-problem: Problem = Problems.raj_three
-problem = replace(problem, domain_timespan=1.0)
+problem: Problem = Problems.raj_two
+problem = replace(problem, domain_timespan=4.0)
 
 pipeline = PipelineConfig.all(manual_path=r"")
-pipeline.clip_pusuluri = False
+pipeline.clip_pusuluri = True
 pipeline.clip_rajampeta = False
 
 n_nodes_les: int = 17
 temporal_refinement: int = 1
-courant_les: float = 0.1
+courant_les: float = 0.01
 
 PROJECTION_MODE: str = "nodal"
 ALPHA_MAX: float = 100 * problem.viscosity
