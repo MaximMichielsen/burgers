@@ -94,6 +94,7 @@ def run_data_generator(
     disc_cfg: DiscretisationConfig,
     master_path: Path,
     dns_save_path: Path,
+    projection_data_path: Path,
     sgsp_data_training_path: Path,
 ) -> None:
     """Run DNS and assemble SGSP training data."""
@@ -103,7 +104,8 @@ def run_data_generator(
         "dns",
         master_path,
         dns_save_path,
-        sgsp_data_training_path,
+        sgsp_training_data_path=sgsp_data_training_path,
+        projection_save_path=projection_data_path
     )
     solver.print_configuration()
     solver.run_simulation()
