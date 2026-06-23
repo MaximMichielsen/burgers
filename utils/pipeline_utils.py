@@ -83,8 +83,7 @@ def run_dns(
 
     cache_result = resolve_dns_cache(cache_root, dns_cache_key, problem.domain_timespan)
 
-    if cache_result.cache_dir is None:
-        raise TypeError("Cache Dir is None!")
+
 
     if cache_result.status == DNSCacheStatus.HIT:
         print(f"[DNS cache] HIT — reusing {cache_result.cache_dir}")

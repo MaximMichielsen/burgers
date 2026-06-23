@@ -9,12 +9,13 @@ from matplotlib import animation, pyplot as plt
 from matplotlib.animation import FuncAnimation
 from numpy.typing import NDArray
 
-from pipeline_settings import RunPaths
 from problems_and_configurations.disc_config import DiscretizationConfig
 
 from utils.io_utils import read_data
 
 import re
+
+from utils.pipeline_utils import RunPaths
 
 
 @dataclass

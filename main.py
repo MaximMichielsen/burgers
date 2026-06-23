@@ -41,8 +41,8 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
-problem: Problem = Problems.pipeline_test
-problem = replace(problem, domain_timespan=0.2)
+problem: Problem = Problems.raj_one
+problem = replace(problem, domain_timespan=2.0)
 
 clip_pusuluri: bool = False
 clip_rajampeta: bool = False
@@ -126,30 +126,32 @@ if __name__ == "__main__":
         n_wavenumber_bins=n_wavenumber_bins,
     )
 
-    sac_config = SACConfig(
-        n_skip_steps=N_SKIP,
-        warmup_steps=500,  # ~5 full episodes of random exploration
-        batch_size=64 * 2,  # fill faster — fine for this problem size
-    )
     avc_trainer_cfg = AVCTrainerConfig(
         paths.avcg_model,
         dns_energy_spectrum=dns_positive_spectrum,
         dns_dissipation=dns_dissipation_ref,
         correction_mode="global",
-        n_skip_steps=sac_config.n_skip_steps,
+        n_skip_steps=N_SKIP,
         exclude_diss_from_reward=True,
         simulation_mode="avc",
     )
 
     av_corrector_global = AVController(
         alpha_max=ALPHA_MAX * problem.viscosity,
-        output_scale=problem.viscosity * OUTPUT_SCALE,
+        output_scale=1,
         n_wavenumber_bins=n_wavenumber_bins,
         correction_mode=avc_trainer_cfg.correction_mode,
         n_output_nodes=1,
     )
     paths.agents.mkdir(parents=True, exist_ok=True)
     save_corrector(av_corrector_global, paths.avcg_model)
+
+    sac_config = SACConfig(
+        n_skip_steps=N_SKIP,
+        warmup_steps=500,
+        batch_size=64 * 2,
+    )
+
     environment_global = BurgersAVCEnvironment(
         problem=problem,
         disc_cfg=disc_cfg,
@@ -225,7 +227,7 @@ if __name__ == "__main__":
                     mesh=disc_cfg.mesh_les,
                 ),
                 SolutionConfig(
-                    data_path=paths.avcg_model,
+                    data_path=paths.les_avc_data / "global",
                     label="LES - AVC (global)",
                     color="royalblue",
                     linestyle="--",
@@ -246,8 +248,8 @@ if __name__ == "__main__":
             les_sgsp_dir=paths.les_sgsp_data
             if is_viable_solution_path(paths.les_sgsp_data)
             else None,
-            les_avcg_dir=paths.avcg_model
-            if is_viable_solution_path(paths.avcg_model)
+            les_avcg_dir=paths.les_avc_data / "global"
+            if is_viable_solution_path(paths.les_avc_data / "global")
             else None,
             output_path=paths.master,
             viscosity=problem.viscosity,
