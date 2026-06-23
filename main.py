@@ -14,7 +14,7 @@ from ml.corrector_training.online_trainer import (
     SACAgent,
     OnlineAVTrainer,
 )
-from ml.ml_agents.corrector import AVController
+from ml.ml_agents.corrector import AVController, save_corrector
 from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problems, Problem
@@ -150,6 +150,7 @@ if __name__ == "__main__":
         correction_mode=avc_trainer_cfg.correction_mode,
         n_output_nodes=1,
     )
+    save_corrector(av_corrector_global, paths.avcg_model)
     environment_global = BurgersAVCEnvironment(
         problem=problem,
         disc_cfg=disc_cfg,
