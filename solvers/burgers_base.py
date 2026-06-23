@@ -34,7 +34,7 @@ from constants import (
 )
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
-from utils.io_utils import compute_adjusted_dt
+from utils.math_utils import compute_adjusted_dt
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ class BurgersBase:
         simulation_mode: str,
         master_path: Path,
         snapshot_factor: int = 1,
+        t_start: float = 0.0,
     ) -> None:
 
         if simulation_mode not in self._VALID_SIMULATION_MODES:
@@ -73,7 +74,7 @@ class BurgersBase:
         # Simulation settings
         self.simulation_mode: str = simulation_mode
         self.domain_timespan: float = problem.domain_timespan
-        self.simulation_time_elapsed: float = 0.0
+        self.simulation_time_elapsed: float = t_start
         self.domain_length: float = problem.domain_length
         self._dt: float = (
             disc_cfg.dt_dns if simulation_mode == "dns" else disc_cfg.dt_les
@@ -81,8 +82,8 @@ class BurgersBase:
         self.dt, self._n_time_steps = compute_adjusted_dt(
             self._dt, self.domain_timespan
         )
-        self.time_steps: NDArray = np.linspace(
-            0, self.domain_timespan, self._n_time_steps + 1
+        self.time_steps: NDArray = (
+            np.linspace(0, self.domain_timespan, self._n_time_steps + 1) + t_start
         )
         self.viscosity: float = float(problem.viscosity)
 

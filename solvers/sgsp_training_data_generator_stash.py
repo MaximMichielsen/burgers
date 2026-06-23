@@ -133,9 +133,11 @@ class BurgersDataGenerator(BurgersBase):
         snapshot_factor: int = 1,
         projection_mode: str = "nodal",
         warmup_steps: int = WARMUP_STEPS,
+        t_start: float = 0.0,
+        append_mode : bool = False
     ) -> None:
         super().__init__(
-            problem, disc_cfg, simulation_mode, master_path, snapshot_factor
+            problem, disc_cfg, simulation_mode, master_path, snapshot_factor, t_start
         )
 
         self.dns_save_path = (
@@ -180,6 +182,8 @@ class BurgersDataGenerator(BurgersBase):
         self.assembled_sgs_terms: list[list[ElementSGSTerms]] = []
         # SGSP input stencils: list[list[NDArray | None]] where inner NDArray is (20,)
         self.assembled_input_stencils: list[list[NDArray | None]] = []
+
+        self.append_mode = append_mode
 
     # ------------------------------------------------------------------
     # Time-stepping
@@ -409,7 +413,7 @@ class BurgersDataGenerator(BurgersBase):
         self.sgs_save_path.mkdir(parents=True, exist_ok=True)
         self.write_solution_to_csv(save_path=self.dns_save_path)
         self.write_projected_solution_to_csv(save_path=self.projection_save_path)
-        self.save_sgsp_training_csv()
+        self.save_sgsp_training_csv(append_mode=self.append_mode)
 
     def write_projected_solution_to_csv(self, save_path: Path | None = None) -> None:
         """Write extracted solution snapshots to CSV files."""
@@ -437,18 +441,21 @@ class BurgersDataGenerator(BurgersBase):
         print(f"wrote {len(solutions)} snapshots at {self.master_path}")
 
     def save_sgsp_training_csv(
-        self,
-        train_fraction: float = 0.8,
-        random_seed: int = 42,
+            self,
+            train_fraction: float = 0.8,
+            random_seed: int = 42,
+            append_mode: bool = False,
     ) -> None:
         """Flatten assembled stencils/labels, normalize, split, and save to CSV.
 
-        Skips (snapshot, element) pairs where the input stencil is None (warmup / boundary).
+        In append_mode, loads existing X_raw.csv/y_raw.csv and prepends to new
+        rows before normalizing over the full combined dataset.
+
         Saves:
-            training_data/sgsp/
-                X_train.csv, y_train.csv
-                X_val.csv,   y_val.csv
-                normalisation_stats.csv
+            X_raw.csv, y_raw.csv          (un-normalized, full dataset)
+            X_train.csv, y_train.csv
+            X_val.csv,   y_val.csv
+            normalisation_stats.csv
         """
         x_rows: list[NDArray] = []
         y_rows: list[NDArray] = []
@@ -457,7 +464,7 @@ class BurgersDataGenerator(BurgersBase):
         times_sliced = self.requested_snapshots[:n_snapshots]
 
         for stencil_list, sgs_term_list in zip(
-            self.assembled_input_stencils, self.assembled_sgs_terms
+                self.assembled_input_stencils, self.assembled_sgs_terms
         ):
             for stencil_vec, element_terms in zip(stencil_list, sgs_term_list):
                 if stencil_vec is None:
@@ -469,8 +476,34 @@ class BurgersDataGenerator(BurgersBase):
             print("No valid training pairs found; nothing saved.")
             return
 
-        x_matrix = np.array(x_rows, dtype=np.float64)
-        y_matrix = np.array(y_rows, dtype=np.float64)
+        x_new = np.array(x_rows, dtype=np.float64)
+        y_new = np.array(y_rows, dtype=np.float64)
+
+        if append_mode:
+            x_raw_path = self.sgs_save_path / "X_raw.csv"
+            y_raw_path = self.sgs_save_path / "y_raw.csv"
+            if x_raw_path.exists() and y_raw_path.exists():
+                x_existing = np.loadtxt(x_raw_path, delimiter=",", skiprows=1)
+                y_existing = np.loadtxt(y_raw_path, delimiter=",", skiprows=1)
+                x_matrix = np.vstack([x_existing, x_new])
+                y_matrix = np.vstack([y_existing, y_new])
+            else:
+                x_matrix = x_new
+                y_matrix = y_new
+        else:
+            x_matrix = x_new
+            y_matrix = y_new
+
+        self._write_csv(
+            save_path=self.sgs_save_path / "X_raw.csv",
+            data=x_matrix,
+            header=_INPUT_COLS,
+        )
+        self._write_csv(
+            save_path=self.sgs_save_path / "y_raw.csv",
+            data=y_matrix,
+            header=_OUTPUT_COLS,
+        )
 
         x_mean, x_std, y_mean, y_std = self._compute_normalisation_stats(
             x_matrix, y_matrix

@@ -1,9 +1,44 @@
 """Utility functions for input/output related aspects."""
 
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
+from solvers.sgsp_training_data_generator_stash import BurgersDataGenerator
+
+if TYPE_CHECKING:
+    from problems_and_configurations.disc_config import DiscretisationConfig
+    from problems_and_configurations.problems import Problem
+
+
+def run_data_generator(
+    problem: Problem,
+    disc_cfg: DiscretisationConfig,
+    master_path: Path,
+    dns_save_path: Path,
+    projection_data_path: Path,
+    sgsp_data_training_path: Path,
+    t_start: float = 0.0,
+    append_mode: bool = False
+) -> None:
+    """Run DNS and assemble SGSP training data."""
+    solver = BurgersDataGenerator(
+        problem,
+        disc_cfg,
+        "dns",
+        master_path,
+        dns_save_path,
+        sgsp_training_data_path=sgsp_data_training_path,
+        projection_save_path=projection_data_path,
+        t_start=t_start,
+        append_mode = append_mode
+    )
+    solver.print_configuration()
+    solver.run_simulation()
+    solver.post_processing()
 
 
 def read_data(
@@ -40,17 +75,3 @@ def read_data(
         return list(solutions)[-1], mesh
 
     return mesh, list(times), list(solutions), list(forcings)
-
-
-def compute_adjusted_dt(
-    dt_nominal: float, time_end: float | int, time_start: float = 0.0
-) -> tuple[float, int]:
-    """Adjust dt so that time_end is hit exactly.
-
-    Rounds to the nearest integer step count and recomputes dt.
-    The relative change in dt is O(1/n_steps), negligible in practice.
-    """
-    time_span = time_end - time_start
-    n_steps = max(1, round(time_span / dt_nominal))
-    dt_adjusted = time_span / n_steps
-    return dt_adjusted, n_steps

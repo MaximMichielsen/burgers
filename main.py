@@ -7,6 +7,7 @@ import matplotlib
 import numpy as np
 
 from constants import RUNS_FOLDER
+from dns_caching import DNSCacheKey, resolve_dns_cache, DNSCacheStatus, extend_dns_run, write_dns_parameters
 from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.corrector_training.online_trainer import (
     SACConfig,
@@ -24,10 +25,9 @@ from problems_and_configurations.problems import Problems, Problem
 from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_base import BurgersBase
 from solvers.burgers_sgsp_stash import BurgersSGSP
-from solvers.sgsp_training_data_generator_stash import BurgersDataGenerator
 from ml.ml_agents.solver_configs import SGSPConfig, AVCRunConfig, AVCTrainerConfig
 from utils.enegy_evolution_utils import plot_energy_comparison
-from utils.io_utils import read_data
+from utils.io_utils import read_data, run_data_generator
 from utils.plot_utils import (
     plot_solution_comparison,
     SolutionConfig,
@@ -35,6 +35,7 @@ from utils.plot_utils import (
 )
 
 import csv
+
 
 def load_first_projected_solution(projection_dir: Path) -> np.ndarray:
     """Load the first projected solution snapshot from the projection directory."""
@@ -49,13 +50,14 @@ def load_first_projected_solution(projection_dir: Path) -> np.ndarray:
             velocity_values.append(float(csv_row["velocity"]))
     return np.array(velocity_values)
 
+
 CURRENT_DIR = Path(__file__).parent.resolve()
 matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 
 problem: Problem = Problems.pipeline_test
-problem = replace(problem, domain_timespan=0.5)
+problem = replace(problem, domain_timespan=0.8)
 
 pipeline = PipelineConfig.all(manual_path=r"")
 pipeline.clip_pusuluri = True
@@ -87,29 +89,6 @@ paths.dns_data = Path(manual_load_dns) if manual_load_dns != "" else paths.dns_d
 
 
 # -------------------- Pipeline functions ------------------------------ #
-
-
-def run_data_generator(
-    problem: Problem,
-    disc_cfg: DiscretisationConfig,
-    master_path: Path,
-    dns_save_path: Path,
-    projection_data_path: Path,
-    sgsp_data_training_path: Path,
-) -> None:
-    """Run DNS and assemble SGSP training data."""
-    solver = BurgersDataGenerator(
-        problem,
-        disc_cfg,
-        "dns",
-        master_path,
-        dns_save_path,
-        sgsp_training_data_path=sgsp_data_training_path,
-        projection_save_path=projection_data_path
-    )
-    solver.print_configuration()
-    solver.run_simulation()
-    solver.post_processing()
 
 
 def run_sgsp_training(
@@ -163,10 +142,81 @@ def run_sgsp_coupled_solver(
 
 # -------------------- Entry point ------------------------------ #
 
+
+def write_dns_params(cache_dir, dns_cache_key, domain_timespan):
+    pass
+
+
 if __name__ == "__main__":
     # --------------------------------------- DNS & SGSP data --------------------------------------- #
-    run_data_generator(problem, disc_cfg, master_path, paths.dns_data, paths.projection)
+    DNS_CACHE_ROOT = CURRENT_DIR / "dns_cache"
 
+    dns_cache_key = DNSCacheKey(
+        problem_name=problem.name,
+        domain_length=problem.domain_length,
+        viscosity=problem.viscosity,
+        forcing_name=problem.forcing.__name__,
+        bc_type=problem.boundary_condition_type,
+        bc_value=problem.boundary_condition_value,
+        n_nodes_dns=disc_cfg.n_nodes_dns,
+        temporal_refinement=disc_cfg.temporal_refinement,
+        courant_les=courant_les,
+    )
+
+    cache_result = resolve_dns_cache(
+        DNS_CACHE_ROOT, dns_cache_key, problem.domain_timespan
+    )
+
+    if cache_result.status == DNSCacheStatus.HIT:
+        print(f"[DNS cache] HIT — reusing {cache_result.cache_dir}")
+        paths.dns_data = cache_result.cache_dir / "solver_data"
+        paths.projection = (
+            cache_result.cache_dir / f"projection_{disc_cfg.n_nodes_les}nodes"
+        )
+        paths.training = (
+            cache_result.cache_dir / f"training_{disc_cfg.n_nodes_les}nodes"
+        )
+
+    elif cache_result.status == DNSCacheStatus.HIT_SHORT:
+        print(
+            f"[DNS cache] HIT_SHORT — extending from t={cache_result.cached_timespan:.4f}"
+        )
+        projection_dir = (
+            cache_result.cache_dir / f"projection_{disc_cfg.n_nodes_les}nodes"
+        )
+        training_dir = cache_result.cache_dir / f"training_{disc_cfg.n_nodes_les}nodes"
+        extend_dns_run(
+            cache_dir=cache_result.cache_dir,
+            cache_result=cache_result,
+            problem=problem,
+            disc_cfg=disc_cfg,
+            requested_timespan=problem.domain_timespan,
+            projection_dir=projection_dir,
+            training_dir=training_dir,
+        )
+        paths.dns_data = cache_result.cache_dir / "solver_data"
+        paths.projection = projection_dir
+        paths.training = training_dir
+
+    else:
+        print("[DNS cache] MISS — running DNS")
+        cache_dir = DNS_CACHE_ROOT / dns_cache_key.dir_to_name()
+        paths.dns_data = cache_dir / "solver_data"
+        paths.projection = cache_dir / f"projection_{disc_cfg.n_nodes_les}nodes"
+        paths.training = cache_dir / f"training_{disc_cfg.n_nodes_les}nodes"
+        paths.projection.mkdir(parents=True, exist_ok=True)
+        paths.training.mkdir(parents=True, exist_ok=True)
+        run_data_generator(
+            problem,
+            disc_cfg,
+            cache_dir,
+            paths.dns_data,
+            paths.projection,
+            paths.training,
+        )
+        write_dns_parameters(cache_dir, dns_cache_key, problem.domain_timespan)
+
+    quit()
     # --------------------------------------- SGSP training --------------------------------------- #
     run_sgsp_training(
         data_path=paths.projection,
