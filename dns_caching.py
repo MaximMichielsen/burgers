@@ -4,10 +4,12 @@ import json
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
+from typing import Callable
 
+from constants import DNS_FOLDER
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
-from utils.io_utils import read_data, run_data_generator
+from utils.io_utils import read_data
 
 
 @dataclass(frozen=True)
@@ -92,12 +94,13 @@ def extend_dns_run(
     problem: Problem,
     disc_cfg: DiscretisationConfig,
     requested_timespan: float,
+    run_data_generator_fn: Callable,
 ) -> None:
     """Extend an existing DNS run to cover the requested timespan."""
     cached_timespan = cache_result.cached_timespan
     extension_duration = requested_timespan - cached_timespan
 
-    last_snapshot, _ = read_data(cache_dir / "solver_data", final_only=True)
+    last_snapshot, _ = read_data(cache_dir / DNS_FOLDER, final_only=True)
 
     extension_problem = dataclasses.replace(
         problem,
@@ -105,11 +108,11 @@ def extend_dns_run(
         initial_condition=last_snapshot,
     )
 
-    run_data_generator(
+    run_data_generator_fn(
         problem=extension_problem,
         disc_cfg=disc_cfg,
         master_path=cache_dir,
-        dns_save_path=cache_dir / "solver_data",
+        dns_save_path=cache_dir / DNS_FOLDER,
         projection_data_path=projection_dir,
         sgsp_data_training_path=training_dir,
         t_start=cached_timespan,

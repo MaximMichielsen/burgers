@@ -54,6 +54,7 @@ from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig
 from solvers.burgers_base import BurgersBase
+from solvers.sgsp_training_data_generator import load_normalisation_stats_csv
 
 logger = logging.getLogger(__name__)
 
@@ -232,11 +233,11 @@ class BurgersSGSP(BurgersBase):
             self._predictor = load_predictor(sgsp_cfg.sgsp_model_path)
             self._predictor.eval()
 
-            norm_data = np.load(sgsp_cfg.normalization_path)
-            self._x_mean = norm_data["X_mean"].astype(np.float32)
-            self._x_std = norm_data["X_std"].astype(np.float32)
-            self.y_mean = norm_data["y_mean"].astype(np.float32)
-            self.y_std = norm_data["y_std"].astype(np.float32)
+            norm_stats = load_normalisation_stats_csv(sgsp_cfg.normalization_path)
+            self._x_mean = norm_stats["x_mean"].astype(np.float32)
+            self._x_std = norm_stats["x_std"].astype(np.float32)
+            self.y_mean = norm_stats["y_mean"].astype(np.float32)
+            self.y_std = norm_stats["y_std"].astype(np.float32)
 
         self._u_bar_history: list[NDArray] = []
         self._du_bar_dt_history: list[NDArray] = []
@@ -563,18 +564,15 @@ class BurgersSGSP(BurgersBase):
     ) -> NDArray:
         """Scatter per-element SGSP predictions into the global residual.
 
-        Columns: 0=cross, 1=reynolds, 2=temporal_L, 3=temporal_R, 4=viscous.
-        Spatial terms (cross, reynolds, viscous) integrate against w_x:
-        opposite sign at left (-1/h) and right (+1/h) nodes.
-        Temporal terms integrate against their respective shape functions.
+        Mirrors ProjDNSReconstructor.add_closure_terms_to_residual exactly.
+        Gradient terms (cross, reynolds, viscous) use right-node w_x convention
+        with sign flip for left node. Temporal terms go to their respective node only.
         """
         if not np.all(np.isfinite(sgsp_correction)):
             return global_residual
 
         residual_modified = global_residual.copy()
-        n_boundary_node: int = (
-            int(self.nodes_les[-1]) if hasattr(self, "nodes_les") else self.n_nodes - 1
-        )
+        n_boundary_node: int = self.n_nodes - 1
 
         for elem_idx, element in enumerate(self.elements):
             node_left: int = int(element[0])
@@ -582,19 +580,24 @@ class BurgersSGSP(BurgersBase):
 
             cross_val: float = sgsp_correction[elem_idx, 0]
             reynolds_val: float = sgsp_correction[elem_idx, 1]
-            temporal_left_val: float = sgsp_correction[elem_idx, 2]
-            temporal_right_val: float = sgsp_correction[elem_idx, 3]
+            temporal_l_val: float = sgsp_correction[elem_idx, 2]
+            temporal_r_val: float = sgsp_correction[elem_idx, 3]
             viscous_val: float = sgsp_correction[elem_idx, 4]
 
-            spatial_contribution: float = (
-                cross_val + reynolds_val - self.viscosity * viscous_val
-            )
-
-            for global_node in [node_left, node_right]:
+            for local_node, global_node in enumerate([node_left, node_right]):
                 if global_node in (0, n_boundary_node):
                     continue
-                sign = 1.0 if global_node == node_right else -1.0
-                residual_modified[global_node] -= sign * spatial_contribution
+                sign: float = 1.0 if local_node == 1 else -1.0
+                temporal_term: float = (
+                    temporal_l_val if local_node == 0 else temporal_r_val
+                )
+                correction: float = (
+                    sign * cross_val
+                    + sign * reynolds_val
+                    + temporal_term
+                    - self.viscosity * sign * viscous_val
+                )
+                residual_modified[global_node] -= correction
 
         return residual_modified
 

@@ -6,17 +6,15 @@ from pathlib import Path
 
 from constants import (
     SOLVER_DATA_FOLDER,
-    DNS_SAVE_PATH,
+    DNS_FOLDER,
     LES_ANALYTICAL_SAVE_PATH,
     LES_NO_MODEL_SAVE_PATH,
-    PRE_SPLIT_FOLDER,
     TRAINING_DATA_FOLDER,
     POST_SPLIT_FOLDER,
     AGENT_FOLDER,
     A_PRIORI_FOLDER,
     LES_SGSP_SAVE_PATH,
     LES_AVC_SAVE_PATH,
-    BLOWN_UP_FOLDER,
     NORM_STATS,
     PROJECTION_SAVE_PATH,
 )
@@ -93,7 +91,7 @@ class RunPaths:
         return cls(
             master=master_path,
             solver_data=master_path / SOLVER_DATA_FOLDER,
-            dns_data=master_path / SOLVER_DATA_FOLDER / DNS_SAVE_PATH,
+            dns_data=master_path / SOLVER_DATA_FOLDER / DNS_FOLDER,
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
             les_sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,

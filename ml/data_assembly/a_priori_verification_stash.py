@@ -23,7 +23,7 @@ from scipy.stats import pearsonr
 
 from constants import OUTPUT_UNITS
 
-from solvers.sgsp_training_data_generator_stash import load_normalisation_stats_csv
+from solvers.sgsp_training_data_generator import load_normalisation_stats_csv
 
 # ---------------------------------------------------------------------------
 # Output term labels

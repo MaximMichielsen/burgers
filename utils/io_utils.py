@@ -2,43 +2,11 @@
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
-from solvers.sgsp_training_data_generator_stash import BurgersDataGenerator
-
-if TYPE_CHECKING:
-    from problems_and_configurations.disc_config import DiscretisationConfig
-    from problems_and_configurations.problems import Problem
-
-
-def run_data_generator(
-    problem: Problem,
-    disc_cfg: DiscretisationConfig,
-    master_path: Path,
-    dns_save_path: Path,
-    projection_data_path: Path,
-    sgsp_data_training_path: Path,
-    t_start: float = 0.0,
-    append_mode: bool = False
-) -> None:
-    """Run DNS and assemble SGSP training data."""
-    solver = BurgersDataGenerator(
-        problem,
-        disc_cfg,
-        "dns",
-        master_path,
-        dns_save_path,
-        sgsp_training_data_path=sgsp_data_training_path,
-        projection_save_path=projection_data_path,
-        t_start=t_start,
-        append_mode = append_mode
-    )
-    solver.print_configuration()
-    solver.run_simulation()
-    solver.post_processing()
 
 
 def read_data(
@@ -75,3 +43,17 @@ def read_data(
         return list(solutions)[-1], mesh
 
     return mesh, list(times), list(solutions), list(forcings)
+
+
+def load_first_projected_solution(projection_dir: Path) -> np.ndarray:
+    """Load the first projected solution snapshot from the projection directory."""
+    csv_files = sorted(projection_dir.glob("sol_t*.csv"))
+    if not csv_files:
+        raise FileNotFoundError(f"No projected solution CSVs found in {projection_dir}")
+    first_csv_path = csv_files[0]
+    velocity_values: list[float] = []
+    with open(first_csv_path, newline="") as file_handle:
+        reader = csv.DictReader(file_handle)
+        for csv_row in reader:
+            velocity_values.append(float(csv_row["velocity"]))
+    return np.array(velocity_values)

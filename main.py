@@ -7,7 +7,6 @@ import matplotlib
 import numpy as np
 
 from constants import RUNS_FOLDER
-from dns_caching import DNSCacheKey, resolve_dns_cache, DNSCacheStatus, extend_dns_run, write_dns_parameters
 from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.corrector_training.online_trainer import (
     SACConfig,
@@ -16,39 +15,27 @@ from ml.corrector_training.online_trainer import (
     OnlineAVTrainer,
 )
 from ml.ml_agents.corrector import AVController
-from ml.ml_agents.predictor_stash import train_predictor, plot_training_diagnostics
-from ml.data_assembly.a_priori_verification_stash import run_apriori_verification
-from ml.ml_agents.predictor_stash import evaluate_on_val_set
 from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problems, Problem
 from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_base import BurgersBase
-from solvers.burgers_sgsp_stash import BurgersSGSP
 from ml.ml_agents.solver_configs import SGSPConfig, AVCRunConfig, AVCTrainerConfig
 from utils.enegy_evolution_utils import plot_energy_comparison
-from utils.io_utils import read_data, run_data_generator
+from utils.io_utils import (
+    read_data,
+    load_first_projected_solution,
+)
+from utils.pipeline_utils import (
+    resolve_dns_caching,
+    run_sgsp_training,
+    run_sgsp_coupled_solver,
+)
 from utils.plot_utils import (
     plot_solution_comparison,
     SolutionConfig,
     is_viable_solution_path,
 )
-
-import csv
-
-
-def load_first_projected_solution(projection_dir: Path) -> np.ndarray:
-    """Load the first projected solution snapshot from the projection directory."""
-    csv_files = sorted(projection_dir.glob("sol_t*.csv"))
-    if not csv_files:
-        raise FileNotFoundError(f"No projected solution CSVs found in {projection_dir}")
-    first_csv_path = csv_files[0]
-    velocity_values: list[float] = []
-    with open(first_csv_path, newline="") as file_handle:
-        reader = csv.DictReader(file_handle)
-        for csv_row in reader:
-            velocity_values.append(float(csv_row["velocity"]))
-    return np.array(velocity_values)
 
 
 CURRENT_DIR = Path(__file__).parent.resolve()
@@ -57,7 +44,7 @@ matplotlib.use("Agg")  # needed when running on M12
 # -------------------- Problem and pipeline configuration ------------------------------ #
 
 problem: Problem = Problems.pipeline_test
-problem = replace(problem, domain_timespan=0.8)
+problem = replace(problem, domain_timespan=0.5)
 
 pipeline = PipelineConfig.all(manual_path=r"")
 pipeline.clip_pusuluri = True
@@ -84,142 +71,19 @@ master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=probl
 paths = RunPaths.from_master(master_path)
 paths.create_master()
 
-manual_load_dns: str = r""
-paths.dns_data = Path(manual_load_dns) if manual_load_dns != "" else paths.dns_data
-
-
-# -------------------- Pipeline functions ------------------------------ #
-
-
-def run_sgsp_training(
-    data_path: Path,
-    output_dir: Path,
-    domain_length: float,
-    n_elements: int,
-) -> None:
-    """Train SGSP predictor and run a priori verification."""
-    model, training_stats = train_predictor(
-        data_path=data_path,
-        output_dir=output_dir,
-    )
-    plot_training_diagnostics(
-        training_stats=training_stats,
-        output_dir=output_dir,
-        show_fig=False,
-    )
-    evaluate_on_val_set(
-        model=model,
-        data_path=data_path,
-        output_dir=output_dir,
-    )
-    run_apriori_verification(
-        model=model,
-        data_dir=data_path,
-        output_dir=output_dir,
-        domain_length=domain_length,
-        n_elements=n_elements,
-    )
-
-
-def run_sgsp_coupled_solver(
-    problem: Problem,
-    disc_cfg: DiscretisationConfig,
-    master_path: Path,
-    sgsp_cfg: SGSPConfig,
-) -> None:
-    """Run the LES solver with ANN-predicted SGS closure."""
-    solver = BurgersSGSP(
-        problem,
-        disc_cfg,
-        "sgsp",
-        master_path,
-        sgsp_cfg,
-    )
-    solver.print_configuration()
-    solver.run_simulation()
-    solver.post_processing()
-
-
-# -------------------- Entry point ------------------------------ #
-
-
-def write_dns_params(cache_dir, dns_cache_key, domain_timespan):
-    pass
-
 
 if __name__ == "__main__":
     # --------------------------------------- DNS & SGSP data --------------------------------------- #
     DNS_CACHE_ROOT = CURRENT_DIR / "dns_cache"
+    resolve_dns_caching(DNS_CACHE_ROOT, problem, disc_cfg, paths)
 
-    dns_cache_key = DNSCacheKey(
-        problem_name=problem.name,
-        domain_length=problem.domain_length,
-        viscosity=problem.viscosity,
-        forcing_name=problem.forcing.__name__,
-        bc_type=problem.boundary_condition_type,
-        bc_value=problem.boundary_condition_value,
-        n_nodes_dns=disc_cfg.n_nodes_dns,
-        temporal_refinement=disc_cfg.temporal_refinement,
-        courant_les=courant_les,
-    )
+    print(paths.dns_data)
+    print(paths.projection)
+    print(paths.training)
 
-    cache_result = resolve_dns_cache(
-        DNS_CACHE_ROOT, dns_cache_key, problem.domain_timespan
-    )
-
-    if cache_result.status == DNSCacheStatus.HIT:
-        print(f"[DNS cache] HIT — reusing {cache_result.cache_dir}")
-        paths.dns_data = cache_result.cache_dir / "solver_data"
-        paths.projection = (
-            cache_result.cache_dir / f"projection_{disc_cfg.n_nodes_les}nodes"
-        )
-        paths.training = (
-            cache_result.cache_dir / f"training_{disc_cfg.n_nodes_les}nodes"
-        )
-
-    elif cache_result.status == DNSCacheStatus.HIT_SHORT:
-        print(
-            f"[DNS cache] HIT_SHORT — extending from t={cache_result.cached_timespan:.4f}"
-        )
-        projection_dir = (
-            cache_result.cache_dir / f"projection_{disc_cfg.n_nodes_les}nodes"
-        )
-        training_dir = cache_result.cache_dir / f"training_{disc_cfg.n_nodes_les}nodes"
-        extend_dns_run(
-            cache_dir=cache_result.cache_dir,
-            cache_result=cache_result,
-            problem=problem,
-            disc_cfg=disc_cfg,
-            requested_timespan=problem.domain_timespan,
-            projection_dir=projection_dir,
-            training_dir=training_dir,
-        )
-        paths.dns_data = cache_result.cache_dir / "solver_data"
-        paths.projection = projection_dir
-        paths.training = training_dir
-
-    else:
-        print("[DNS cache] MISS — running DNS")
-        cache_dir = DNS_CACHE_ROOT / dns_cache_key.dir_to_name()
-        paths.dns_data = cache_dir / "solver_data"
-        paths.projection = cache_dir / f"projection_{disc_cfg.n_nodes_les}nodes"
-        paths.training = cache_dir / f"training_{disc_cfg.n_nodes_les}nodes"
-        paths.projection.mkdir(parents=True, exist_ok=True)
-        paths.training.mkdir(parents=True, exist_ok=True)
-        run_data_generator(
-            problem,
-            disc_cfg,
-            cache_dir,
-            paths.dns_data,
-            paths.projection,
-            paths.training,
-        )
-        write_dns_parameters(cache_dir, dns_cache_key, problem.domain_timespan)
-
-    quit()
     # --------------------------------------- SGSP training --------------------------------------- #
     run_sgsp_training(
-        data_path=paths.projection,
+        data_path=paths.training,
         output_dir=paths.model_output,
         domain_length=problem.domain_length,
         n_elements=n_nodes_les - 1,
@@ -228,7 +92,7 @@ if __name__ == "__main__":
     # --------------------------------------- SGSP coupled solver --------------------------------------- #
     sgsp_cfg = SGSPConfig(
         sgsp_model_path=paths.model_output / "sgs_predictor.pt",
-        normalization_path=paths.projection,  # contains normalisation_stats.csv
+        normalization_path=paths.training,  # contains normalisation_stats.csv
         blown_up_path=paths.les_sgsp_data / "blown_up",
         clip_pusuluri=pipeline.clip_pusuluri,
         clip_rajampeta=pipeline.clip_rajampeta,

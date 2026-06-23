@@ -49,7 +49,7 @@ AGENT_FOLDER: str = "agents"
 AVC_CORRECTOR_FOLDER: str = "corrector"
 A_PRIORI_FOLDER: str = "apriori"
 
-DNS_SAVE_PATH: str = "DNS"
+DNS_FOLDER: str = "DNS"
 LES_ANALYTICAL_SAVE_PATH: str = "LES_A"
 LES_NO_MODEL_SAVE_PATH: str = "LES_NM"
 LES_SGSP_SAVE_PATH: str = "LES_SGSP"
