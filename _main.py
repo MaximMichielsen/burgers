@@ -136,10 +136,10 @@ if __name__ == "__main__":
         )
         trained_model, training_stats = train_predictor(
             data_path=paths.training,
-            output_dir=paths.model_output,
+            output_dir=paths.agents,
         )
         plot_training_diagnostics(
-            training_stats=training_stats, output_dir=paths.model_output
+            training_stats=training_stats, output_dir=paths.agents
         )
         trained_model.eval()
 
@@ -163,7 +163,7 @@ if __name__ == "__main__":
             blown_up_path=paths.les_sgsp_data / "blown_up",
             clip_pusuluri=pipeline.clip_pusuluri,
             clip_rajampeta=pipeline.clip_rajampeta,
-            set_off_predictor=set_off_predictor,
+            turn_off_predictor=set_off_predictor,
         )
         solver_sgsp = BurgersSGSP(
             problem=problem,
@@ -253,7 +253,7 @@ if __name__ == "__main__":
                 environment=environment_global,
                 sac_agent=sac_agent_global,
                 sac_config=sac_config,
-                output_dir=paths.model_output / "avcg_checkpoints",
+                output_dir=paths.agents / "avcg_checkpoints",
             )
             trainer_global.train(n_episodes=AVC_EPOCHS)
 

@@ -82,8 +82,8 @@ class BurgersBase:
         self.dt, self._n_time_steps = compute_adjusted_dt(
             self._dt, self.domain_timespan
         )
-        self.time_steps: NDArray = (
-            np.linspace(0, self.domain_timespan, self._n_time_steps + 1) + t_start
+        self.time_steps: NDArray = np.linspace(
+            t_start, t_start + self.domain_timespan, self._n_time_steps + 1
         )
         self.viscosity: float = float(problem.viscosity)
 

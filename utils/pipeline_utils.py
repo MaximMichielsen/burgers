@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from constants import DNS_FOLDER
+from constants import DNS_FOLDER, RUNS_FOLDER
 from dns_caching import (
     DNSCacheKey,
     resolve_dns_cache,
@@ -13,6 +14,7 @@ from dns_caching import (
     extend_dns_run,
     write_dns_parameters,
 )
+from pipeline_settings import RunPaths
 from solvers.sgsp_training_data_generator import BurgersDataGenerator
 from ml.data_assembly.a_priori_verification_stash import run_apriori_verification
 from ml.ml_agents.predictor import (
@@ -28,7 +30,29 @@ if TYPE_CHECKING:
     from problems_and_configurations.problems import Problem
 
 
-def resolve_dns_caching(
+def get_run_id(problem_name: str) -> str:
+    """Generate a timestamped run ID."""
+    timestamp = datetime.datetime.now().strftime("%m%d_%H%M%S")
+    return f"run_{problem_name}_{timestamp}"
+
+
+def resolve_pathing(problem_name: str, root_directory: Path) -> RunPaths:
+    """Create pipeline paths and directories."""
+    master_path = root_directory / RUNS_FOLDER / get_run_id(problem_name)
+    paths = RunPaths.from_master(master_path)
+    paths.create_master()
+    return paths
+
+
+def load_manual_models(
+    paths: RunPaths, sgsp_path: str = "", avcg_path: str = ""
+) -> None:
+    """Manually set paths to the SGSP and/or AVC models."""
+    paths.sgsp_model = Path(sgsp_path) if sgsp_path != "" else paths.sgsp_model
+    paths.avcg_model = Path(avcg_path) if avcg_path != "" else paths.avcg_model
+
+
+def run_dns(
     cache_root: Path, problem: Problem, disc_cfg: DiscretisationConfig, paths
 ) -> None:
     """Check DNS caches for existing data."""

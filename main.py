@@ -4,9 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import matplotlib
-import numpy as np
 
-from constants import RUNS_FOLDER
 from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.corrector_training.online_trainer import (
     SACConfig,
@@ -15,7 +13,6 @@ from ml.corrector_training.online_trainer import (
     OnlineAVTrainer,
 )
 from ml.ml_agents.corrector import AVController, save_corrector
-from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problems, Problem
 from solvers.burgers_avc import BurgersAVC
@@ -27,9 +24,11 @@ from utils.io_utils import (
     load_first_projected_solution,
 )
 from utils.pipeline_utils import (
-    resolve_dns_caching,
+    run_dns,
     run_sgsp_training,
     run_sgsp_coupled_solver,
+    resolve_pathing,
+    load_manual_models,
 )
 from utils.plot_utils import (
     plot_solution_comparison,
@@ -42,19 +41,17 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
+problem: Problem = Problems.pipeline_test
+problem = replace(problem, domain_timespan=0.2)
 
-problem: Problem = Problems.raj_one
-problem = replace(problem, domain_timespan=2.0)
-
-pipeline = PipelineConfig.all(manual_path=r"")
-pipeline.clip_pusuluri = False
-pipeline.clip_rajampeta = False
+clip_pusuluri: bool = False
+clip_rajampeta: bool = False
+run_analytical_les: bool = True
 
 n_nodes_les: int = 9
 temporal_refinement: int = 1
 courant_les: float = 0.1
 
-PROJECTION_MODE: str = "nodal"
 ALPHA_MAX: float = 100 * problem.viscosity
 OUTPUT_SCALE: float = 1
 AVC_EPOCHS: int = 20
@@ -67,50 +64,41 @@ disc_cfg = DiscretisationConfig(
     domain_length=problem.domain_length,
 )
 
-master_path = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem.name)
-paths = RunPaths.from_master(master_path)
-paths.create_master()
+paths = resolve_pathing(problem.name, CURRENT_DIR)
 
-
-manual_load_model: str = r""
-paths.model_output = (
-    Path(manual_load_model) if manual_load_model != "" else paths.model_output
-)
-
-paths.avcg_model = master_path / "agents" / "av_global_corrector.pt"
-paths.avcg_model.parent.mkdir(parents=True, exist_ok=True)
+manual_load_sgsp_model: str = r""
+manual_load_avcg_model: str = r""
+load_manual_models(paths, manual_load_sgsp_model, manual_load_avcg_model)
 
 if __name__ == "__main__":
     # --------------------------------------- DNS & SGSP data --------------------------------------- #
     DNS_CACHE_ROOT = CURRENT_DIR / "dns_cache"
-    resolve_dns_caching(DNS_CACHE_ROOT, problem, disc_cfg, paths)
+    run_dns(DNS_CACHE_ROOT, problem, disc_cfg, paths)
 
     # --------------------------------------- SGSP training --------------------------------------- #
-    if not (paths.model_output / "sgs_predictor.pt").exists():
+    if not paths.sgsp_model.exists() and paths.training is not None:
         run_sgsp_training(
             data_path=paths.training,
-            output_dir=paths.model_output,
+            output_dir=paths.agents,
             domain_length=problem.domain_length,
             n_elements=n_nodes_les - 1,
         )
 
     # --------------------------------------- SGSP coupled solver --------------------------------------- #
-    sgsp_cfg = SGSPConfig(
-        sgsp_model_path=paths.model_output / "sgs_predictor.pt",
-        normalization_path=paths.training,  # contains normalisation_stats.csv
-        blown_up_path=paths.les_sgsp_data / "blown_up",
-        clip_pusuluri=pipeline.clip_pusuluri,
-        clip_rajampeta=pipeline.clip_rajampeta,
-        set_off_predictor=False,
-    )
+    if paths.training is not None:
+        sgsp_cfg = SGSPConfig(
+            sgsp_model_path=paths.sgsp_model,
+            normalization_path=paths.training,  # contains normalisation_stats.csv
+            blown_up_path=paths.les_sgsp_data / "blown_up",
+            clip_pusuluri=clip_pusuluri,
+            clip_rajampeta=clip_rajampeta,
+            turn_off_predictor=False,
+        )
     run_sgsp_coupled_solver(problem, disc_cfg, paths.les_sgsp_data, sgsp_cfg)
 
-    les_run = BurgersBase(problem, disc_cfg, "les", paths.les_a_data)
-    les_run.run_simulation()
-    les_run.post_processing()
-
-    dns_solution, _ = read_data(directory=paths.dns_data, final_only=True)
-    projected_solution = np.interp(disc_cfg.mesh_les, disc_cfg.mesh_dns, dns_solution)
+    if run_analytical_les:
+        les_run = BurgersBase(problem, disc_cfg, "les", paths.les_a_data)
+        les_run.run_simulation()
 
     # --------------------------------------- GAVC training --------------------------------------- #
     dns_solution_on_les = load_first_projected_solution(paths.projection)
@@ -155,7 +143,7 @@ if __name__ == "__main__":
         correction_mode=avc_trainer_cfg.correction_mode,
         n_output_nodes=1,
     )
-    paths.model_output.mkdir(parents=True, exist_ok=True)
+    paths.agents.mkdir(parents=True, exist_ok=True)
     save_corrector(av_corrector_global, paths.avcg_model)
     environment_global = BurgersAVCEnvironment(
         problem=problem,
@@ -175,7 +163,7 @@ if __name__ == "__main__":
         environment=environment_global,
         sac_agent=sac_agent_global,
         sac_config=sac_config,
-        output_dir=paths.model_output / "avcg_checkpoints",
+        output_dir=paths.agents / "avcg_checkpoints",
     )
     trainer_global.train(n_episodes=AVC_EPOCHS)
 
@@ -193,69 +181,74 @@ if __name__ == "__main__":
     solver_avc_global.run_simulation()
     solver_avc_global.post_processing()
 
-    global_avc_path = paths.les_avc_data / "global"
+    # -------------------------------------- Plotting --------------------------------------- #
 
-    plot_solution_comparison(
-        configs=[
-            SolutionConfig(
-                data_path=paths.dns_data,
-                label="DNS",
-                color="gray",
-                linestyle="-",
-                marker="",
-                alpha=0.7,
-                mesh=disc_cfg.mesh_dns,
-                solution=dns_solution,
-            ),
-            SolutionConfig(
-                data_path=paths.dns_data,
-                label="LES - projection",
-                color="lightgreen",
-                marker="x",
-                mesh=disc_cfg.mesh_les,
-                solution=projected_solution,
-            ),
-            SolutionConfig(
-                data_path=paths.les_a_data,
-                label="LES - A",
-                color="tab:orange",
-                marker="^",
-                mesh=disc_cfg.mesh_les,
-            ),
-            SolutionConfig(
-                data_path=paths.les_sgsp_data,
-                label="LES - SGSP",
-                color="crimson",
-                marker="d",
-                mesh=disc_cfg.mesh_les,
-            ),
-            SolutionConfig(
-                data_path=global_avc_path,
-                label="LES - AVC (global)",
-                color="royalblue",
-                linestyle="--",
-                marker="s",
-                mesh=disc_cfg.mesh_les,
-            ),
-        ],
-        output_path=master_path,
-        filename="comparison_dns_sgsp.png",
-    )
+    if paths.projection is not None and paths.dns_data is not None:
+        dns_solution, _ = read_data(directory=paths.dns_data, final_only=True)
+        projected_solution, _ = read_data(directory=paths.projection, final_only=True)
 
-    plot_energy_comparison(
-        dns_dir=paths.dns_data,
-        les_a_dir=paths.les_a_data,
-        les_nm_dir=paths.les_nm_data
-        if is_viable_solution_path(paths.les_nm_data)
-        else None,
-        les_sgsp_dir=paths.les_sgsp_data
-        if is_viable_solution_path(paths.les_sgsp_data)
-        else None,
-        les_avcg_dir=global_avc_path
-        if is_viable_solution_path(global_avc_path)
-        else None,
-        output_path=paths.master,
-        viscosity=problem.viscosity,
-        domain_length=problem.domain_length,
-        projection_dir=None,
-    )
+    if paths.dns_data is not None and paths.projection is not None:
+        plot_solution_comparison(
+            configs=[
+                SolutionConfig(
+                    data_path=paths.dns_data,
+                    label="DNS",
+                    color="gray",
+                    linestyle="-",
+                    marker="",
+                    alpha=0.7,
+                    mesh=disc_cfg.mesh_dns,
+                    solution=dns_solution,
+                ),
+                SolutionConfig(
+                    data_path=paths.projection,
+                    label="LES - projection",
+                    color="lightgreen",
+                    marker="x",
+                    mesh=disc_cfg.mesh_les,
+                    solution=projected_solution,
+                ),
+                SolutionConfig(
+                    data_path=paths.les_a_data,
+                    label="LES - A",
+                    color="tab:orange",
+                    marker="^",
+                    mesh=disc_cfg.mesh_les,
+                ),
+                SolutionConfig(
+                    data_path=paths.les_sgsp_data,
+                    label="LES - SGSP",
+                    color="crimson",
+                    marker="d",
+                    mesh=disc_cfg.mesh_les,
+                ),
+                SolutionConfig(
+                    data_path=paths.avcg_model,
+                    label="LES - AVC (global)",
+                    color="royalblue",
+                    linestyle="--",
+                    marker="s",
+                    mesh=disc_cfg.mesh_les,
+                ),
+            ],
+            output_path=paths.master,
+            filename="comparison_dns_sgsp.png",
+        )
+
+        plot_energy_comparison(
+            dns_dir=paths.dns_data,
+            les_a_dir=paths.les_a_data,
+            les_nm_dir=paths.les_nm_data
+            if is_viable_solution_path(paths.les_nm_data)
+            else None,
+            les_sgsp_dir=paths.les_sgsp_data
+            if is_viable_solution_path(paths.les_sgsp_data)
+            else None,
+            les_avcg_dir=paths.avcg_model
+            if is_viable_solution_path(paths.avcg_model)
+            else None,
+            output_path=paths.master,
+            viscosity=problem.viscosity,
+            domain_length=problem.domain_length,
+            projection_dir=paths.projection,
+        )

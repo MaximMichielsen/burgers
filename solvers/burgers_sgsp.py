@@ -221,7 +221,7 @@ class BurgersSGSP(BurgersBase):
 
         self._sgsp_model_path = sgsp_cfg.sgsp_model_path
         self._normalization_path = sgsp_cfg.normalization_path
-        self.set_off_predictions: bool = sgsp_cfg.set_off_predictor
+        self.set_off_predictions: bool = sgsp_cfg.turn_off_predictor
 
         if self.set_off_predictions:
             self._predictor: SGSPredictor | None = None

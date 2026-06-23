@@ -10,7 +10,7 @@ from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problems, Problem
 from utils.pipeline_utils import (
-    resolve_dns_caching,
+    run_dns,
 )
 
 
@@ -42,23 +42,29 @@ disc_cfg_3 = DiscretisationConfig(
     courant_les=courant_les,
     domain_length=1.0,
 )
-master_path_one = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem_one.name)
+master_path_one = (
+    CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem_one.name)
+)
 paths_one = RunPaths.from_master(master_path_one)
 paths_one.create_master()
 
-master_path_two = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem_two.name)
+master_path_two = (
+    CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem_two.name)
+)
 paths_two = RunPaths.from_master(master_path_two)
 paths_two.create_master()
 
-master_path_three = CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem_three.name)
+master_path_three = (
+    CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem_three.name)
+)
 paths_three = RunPaths.from_master(master_path_three)
 paths_three.create_master()
 
 if __name__ == "__main__":
     # --------------------------------------- DNS & SGSP data --------------------------------------- #
     DNS_CACHE_ROOT = CURRENT_DIR / "dns_cache"
-    resolve_dns_caching(DNS_CACHE_ROOT, problem_one, disc_cfg, paths_one)
+    run_dns(DNS_CACHE_ROOT, problem_one, disc_cfg, paths_one)
 
-    resolve_dns_caching(DNS_CACHE_ROOT, problem_two, disc_cfg, paths_two)
+    run_dns(DNS_CACHE_ROOT, problem_two, disc_cfg, paths_two)
 
-    resolve_dns_caching(DNS_CACHE_ROOT, problem_three, disc_cfg, paths_three)
+    run_dns(DNS_CACHE_ROOT, problem_three, disc_cfg, paths_three)

@@ -133,10 +133,10 @@ def run_pipeline(
         )
         trained_model, training_stats = train_predictor(
             data_path=paths.training,
-            output_dir=paths.model_output,
+            output_dir=paths.agents,
         )
         plot_training_diagnostics(
-            training_stats=training_stats, output_dir=paths.model_output
+            training_stats=training_stats, output_dir=paths.agents
         )
         trained_model.eval()
 
@@ -258,7 +258,7 @@ def run_pipeline(
                 environment=environment_global,
                 sac_agent=sac_agent_global,
                 sac_config=sac_config,
-                output_dir=paths.model_output / "avcg_checkpoints",
+                output_dir=paths.agents / "avcg_checkpoints",
             )
             trainer_global.train(n_episodes=AVC_EPOCHS)
 
@@ -298,7 +298,7 @@ def run_pipeline(
                 environment=environment_local,
                 sac_agent=sac_agent_local,
                 sac_config=sac_config,
-                output_dir=paths.model_output / "avcl_checkpoints",
+                output_dir=paths.agents / "avcl_checkpoints",
             )
             trainer_local.train(n_episodes=AVC_EPOCHS)
 
