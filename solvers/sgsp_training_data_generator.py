@@ -262,6 +262,58 @@ class BurgersDataGenerator(BurgersBase):
             self.write_config_to_json()
             self.save_all_data()
 
+    def run_projection_only(self) -> None:
+        """Recompute projection and training data from existing DNS snapshots on disk.
+
+        Used after DNS extension to regenerate training data over the full timespan
+        without re-running the solver.
+        """
+        csv_files = sorted(self.dns_save_path.glob("sol_t*.csv"))
+        if not csv_files:
+            raise FileNotFoundError(f"No DNS snapshots found in {self.dns_save_path}")
+
+        # reset histories
+        self.u_bar_history.clear()
+        self.du_bar_dt_history.clear()
+        self.u_prime_history.clear()
+        self.forcing_history.clear()
+        self.assembled_input_stencils.clear()
+        self.assembled_sgs_terms.clear()
+
+        for csv_path in csv_files:
+            velocity_values = np.loadtxt(csv_path, delimiter=",", skiprows=1, usecols=2)
+            self.solution = velocity_values
+
+            self.resolve_current_forcing()
+            self.u_bar_now, self.interp_les_to_dns_u, self.projected_forcing = (
+                self.project_u_to_les()
+            )
+            self.u_prime_now = self.compute_u_prime(
+                interpolated_les_solution=self.interp_les_to_dns_u
+            )
+
+            self.u_bar_history.append(self.u_bar_now)
+            self.u_prime_history.append(self.u_prime_now)
+            self.forcing_history.append(self.projected_forcing)
+
+            if len(self.u_bar_history) >= 2:
+                self.du_bar_dt_now = self.compute_du_bar_dt(
+                    u_bar_now=self.u_bar_history[-1],
+                    u_bar_prev=self.u_bar_history[-2],
+                )
+                self.du_bar_dt_history.append(self.du_bar_dt_now)
+
+            input_stencils, sgs_terms = self.create_snapshot_training_data()
+            self.assembled_input_stencils.append(input_stencils)
+            self.assembled_sgs_terms.append(sgs_terms)
+
+            self.simulation_time_elapsed += self.dt
+
+        self.sgs_save_path.mkdir(parents=True, exist_ok=True)
+        self.projection_save_path.mkdir(parents=True, exist_ok=True)
+        self.write_projected_solution_to_csv(save_path=self.projection_save_path)
+        self.save_sgsp_training_csv(append_mode=False)  # full recompute, no append
+
     # ------------------------------------------------------------------
     # Snapshot data assembly
     # ------------------------------------------------------------------
@@ -408,12 +460,15 @@ class BurgersDataGenerator(BurgersBase):
     # ------------------------------------------------------------------
 
     def save_all_data(self) -> None:
-        """Save DNS solutions and SGSP training data to disk."""
+        """Save DNS solutions and optionally SGSP training data to disk."""
         self.dns_save_path.mkdir(parents=True, exist_ok=True)
-        self.sgs_save_path.mkdir(parents=True, exist_ok=True)
         self.write_solution_to_csv(save_path=self.dns_save_path)
-        self.write_projected_solution_to_csv(save_path=self.projection_save_path)
-        self.save_sgsp_training_csv(append_mode=self.append_mode)
+        if self.projection_save_path is not None:
+            self.projection_save_path.mkdir(parents=True, exist_ok=True)
+            self.write_projected_solution_to_csv(save_path=self.projection_save_path)
+        if self.sgs_save_path is not None:
+            self.sgs_save_path.mkdir(parents=True, exist_ok=True)
+            self.save_sgsp_training_csv(append_mode=self.append_mode)
 
     def write_projected_solution_to_csv(self, save_path: Path | None = None) -> None:
         """Write extracted solution snapshots to CSV files."""

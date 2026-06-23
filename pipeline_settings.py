@@ -78,7 +78,6 @@ class RunPaths:
     les_avc_data: Path
     projection: Path
     training: Path
-    normalization: Path
     model_output: Path
     sgsp_model: Path
     avcg_model: Path
@@ -97,10 +96,6 @@ class RunPaths:
             les_sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,
             projection=master_path / SOLVER_DATA_FOLDER / PROJECTION_SAVE_PATH,
             training=master_path / TRAINING_DATA_FOLDER / POST_SPLIT_FOLDER,
-            normalization=master_path
-            / TRAINING_DATA_FOLDER
-            / POST_SPLIT_FOLDER
-            / NORM_STATS,
             model_output=master_path / AGENT_FOLDER,
             sgsp_model=master_path / AGENT_FOLDER / "sgs_predictor.pt",
             avcg_model=master_path / AGENT_FOLDER / "av_global_corrector.pt",

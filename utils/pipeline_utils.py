@@ -15,7 +15,7 @@ from dns_caching import (
 )
 from solvers.sgsp_training_data_generator import BurgersDataGenerator
 from ml.data_assembly.a_priori_verification_stash import run_apriori_verification
-from ml.ml_agents.predictor_stash import (
+from ml.ml_agents.predictor import (
     plot_training_diagnostics,
     evaluate_on_val_set,
     train_predictor,

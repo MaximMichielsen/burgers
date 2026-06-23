@@ -43,11 +43,11 @@ matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 
-problem: Problem = Problems.pipeline_test
-problem = replace(problem, domain_timespan=0.5)
+problem: Problem = Problems.raj_one
+problem = replace(problem, domain_timespan=2.0)
 
 pipeline = PipelineConfig.all(manual_path=r"")
-pipeline.clip_pusuluri = True
+pipeline.clip_pusuluri = False
 pipeline.clip_rajampeta = False
 
 n_nodes_les: int = 9
@@ -72,22 +72,25 @@ paths = RunPaths.from_master(master_path)
 paths.create_master()
 
 
+manual_load_model: str = r""
+paths.model_output = Path(manual_load_model) if manual_load_model != "" else paths.model_output
+
+paths.avcg_model = master_path / "agents" / "av_global_corrector.pt"
+paths.avcg_model.parent.mkdir(parents=True, exist_ok=True)
+
 if __name__ == "__main__":
     # --------------------------------------- DNS & SGSP data --------------------------------------- #
     DNS_CACHE_ROOT = CURRENT_DIR / "dns_cache"
     resolve_dns_caching(DNS_CACHE_ROOT, problem, disc_cfg, paths)
 
-    print(paths.dns_data)
-    print(paths.projection)
-    print(paths.training)
-
     # --------------------------------------- SGSP training --------------------------------------- #
-    run_sgsp_training(
-        data_path=paths.training,
-        output_dir=paths.model_output,
-        domain_length=problem.domain_length,
-        n_elements=n_nodes_les - 1,
-    )
+    if not (paths.model_output / "sgs_predictor.pt").exists():
+        run_sgsp_training(
+            data_path=paths.training,
+            output_dir=paths.model_output,
+            domain_length=problem.domain_length,
+            n_elements=n_nodes_les - 1,
+        )
 
     # --------------------------------------- SGSP coupled solver --------------------------------------- #
     sgsp_cfg = SGSPConfig(
@@ -150,6 +153,7 @@ if __name__ == "__main__":
         correction_mode=avc_trainer_cfg.correction_mode,
         n_output_nodes=1,
     )
+    paths.model_output.mkdir(parents=True, exist_ok=True)
     save_corrector(av_corrector_global, paths.avcg_model)
     environment_global = BurgersAVCEnvironment(
         problem=problem,

@@ -25,6 +25,7 @@ from constants import (
     NUM_HIDDEN_LAYERS,
     OUTPUT_UNITS,
 )
+from ml.data_assembly.a_priori_verification_stash import run_apriori_verification
 
 
 # ---------------------------------------------------------------------------
@@ -33,12 +34,18 @@ from constants import (
 
 
 def load_split_data(data_path: Path) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-    """Load train/val float32 tensors from data_path."""
+    """Load train/val float32 tensors from CSV files in data_path."""
+    data_path = Path(data_path)
+
+    def _read(filename: str) -> Tensor:
+        array = np.loadtxt(data_path / filename, delimiter=",", skiprows=1)
+        return torch.tensor(array, dtype=torch.float32)
+
     return (
-        torch.tensor(np.load(data_path / "X_train.npy"), dtype=torch.float32),
-        torch.tensor(np.load(data_path / "y_train.npy"), dtype=torch.float32),
-        torch.tensor(np.load(data_path / "X_val.npy"), dtype=torch.float32),
-        torch.tensor(np.load(data_path / "y_val.npy"), dtype=torch.float32),
+        _read("X_train.csv"),
+        _read("y_train.csv"),
+        _read("X_val.csv"),
+        _read("y_val.csv"),
     )
 
 
@@ -68,6 +75,7 @@ class SGSPredictor(nn.Module):
         self.net = nn.Sequential(*layer_list)
 
     def forward(self, x_input: Tensor) -> Tensor:
+        """Forward pass."""
         return self.net(x_input)
 
 
@@ -219,43 +227,49 @@ def load_predictor(model_path: Path) -> SGSPredictor:
 
 
 # ---------------------------------------------------------------------------
-# Test-set evaluation
+# Validation set evaluation
 # ---------------------------------------------------------------------------
 
 
-def evaluate_on_test_set(
+def evaluate_on_val_set(
     model: SGSPredictor,
     data_path: Path,
     output_dir: Path,
 ) -> NDArray:
-    """Evaluate on held-out test data; log MSE/MAE and return predictions.
+    """Evaluate on validation data; log MSE/MAE and return predictions.
 
-    Returns raw (normalized-space) model output of shape (n_test, OUTPUT_UNITS).
+    Returns raw (normalised-space) model output of shape (n_val, OUTPUT_UNITS).
     """
-    x_test = torch.tensor(np.load(data_path / "X_test.npy"), dtype=torch.float32)
-    y_test = torch.tensor(np.load(data_path / "y_test.npy"), dtype=torch.float32)
+    data_path = Path(data_path)
+
+    def _read(filename: str) -> Tensor:
+        array = np.loadtxt(data_path / filename, delimiter=",", skiprows=1)
+        return torch.tensor(array, dtype=torch.float32)
+
+    x_val = _read("X_val.csv")
+    y_val = _read("y_val.csv")
 
     model.eval()
     with torch.no_grad():
-        predictions_tensor = model(x_test)
-        mse_value = nn.functional.mse_loss(predictions_tensor, y_test).item()
-        mae_value = nn.functional.l1_loss(predictions_tensor, y_test).item()
+        predictions_tensor = model(x_val)
+        mse_value = nn.functional.mse_loss(predictions_tensor, y_val).item()
+        mae_value = nn.functional.l1_loss(predictions_tensor, y_val).item()
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log_lines = [
         "=" * 40,
-        "  TEST SET EVALUATION",
+        "  VALIDATION SET EVALUATION",
         f"  MSE : {mse_value:.6f}",
         f"  MAE : {mae_value:.6f}",
         "=" * 40,
     ]
     print("\n" + "\n".join(log_lines))
 
-    log_path = output_dir / "test_evaluation.log"
+    log_path = output_dir / "val_evaluation.log"
     log_path.write_text("\n".join(log_lines) + "\n")
-    print(f"Test evaluation log saved to '{log_path}'.")
+    print(f"Validation evaluation log saved to '{log_path}'.")
 
     return predictions_tensor.numpy()
 
@@ -311,3 +325,36 @@ def plot_training_diagnostics(
         plt.show()
     else:
         plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    _data_path = (
+        Path(__file__).parent.parent.parent / "test_suite" / "training_data" / "sgsp"
+    )
+    _output_dir = Path(__file__).parent.parent.parent / "test_suite" / "models" / "sgsp"
+
+    _model, _training_stats = train_predictor(
+        data_path=_data_path,
+        output_dir=_output_dir,
+    )
+    plot_training_diagnostics(
+        training_stats=_training_stats,
+        output_dir=_output_dir,
+        show_fig=False,
+    )
+    evaluate_on_val_set(
+        model=_model,
+        data_path=_data_path,
+        output_dir=_output_dir,
+    )
+    run_apriori_verification(
+        model=_model,
+        data_dir=_data_path,
+        output_dir=_output_dir,
+        domain_length=1.0,
+        n_elements=8,
+    )

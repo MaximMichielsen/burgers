@@ -9,6 +9,7 @@ from typing import Callable
 from constants import DNS_FOLDER
 from problems_and_configurations.disc_config import DiscretisationConfig
 from problems_and_configurations.problems import Problem
+from solvers.sgsp_training_data_generator import BurgersDataGenerator
 from utils.io_utils import read_data
 
 
@@ -118,6 +119,18 @@ def extend_dns_run(
         t_start=cached_timespan,
         append_mode=True,
     )
+
+    projector = BurgersDataGenerator(
+        problem=dataclasses.replace(problem, domain_timespan=requested_timespan),
+        disc_cfg=disc_cfg,
+        simulation_mode="dns",
+        master_path=cache_dir,
+        dns_save_path=cache_dir / "DNS",
+        projection_save_path=projection_dir,
+        sgsp_training_data_path=training_dir,
+    )
+    projector.run_projection_only()
+
 
     write_dns_parameters(
         cache_dir,

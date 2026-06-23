@@ -429,12 +429,6 @@ class BurgersSGSP(BurgersBase):
         residual_history_loop: list = []
         update_history_loop: list = []
 
-        if self._step_count == self._sgsp_warmup_steps:
-            print("\n--- SGSP prediction sample (step 0) ---")
-            print(f"cross:    {sgsp_correction[:, 0]}")
-            print(f"reynolds: {sgsp_correction[:, 1]}")
-            print(f"viscous:  {sgsp_correction[:, 4]}")
-
         for _ in range(self.max_iterations):
             with self.timer("elemental_iterations"):
                 elemental_residuals, elemental_jacobians = zip(
