@@ -7,7 +7,7 @@ import matplotlib
 
 from constants import RUNS_FOLDER
 from pipeline_settings import PipelineConfig, RunPaths
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
 from utils.pipeline_utils import (
     run_dns,
@@ -29,14 +29,14 @@ n_nodes_les: int = 9
 temporal_refinement: int = 1
 courant_les: float = 0.1
 
-disc_cfg = DiscretisationConfig(
+disc_cfg = DiscretizationConfig(
     n_nodes_les=n_nodes_les,
     temporal_refinement=temporal_refinement,
     courant_les=courant_les,
     domain_length=1.0,
 )
 
-disc_cfg_3 = DiscretisationConfig(
+disc_cfg_3 = DiscretizationConfig(
     n_nodes_les=17,
     temporal_refinement=temporal_refinement,
     courant_les=courant_les,

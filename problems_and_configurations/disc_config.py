@@ -10,7 +10,7 @@ from constants import DNS_TO_LES_RATIO
 
 
 @dataclass
-class DiscretisationConfig:
+class DiscretizationConfig:
     """Spatial and temporal discretization parameters for both DNS and LES grids.
 
     Derives all mesh and time-step quantities from the LES element count,

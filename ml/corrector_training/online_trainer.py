@@ -56,7 +56,7 @@ from torch import Tensor
 
 from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
 from ml.ml_agents.corrector import AVController, save_corrector
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCTrainerConfig
 from solvers.burgers_base import compute_adjusted_dt
@@ -239,7 +239,7 @@ class BurgersAVCEnvironment:
     def __init__(
         self,
         problem: Problem,
-        disc_cfg: DiscretisationConfig,
+        disc_cfg: DiscretizationConfig,
         sgsp_cfg: SGSPConfig,
         avc_cfg: AVCTrainerConfig,
         master_path: Path,

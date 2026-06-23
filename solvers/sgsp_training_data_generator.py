@@ -29,7 +29,7 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
 
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem, Problems
 from solvers.burgers_base import BurgersBase
 
@@ -124,7 +124,7 @@ class BurgersDataGenerator(BurgersBase):
     def __init__(
         self,
         problem: Problem,
-        disc_cfg: DiscretisationConfig,
+        disc_cfg: DiscretizationConfig,
         simulation_mode: str,
         master_path: Path,
         dns_save_path: Path | None = None,
@@ -742,7 +742,7 @@ class ProjDNSReconstructor(BurgersBase):
         u_bar_solutions: list[NDArray],
         closure_terms: list[list[ElementSGSTerms]],
         problem: Problem,
-        disc_cfg: DiscretisationConfig,
+        disc_cfg: DiscretizationConfig,
         master_path: Path,
         simulation_mode: str = "no_model",
         snapshot_factor: int = 1,
@@ -932,7 +932,7 @@ class ProjDNSReconstructor(BurgersBase):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    _disc_cfg = DiscretisationConfig(
+    _disc_cfg = DiscretizationConfig(
         n_nodes_les=17,
         temporal_refinement=1,
         courant_les=0.1,

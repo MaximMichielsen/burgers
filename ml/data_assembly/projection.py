@@ -6,7 +6,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from utils.io_utils import read_data
 
 _VALID_PROJECTION_MODES: frozenset[str] = frozenset({"l2", "L2", "nodal"})
@@ -91,7 +91,7 @@ def run_projection(
     output_directory: str | Path,
     bc_mode: str,
     bc_values: float | int | tuple[float, float] | None,
-    disc_cfg: DiscretisationConfig,
+    disc_cfg: DiscretizationConfig,
     verify: bool = True,
     projection_mode: str = "l2",
 ) -> None:

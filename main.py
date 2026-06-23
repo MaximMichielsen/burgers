@@ -13,7 +13,7 @@ from ml.corrector_training.online_trainer import (
     OnlineAVTrainer,
 )
 from ml.ml_agents.corrector import AVController, save_corrector
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
 from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_base import BurgersBase
@@ -48,26 +48,31 @@ clip_pusuluri: bool = False
 clip_rajampeta: bool = False
 run_analytical_les: bool = True
 
+# general simulation parameters
 n_nodes_les: int = 9
 temporal_refinement: int = 1
 courant_les: float = 0.1
 
+# AVC (hyper-)parameters
 ALPHA_MAX: float = 100 * problem.viscosity
 OUTPUT_SCALE: float = 1
 AVC_EPOCHS: int = 20
 N_SKIP: int = 5
 
-disc_cfg = DiscretisationConfig(
-    n_nodes_les=n_nodes_les,
-    temporal_refinement=temporal_refinement,
-    courant_les=courant_les,
-    domain_length=problem.domain_length,
+# discretization dict
+disc_cfg = DiscretizationConfig(
+    n_nodes_les,
+    temporal_refinement,
+    courant_les,
+    problem.domain_length,
 )
 
+# pathing
 paths = resolve_pathing(problem.name, CURRENT_DIR)
 
 manual_load_sgsp_model: str = r""
 manual_load_avcg_model: str = r""
+
 load_manual_models(paths, manual_load_sgsp_model, manual_load_avcg_model)
 
 if __name__ == "__main__":
@@ -168,7 +173,6 @@ if __name__ == "__main__":
     trainer_global.train(n_episodes=AVC_EPOCHS)
 
     # --------------------------------------- GAVC run --------------------------------------- #
-
     avc_run_config = AVCRunConfig(avc_model_path=paths.avcg_model)
     solver_avc_global = BurgersAVC(
         problem,
@@ -182,12 +186,10 @@ if __name__ == "__main__":
     solver_avc_global.post_processing()
 
     # -------------------------------------- Plotting --------------------------------------- #
-
     if paths.projection is not None and paths.dns_data is not None:
         dns_solution, _ = read_data(directory=paths.dns_data, final_only=True)
         projected_solution, _ = read_data(directory=paths.projection, final_only=True)
 
-    if paths.dns_data is not None and paths.projection is not None:
         plot_solution_comparison(
             configs=[
                 SolutionConfig(

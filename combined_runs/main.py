@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from ml.data_assembly.training_data_assembly import run_training_data_assembly
 from constants import RUNS_FOLDER, SOLVER_DATA_FOLDER, DNS_SAVE_PATH
 from pipeline_settings import PipelineConfig, RunPaths
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
 from ml.ml_agents.solver_configs import AVCTrainerConfig, SGSPConfig
 
@@ -40,7 +40,7 @@ def run_pipeline(
     base_dir: Path | None = None,
 ) -> None:
     """Run the full pipeline for a single problem."""
-    disc_cfg = DiscretisationConfig(
+    disc_cfg = DiscretizationConfig(
         n_nodes_les=n_nodes_les,
         temporal_refinement=1,
         courant_les=0.01,

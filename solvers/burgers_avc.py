@@ -36,7 +36,7 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
 from ml.ml_agents.corrector import AVController, load_corrector
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCRunConfig, AVCTrainerConfig
 from solvers.burgers_sgsp import BurgersSGSP
@@ -54,12 +54,12 @@ class BurgersAVC(BurgersSGSP):
     def __init__(
         self,
         problem: Problem,
-        disc_cfg: DiscretisationConfig,
+        disc_cfg: DiscretizationConfig,
         simulation_mode: str,
         master_path: Path,
         sgsp_cfg: SGSPConfig,
         avc_cfg: AVCRunConfig | AVCTrainerConfig,
-        snapshot_factor: int | None = 1,
+        snapshot_factor: int = 1,
     ) -> None:
         super().__init__(
             problem,

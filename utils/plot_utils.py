@@ -10,7 +10,7 @@ from matplotlib.animation import FuncAnimation
 from numpy.typing import NDArray
 
 from pipeline_settings import RunPaths
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 
 from utils.io_utils import read_data
 
@@ -36,7 +36,7 @@ class SolutionConfig:
 
 def build_plot_configs(
     paths: RunPaths,
-    disc_cfg: DiscretisationConfig,
+    disc_cfg: DiscretizationConfig,
     dns_solution: NDArray,
     projected_solution: NDArray,
     les_sgsp_data_path: Path,

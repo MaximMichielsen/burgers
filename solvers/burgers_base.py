@@ -32,7 +32,7 @@ from constants import (
     TOLERANCE_RESIDUAL,
     TOLERANCE_UPDATE,
 )
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from utils.math_utils import compute_adjusted_dt
 
@@ -50,7 +50,7 @@ class BurgersBase:
     def __init__(
         self,
         problem: Problem,
-        disc_cfg: DiscretisationConfig,
+        disc_cfg: DiscretizationConfig,
         simulation_mode: str,
         master_path: Path,
         snapshot_factor: int = 1,

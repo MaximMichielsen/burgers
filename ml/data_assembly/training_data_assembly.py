@@ -22,7 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 
 PROJECTION_GAUSS_POINTS = 6
 
@@ -260,7 +260,7 @@ def split_and_save(
 def run_training_data_assembly(
     projection_path: Path,
     output_dir: Path,
-    disc_cfg: DiscretisationConfig,
+    disc_cfg: DiscretizationConfig,
     train_fraction: float = 0.8,
     random_seed: int = 42,
 ) -> tuple[NDArray, NDArray, dict]:

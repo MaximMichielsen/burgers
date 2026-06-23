@@ -43,8 +43,6 @@ BLOWUP_BUFFER_SIZE: int = 5000
 RUNS_FOLDER: str = "runs"
 SOLVER_DATA_FOLDER: str = "solver_data"
 TRAINING_DATA_FOLDER: str = "training_data"
-PRE_SPLIT_FOLDER: str = "pre_split"
-POST_SPLIT_FOLDER: str = "post_split"
 AGENT_FOLDER: str = "agents"
 AVC_CORRECTOR_FOLDER: str = "corrector"
 A_PRIORI_FOLDER: str = "apriori"
@@ -56,9 +54,6 @@ LES_SGSP_SAVE_PATH: str = "LES_SGSP"
 LES_AVC_SAVE_PATH: str = "LES_AVC"
 PROJECTION_SAVE_PATH: str = "projection"
 
-LES_ANN_UNCLIPPED_FOLDER: str = "unclipped"
-LES_ANN_PUSULURI_FOLDER: str = "pusuluri"
-LES_ANN_RAJAMPETA_FOLDER: str = "rajampeta"
 STABLE_FOLDER: str = "stable"
 BLOWN_UP_FOLDER: str = "blown_up"
 

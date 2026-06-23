@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from constants import DNS_FOLDER
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from solvers.sgsp_training_data_generator import BurgersDataGenerator
 from utils.io_utils import read_data
@@ -93,7 +93,7 @@ def extend_dns_run(
     training_dir: Path,
     cache_result: DNSCacheResult,
     problem: Problem,
-    disc_cfg: DiscretisationConfig,
+    disc_cfg: DiscretizationConfig,
     requested_timespan: float,
     run_data_generator_fn: Callable,
 ) -> None:

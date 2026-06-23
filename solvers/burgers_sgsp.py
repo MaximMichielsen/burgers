@@ -50,7 +50,7 @@ from ml.data_assembly.training_data_assembly import (
 )
 from ml.ml_agents.predictor import SGSPredictor, load_predictor
 
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig
 from solvers.burgers_base import BurgersBase
@@ -183,11 +183,11 @@ class BurgersSGSP(BurgersBase):
     def __init__(
         self,
         problem: Problem,
-        disc_cfg: DiscretisationConfig,
+        disc_cfg: DiscretizationConfig,
         simulation_mode: str,
         master_path: Path,
         sgsp_cfg: SGSPConfig,
-        snapshot_factor: int | None = 1,
+        snapshot_factor: int = 1,
     ) -> None:
         super().__init__(
             problem, disc_cfg, simulation_mode, master_path, snapshot_factor
