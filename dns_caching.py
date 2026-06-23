@@ -131,7 +131,6 @@ def extend_dns_run(
     )
     projector.run_projection_only()
 
-
     write_dns_parameters(
         cache_dir,
         DNSCacheKey(

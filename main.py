@@ -73,7 +73,9 @@ paths.create_master()
 
 
 manual_load_model: str = r""
-paths.model_output = Path(manual_load_model) if manual_load_model != "" else paths.model_output
+paths.model_output = (
+    Path(manual_load_model) if manual_load_model != "" else paths.model_output
+)
 
 paths.avcg_model = master_path / "agents" / "av_global_corrector.pt"
 paths.avcg_model.parent.mkdir(parents=True, exist_ok=True)

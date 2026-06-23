@@ -146,18 +146,20 @@ class DNSReferenceSchedule:
 
     @classmethod
     def from_projection_directory(
-            cls,
-            projection_dir: Path,
-            domain_length: float,
-            viscosity: float,
-            n_wavenumber_bins: int,
+        cls,
+        projection_dir: Path,
+        domain_length: float,
+        viscosity: float,
+        n_wavenumber_bins: int,
     ) -> "DNSReferenceSchedule":
         """Build a schedule from projected LES-grid snapshots stored as CSV files."""
         projection_dir = Path(projection_dir)
 
         csv_files = sorted(projection_dir.glob("sol_t*.csv"))
         if not csv_files:
-            raise FileNotFoundError(f"No projected solution CSVs found in {projection_dir}")
+            raise FileNotFoundError(
+                f"No projected solution CSVs found in {projection_dir}"
+            )
 
         snapshot_times_list: list[float] = []
         spectra_list: list[NDArray] = []
