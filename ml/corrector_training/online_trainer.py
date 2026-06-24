@@ -59,7 +59,7 @@ from ml.ml_agents.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCTrainerConfig
-from solvers.burgers_base import compute_adjusted_dt
+from utils.io_utils import compute_adjusted_dt
 from solvers.burgers_avc import BurgersAVC
 
 logger = logging.getLogger(__name__)

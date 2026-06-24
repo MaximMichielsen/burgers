@@ -87,7 +87,7 @@ class SGSPredictor(nn.Module):
 class EarlyStopping:
     """Stop training when validation MAE stops improving; restores best weights."""
 
-    def __init__(self, patience: int = 15, min_delta: float = 1e-5) -> None:
+    def __init__(self, patience: int = 30, min_delta: float = 1e-5) -> None:
         self.patience = patience
         self.min_delta = min_delta
         self.counter: int = 0
@@ -133,7 +133,7 @@ def train_predictor(
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=10
     )
-    early_stopper = EarlyStopping(patience=15)
+    early_stopper = EarlyStopping(patience=30)
     mse_loss_fn = nn.MSELoss()
     mae_loss_fn = nn.L1Loss()
 

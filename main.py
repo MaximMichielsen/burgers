@@ -18,7 +18,7 @@ from problems_and_configurations.problems import Problems, Problem
 from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_base import BurgersBase
 from ml.ml_agents.solver_configs import SGSPConfig, AVCRunConfig, AVCTrainerConfig
-from utils.enegy_evolution_utils import plot_energy_comparison
+from utils.plotting.energy_evolution import plot_energy_comparison
 from utils.io_utils import (
     load_first_projected_solution,
 )
@@ -29,9 +29,8 @@ from utils.pipeline_utils import (
     resolve_pathing,
     load_manual_models,
 )
-from utils.plot_utils import (
+from utils.plotting.velocity_profiles import (
     plot_solution_comparison,
-    is_viable_solution_path,
     create_velocity_plot_configs,
 )
 
@@ -43,14 +42,14 @@ matplotlib.use("Agg")  # needed when running on M12
 problem: Problem = Problems.pipeline_test
 problem = replace(problem, domain_timespan=0.5)
 
-clip_pusuluri: bool = False
+clip_pusuluri: bool = True
 clip_rajampeta: bool = False
 
 run_analytical_les: bool = False
 run_no_model_les: bool = False
 
 # general simulation parameters
-n_nodes_les: int = 9
+n_nodes_les: int = 17
 temporal_refinement: int = 1
 courant_les: float = 0.1
 
@@ -206,19 +205,8 @@ if __name__ == "__main__":
     )
 
     plot_energy_comparison(
-        dns_dir=paths.dns_data,
-        les_a_dir=paths.les_a_data,
-        les_nm_dir=paths.les_nm_data
-        if is_viable_solution_path(paths.les_nm_data)
-        else None,
-        les_sgsp_dir=paths.les_sgsp_data
-        if is_viable_solution_path(paths.les_sgsp_data)
-        else None,
-        les_avcg_dir=paths.les_avc_data / "global"
-        if is_viable_solution_path(paths.les_avc_data / "global")
-        else None,
+        paths=paths,
         output_path=paths.master,
         viscosity=problem.viscosity,
         domain_length=problem.domain_length,
-        projection_dir=paths.projection,
     )

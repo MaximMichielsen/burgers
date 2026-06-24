@@ -57,3 +57,17 @@ def load_first_projected_solution(projection_dir: Path) -> np.ndarray:
         for csv_row in reader:
             velocity_values.append(float(csv_row["velocity"]))
     return np.array(velocity_values)
+
+
+def compute_adjusted_dt(
+    dt_nominal: float, time_end: float | int, time_start: float = 0.0
+) -> tuple[float, int]:
+    """Adjust dt so that time_end is hit exactly.
+
+    Rounds to the nearest integer step count and recomputes dt.
+    The relative change in dt is O(1/n_steps), negligible in practice.
+    """
+    time_span = time_end - time_start
+    n_steps = max(1, round(time_span / dt_nominal))
+    dt_adjusted = time_span / n_steps
+    return dt_adjusted, n_steps

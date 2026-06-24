@@ -10,6 +10,7 @@ from matplotlib.gridspec import GridSpec
 from numpy.typing import NDArray
 
 from utils.io_utils import read_data
+from utils.pipeline_utils import RunPaths
 
 
 # ---------------------------------------------------------------------------
@@ -81,42 +82,34 @@ def _load_solver_data(directory: Path) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def plot_energy_comparison(
-    dns_dir: Path,
-    les_a_dir: Path,
-    les_nm_dir: Path | None,
-    les_sgsp_dir: Path | None,
-    les_avcg_dir: Path | None,
+    paths: RunPaths,
     output_path: Path,
-    viscosity: float = 0.01,
-    domain_length: float = 1.0,
-    projection_dir: Path | None = None,
-    les_avcl_dir: Path | None = None,
+    viscosity: float,
+    domain_length: float,
 ) -> None:
     """Read CSV solver outputs and produce a 3-panel energy comparison figure."""
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    solver_configs: dict[str, tuple[Path | None, str, str, float]] = {
-        "DNS": (dns_dir, "gray", "-", 1.8),
-        "LES-A": (les_a_dir, "tab:orange", "--", 1.4),
-        "LES-NM": (les_nm_dir, "gold", "-.", 1.4),
-        "LES-SGSP": (les_sgsp_dir, "crimson", "-", 1.8),
-        "LES-AVCG": (les_avcg_dir, "royalblue", "-", 1.8),
-        "LES-AVCL": (les_avcl_dir, "blueviolet", "--", 1.8),
-        "Projection": (projection_dir, "lightgreen", "-", 1.2),
-    }
+    solver_configs: dict[str, tuple[Path, str, str, float]] = {}
+
+    _all_configs: list[tuple[str, Path | None, str, str, float]] = [
+        ("DNS", paths.dns_data, "gray", "-", 1.8),
+        ("Projection", paths.projection, "lightgreen", "-", 1.2),
+        ("LES - A", paths.les_a_data, "tab:orange", "--", 1.4),
+        ("LES - NM", paths.les_nm_data, "gold", "-.", 1.4),
+        ("LES - SGSP", paths.les_sgsp_data, "crimson", "-", 1.8),
+        ("LES - AVCG", paths.les_avcg_data, "royalblue", "-", 1.8),
+        ("LES - AVCL", paths.avcl_model, "blueviolet", "--", 1.8),
+    ]
+
+    for label, path, color, linestyle, linewidth in _all_configs:
+        if path is not None:
+            solver_configs[label] = (path, color, linestyle, linewidth)
 
     data: dict = {}
     for label, (directory, color, ls, lw) in solver_configs.items():
-        if directory is None:
-            continue
-        directory = Path(directory)
         if not directory.exists():
             print(f"  Skipping {label}: directory not found at {directory}")
             continue

@@ -32,7 +32,7 @@ class VelocityPlotConfig:
     solution: Optional[NDArray] = field(default=None, repr=False)
 
 
-# utils/plot_utils.py
+# utils/velocity_profiles.py
 
 
 def build_plot_configs(
@@ -242,7 +242,7 @@ RESULTS_ROOT = Path(
 PROJECTION_ROOT = Path(
     "training_data/pre_split"
 )  # <- where solutions_projection.npy / times.npy live, per run_id
-ROOT = Path(r"C:\Users\poopy\PycharmProjects\burgers\runs")
+ROOT = Path(r"/")
 
 
 def plot_solutions_from_run_id_animated(

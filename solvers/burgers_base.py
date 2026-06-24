@@ -34,7 +34,7 @@ from constants import (
 )
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
-from utils.math_utils import compute_adjusted_dt
+from utils.io_utils import compute_adjusted_dt
 
 logger = logging.getLogger(__name__)
 

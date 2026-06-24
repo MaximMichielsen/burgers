@@ -223,6 +223,7 @@ class RunPaths:
     les_nm_data: Path
     les_sgsp_data: Path
     les_avc_data: Path
+    les_avcg_data: Path
     projection: Path | None
     training: Path | None
     agents: Path
@@ -241,6 +242,7 @@ class RunPaths:
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
             les_sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,
+            les_avcg_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH / "global",
             projection=None,
             training=None,
             agents=master_path / AGENT_FOLDER,
