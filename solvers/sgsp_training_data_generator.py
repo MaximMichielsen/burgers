@@ -214,6 +214,7 @@ class BurgersDataGenerator(BurgersBase):
 
     def run_simulation(self) -> None:
         """Run the full time-marching simulation and write output."""
+        # IC: init histories and save snapshot, but skip training data (stencil incomplete)
         self.resolve_current_forcing()
         self._extract_snapshot()
         self.u_bar_now, self.interp_les_to_dns_u, self.projected_forcing = (
@@ -223,12 +224,9 @@ class BurgersDataGenerator(BurgersBase):
             interpolated_les_solution=self.interp_les_to_dns_u
         )
         self.u_prime_history.append(self.u_prime_now)
-        input_stencils, sgs_terms = self.create_snapshot_training_data()
-
         self.solution_history.append(self.solution)
         self.u_bar_history.append(self.u_bar_now)
-        self.assembled_input_stencils.append(input_stencils)
-        self.assembled_sgs_terms.append(sgs_terms)
+        self.forcing_history.append(self.projected_forcing)
 
         with self.timer("total_simulation"):
             with tqdm(
@@ -242,8 +240,9 @@ class BurgersDataGenerator(BurgersBase):
                     self.advance_time_step()
 
                     if (time_step + 1) in self._snapshot_step_indices:
+                        self._extract_snapshot()
+
                         if time_step >= self.warmup_steps:
-                            self._extract_snapshot()
                             input_stencils, sgs_terms = (
                                 self.create_snapshot_training_data()
                             )
@@ -259,6 +258,7 @@ class BurgersDataGenerator(BurgersBase):
                             "step_time": f"{perf_counter() - step_start:.3f}s",
                         }
                     )
+
             self.write_config_to_json()
             self.save_all_data()
 

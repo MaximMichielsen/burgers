@@ -93,6 +93,21 @@ def build_plot_configs(
     return base_configs + (extra_configs or [])
 
 
+def _read_snapshot_at_time(directory: Path, target_time: float) -> NDArray:
+    """Load the snapshot from directory whose filename time is closest to target_time."""
+    csv_files = list(directory.glob("sol_t*.csv"))
+    if not csv_files:
+        raise FileNotFoundError(f"No sol_t*.csv files found in {directory}")
+
+    def _parse_time(p: Path) -> float:
+        match = re.search(r"sol_t([\d.]+)\.csv", p.name)
+        return float(match.group(1)) if match else float("inf")
+
+    closest_file = min(csv_files, key=lambda p: abs(_parse_time(p) - target_time))
+    data = np.loadtxt(closest_file, delimiter=",", skiprows=1)
+    return data[:, 2]
+
+
 def _infer_final_time_from_directory(data_path: Path | None) -> float | None:
     """Parse the highest t-value from sol_t*.csv filenames in data_path."""
     if data_path is None or not data_path.exists():
@@ -331,34 +346,42 @@ def plot_solutions_from_run_id_animated(
 def create_velocity_plot_configs(
     paths: RunPaths, disc_cfg: DiscretizationConfig
 ) -> list[VelocityPlotConfig]:
-    """Create configs for the velocity profile comparison plot.
+    """Create configs for the velocity profile comparison plot."""
+    reference_time = _infer_final_time_from_directory(paths.les_sgsp_data)
 
-    Checks if data in the path exists, skips it if its not."""
-    if paths.dns_data is not None:
-        dns_solution, _ = read_data(directory=paths.dns_data, final_only=True)
-        dns_config = VelocityPlotConfig(
-            data_path=paths.dns_data,
-            label="DNS",
-            color="gray",
-            linestyle="-",
-            marker="",
-            alpha=0.7,
-            mesh=disc_cfg.mesh_dns,
-            solution=dns_solution,
-        )
-    else:
+    if paths.dns_data is None:
         raise ValueError("No viable DNS path found! Cannot plot velocity profile.")
+    dns_solution = (
+        _read_snapshot_at_time(paths.dns_data, reference_time)
+        if reference_time is not None
+        else read_data(directory=paths.dns_data, final_only=True)[0]
+    )
+    dns_config = VelocityPlotConfig(
+        data_path=paths.dns_data,
+        label="DNS",
+        color="gray",
+        linestyle="-",
+        marker="",
+        alpha=0.7,
+        mesh=disc_cfg.mesh_dns,
+        solution=dns_solution,
+    )
 
-    if paths.projection is not None:
-        projected_solution, _ = read_data(directory=paths.projection, final_only=True)
-        projection_config = VelocityPlotConfig(
-            data_path=paths.projection,
-            label="LES - projection",
-            color="lightgreen",
-            marker="x",
-            mesh=disc_cfg.mesh_les,
-            solution=projected_solution,
-        )
+    projected_solution = (
+        _read_snapshot_at_time(paths.projection, reference_time)
+        if reference_time is not None and paths.projection is not None
+        else read_data(directory=paths.projection, final_only=True)[0]
+        if paths.projection is not None
+        else None
+    )
+    projection_config = VelocityPlotConfig(
+        data_path=paths.projection,
+        label="LES - projection",
+        color="lightgreen",
+        marker="x",
+        mesh=disc_cfg.mesh_les,
+        solution=projected_solution,
+    )
 
     no_model_config = VelocityPlotConfig(
         data_path=paths.les_nm_data,
@@ -393,5 +416,12 @@ def create_velocity_plot_configs(
         mesh=disc_cfg.mesh_les,
     )
 
-    _configs = [dns_config, projection_config, no_model_config, analytical_config, sgsp_config, avcg_config]
+    _configs = [
+        dns_config,
+        projection_config,
+        no_model_config,
+        analytical_config,
+        sgsp_config,
+        avcg_config,
+    ]
     return [config for config in _configs if config.data_path.exists()]

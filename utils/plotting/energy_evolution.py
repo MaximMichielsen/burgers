@@ -82,6 +82,21 @@ def _load_solver_data(directory: Path) -> dict:
     }
 
 
+def _trim_to_reference_length(
+    data: dict, reference_label: str, labels_to_trim: set[str]
+) -> None:
+    """Trim entries in-place to match the snapshot count of the reference label."""
+    if reference_label not in data:
+        return
+    n_ref = len(data[reference_label]["times"])
+    for label in labels_to_trim:
+        if label in data:
+            entry = data[label]
+            entry["times"] = entry["times"][:n_ref]
+            entry["solutions"] = entry["solutions"][:n_ref]
+            entry["coords"] = entry["coords"][:n_ref]
+
+
 def plot_energy_comparison(
     paths: RunPaths,
     output_path: Path,
@@ -127,23 +142,28 @@ def plot_energy_comparison(
         print("Not enough data to produce comparison plot.")
         return
 
+    _trim_to_reference_length(data, "LES - SGSP", {"DNS", "Projection"})
+
     for label, entry in data.items():
         entry["energy"] = _compute_energy_series(entry["solutions"], entry["coords"])
-        entry["dissipation"] = _compute_dissipation_series(
-            entry["solutions"], entry["coords"], viscosity
-        )
         wavenumbers, spectrum = _compute_energy_spectrum(
             entry["solutions"][-1], domain_length
         )
         entry["wavenumbers"] = wavenumbers
         entry["spectrum"] = spectrum
 
+    # Determine window start for the zoom panel
+    all_times = next(iter(data.values()))["times"]
+    t_end = float(all_times[-1])
+    t_window_start = max(t_end - 1.0, t_end * 0.8)
+
     fig = plt.figure(figsize=(15, 5))
     gs = GridSpec(1, 3, figure=fig, wspace=0.32)
     ax_energy = fig.add_subplot(gs[0, 0])
-    ax_spectrum = fig.add_subplot(gs[0, 1])
-    ax_dissipation = fig.add_subplot(gs[0, 2])
+    ax_zoom = fig.add_subplot(gs[0, 1])
+    ax_spectrum = fig.add_subplot(gs[0, 2])
 
+    # Panel 1: full energy evolution
     _plot_series(ax_energy, data, "times", "energy")
     ax_energy.set_xlabel("Time $t$")
     ax_energy.set_ylabel(r"$\frac{1}{2}\int u^2\,dx$")
@@ -151,6 +171,26 @@ def plot_energy_comparison(
     ax_energy.legend()
     ax_energy.grid(True, alpha=0.25)
 
+    # Panel 2: windowed energy evolution
+    for label, entry in data.items():
+        times_arr = np.array(entry["times"])
+        energy_arr = np.array(entry["energy"])
+        mask = times_arr >= t_window_start
+        ax_zoom.plot(
+            times_arr[mask],
+            energy_arr[mask],
+            color=entry["color"],
+            linestyle=entry["ls"],
+            linewidth=entry["lw"],
+            label=label,
+        )
+    ax_zoom.set_xlabel("Time $t$")
+    ax_zoom.set_ylabel(r"$\frac{1}{2}\int u^2\,dx$")
+    ax_zoom.set_title(f"Total kinetic energy ($t \\geq {t_window_start:.2f}$)")
+    ax_zoom.legend()
+    ax_zoom.grid(True, alpha=0.25)
+
+    # Panel 3: energy spectrum at t_final
     for label, entry in data.items():
         ax_spectrum.loglog(
             entry["wavenumbers"],
@@ -179,13 +219,6 @@ def plot_energy_comparison(
     ax_spectrum.set_title("Energy spectrum at $t_{\\mathrm{final}}$")
     ax_spectrum.legend()
     ax_spectrum.grid(True, which="both", alpha=0.2)
-
-    _plot_series(ax_dissipation, data, "times", "dissipation")
-    ax_dissipation.set_xlabel("Time $t$")
-    ax_dissipation.set_ylabel(r"$\nu\int\left(\partial u/\partial x\right)^2\,dx$")
-    ax_dissipation.set_title("Viscous dissipation")
-    ax_dissipation.legend()
-    ax_dissipation.grid(True, alpha=0.25)
 
     fig.suptitle(
         "Energy diagnostics: DNS vs LES variants",

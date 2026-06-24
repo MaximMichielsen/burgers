@@ -40,7 +40,7 @@ matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 problem: Problem = Problems.raj_three
-problem = replace(problem, domain_timespan=2)
+problem = replace(problem, domain_timespan=2.0)
 
 clip_pusuluri: bool = False
 clip_rajampeta: bool = False
@@ -92,8 +92,7 @@ if __name__ == "__main__":
             n_elements=n_nodes_les - 1,
         )
 
-    # --------------------------------------- SGSP coupled solver --------------------------------------- #
-    if paths.training is not None:
+        # --------------------------------------- SGSP coupled solver --------------------------------------- #
         sgsp_cfg = SGSPConfig(
             sgsp_model_path=paths.sgsp_model,
             normalization_path=paths.training,  # contains normalisation_stats.csv
@@ -114,91 +113,8 @@ if __name__ == "__main__":
         no_model_run.run_simulation()
 
     # --------------------------------------- GAVC training --------------------------------------- #
-    run_avc = False
-    if run_avc:
-        if not paths.avcg_model.exists():
-            dns_solution_on_les = load_first_projected_solution(paths.projection)
-
-            dns_solver_ref = BurgersBase(
-                problem,
-                disc_cfg,
-                simulation_mode="no_model",
-                master_path=paths.dns_data,
-            )
-            _, dns_positive_spectrum = dns_solver_ref.get_positive_spectrum(
-                *dns_solver_ref.compute_energy_spectrum(dns_solution_on_les)
-            )
-            dns_dissipation_ref = float(
-                dns_solver_ref.compute_dissipation(dns_solution_on_les)
-            )
-            n_wavenumber_bins = len(dns_positive_spectrum)
-            dns_reference_schedule = DNSReferenceSchedule.from_projection_directory(
-                projection_dir=paths.projection,
-                domain_length=problem.domain_length,
-                viscosity=problem.viscosity,
-                n_wavenumber_bins=n_wavenumber_bins,
-            )
-
-            avc_trainer_cfg = AVCTrainerConfig(
-                paths.avcg_model,
-                dns_energy_spectrum=dns_positive_spectrum,
-                dns_dissipation=dns_dissipation_ref,
-                correction_mode="global",
-                n_skip_steps=AVC_N_SKIP,
-                exclude_diss_from_reward=True,
-                simulation_mode="avc",
-            )
-
-            av_corrector_global = AVController(
-                alpha_max=AVC_ALPHA_MAX * problem.viscosity,
-                output_scale=1,
-                n_wavenumber_bins=n_wavenumber_bins,
-                correction_mode=avc_trainer_cfg.correction_mode,
-                n_output_nodes=1,
-            )
-            paths.agents.mkdir(parents=True, exist_ok=True)
-            save_corrector(av_corrector_global, paths.avcg_model)
-
-            sac_config = SACConfig(
-                n_skip_steps=AVC_N_SKIP,
-                warmup_steps=500,
-                batch_size=64 * 2,
-            )
-
-            environment_global = BurgersAVCEnvironment(
-                problem=problem,
-                disc_cfg=disc_cfg,
-                sgsp_cfg=sgsp_cfg,
-                avc_cfg=avc_trainer_cfg,
-                master_path=paths.les_avc_data / "training_global",
-                sac_config=sac_config,
-                dns_reference_schedule=dns_reference_schedule,
-            )
-            sac_agent_global = SACAgent(
-                av_corrector=av_corrector_global,
-                state_dim=environment_global.state_dim,
-                sac_config=sac_config,
-            )
-            trainer_global = OnlineAVTrainer(
-                environment=environment_global,
-                sac_agent=sac_agent_global,
-                sac_config=sac_config,
-                output_dir=paths.agents / "avcg_checkpoints",
-            )
-            trainer_global.train(n_episodes=AVC_EPOCHS)
-
-        # --------------------------------------- GAVC run --------------------------------------- #
-        avc_run_config = AVCRunConfig(avc_model_path=paths.avcg_model)
-        solver_avc_global = BurgersAVC(
-            problem,
-            disc_cfg,
-            "avc",
-            paths.les_avc_data / "global",
-            sgsp_cfg,
-            avc_run_config,
-        )
-        solver_avc_global.run_simulation()
-        solver_avc_global.post_processing()
+    if not paths.avcg_model.exists():
+        pass
 
     # -------------------------------------- Plotting --------------------------------------- #
     plot_solution_comparison(

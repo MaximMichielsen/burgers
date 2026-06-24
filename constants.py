@@ -21,15 +21,15 @@ DNS_TO_LES_RATIO: int = 2**5
 # Predictor agent hyperparameters
 # ---------------------------------------------------------------------------
 
-NUM_HIDDEN_LAYERS = 3
-HIDDEN_UNITS: int = 64
+NUM_HIDDEN_LAYERS = 5
+HIDDEN_UNITS: int = 256
 INPUT_UNITS: int = 20
 OUTPUT_UNITS: int = 5
 BATCH_SIZE: int = 128
 LEARNING_RATE: float = 0.001
 EPOCHS: int = 300
 
-BLOWUP_THRESHOLD: float = 1e4
+BLOWUP_THRESHOLD: float = 1e12
 BLOWUP_BUFFER_SIZE: int = 5000
 
 
