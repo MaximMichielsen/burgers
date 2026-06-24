@@ -170,9 +170,16 @@ def plot_energy_comparison(
     first_entry = next(iter(data.values()))
     wn_ref = first_entry["wavenumbers"]
     mid_idx = len(wn_ref) // 3
-    slope_line = first_entry["spectrum"][mid_idx] * (wn_ref / wn_ref[mid_idx]) ** (-5 / 3)
+    slope_line = first_entry["spectrum"][mid_idx] * (wn_ref / wn_ref[mid_idx]) ** (
+        -5 / 3
+    )
     ax_spectrum.loglog(
-        wn_ref, slope_line, color="lightgray", linestyle="--", linewidth=1.0, label=r"$k^{-5/3}$"
+        wn_ref,
+        slope_line,
+        color="lightgray",
+        linestyle="--",
+        linewidth=1.0,
+        label=r"$k^{-5/3}$",
     )
     ax_spectrum.set_xlabel("Wavenumber $k$")
     ax_spectrum.set_ylabel("$E(k)$")
@@ -187,7 +194,12 @@ def plot_energy_comparison(
     ax_dissipation.legend()
     ax_dissipation.grid(True, alpha=0.25)
 
-    fig.suptitle("Energy diagnostics: DNS vs LES variants", fontsize=13, fontweight="bold", y=1.02)
+    fig.suptitle(
+        "Energy diagnostics: DNS vs LES variants",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
 
     save_path = output_path / "energy_comparison.png"
     fig.savefig(save_path, dpi=200, bbox_inches="tight")

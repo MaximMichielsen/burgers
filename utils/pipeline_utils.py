@@ -15,7 +15,7 @@ from dns_scripts.dns_caching import (
     write_dns_parameters,
 )
 from solvers.sgsp_training_data_generator import BurgersDataGenerator
-from ml.data_assembly.a_priori_verification_stash import run_apriori_verification
+from ml.a_priori_verification import run_apriori_verification
 from ml.ml_agents.predictor import (
     plot_training_diagnostics,
     evaluate_on_val_set,
@@ -58,10 +58,11 @@ def resolve_pathing(problem_name: str, root_directory: Path) -> RunPaths:
 
 
 def load_manual_models(
-    paths: RunPaths, sgsp_path: str = "", avcg_path: str = ""
+    paths: RunPaths, sgsp_path: str = "", training_path: str = "", avcg_path: str = ""
 ) -> None:
     """Manually set paths to the SGSP and/or AVC models."""
     paths.sgsp_model = Path(sgsp_path) if sgsp_path != "" else paths.sgsp_model
+    paths.training = Path(training_path) if training_path != "" else paths.training
     paths.avcg_model = Path(avcg_path) if avcg_path != "" else paths.avcg_model
 
 
@@ -82,8 +83,6 @@ def run_dns(
     )
 
     cache_result = resolve_dns_cache(cache_root, dns_cache_key, problem.domain_timespan)
-
-
 
     if cache_result.status == DNSCacheStatus.HIT:
         print(f"[DNS cache] HIT — reusing {cache_result.cache_dir}")

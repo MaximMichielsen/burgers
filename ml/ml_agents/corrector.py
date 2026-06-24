@@ -93,8 +93,7 @@ class AVController(nn.Module):
     def forward(self, state_input: Tensor) -> Tensor:
         """Sigmoid-bounded output, hard-clamped to alpha_max as a safety ceiling."""
         raw_output = self.network(state_input)
-        scaled_output = self.output_scale * torch.sigmoid(raw_output)
-        return torch.clamp(scaled_output, max=self.alpha_max, min=0.0)
+        return torch.sigmoid(raw_output)
 
 
 # ---------------------------------------------------------------------------

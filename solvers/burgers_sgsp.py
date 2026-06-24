@@ -44,19 +44,24 @@ from constants import (
     BLOWUP_BUFFER_SIZE,
     BLOWUP_THRESHOLD,
 )
-from ml.data_assembly.training_data_assembly import (
-    gradient_basis_functions,
-    build_input_stencil,
-)
+
 from ml.ml_agents.predictor import SGSPredictor, load_predictor
 
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig
 from solvers.burgers_base import BurgersBase
-from solvers.sgsp_training_data_generator import load_normalisation_stats_csv
+from solvers.sgsp_training_data_generator import (
+    load_normalisation_stats_csv,
+    build_input_stencil_wall_padded,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def gradient_basis_functions(element_size: float) -> NDArray:
+    """Constant gradient of linear basis on physical element: dN/dx = [-1, 1] / h."""
+    return np.array([-1.0, 1.0]) / element_size
 
 
 # ---------------------------------------------------------------------------
@@ -503,12 +508,12 @@ class BurgersSGSP(BurgersBase):
         valid_element_indices: list[int] = []
 
         for elem_idx in range(self.n_elements):
-            input_vec = build_input_stencil(
+            input_vec = build_input_stencil_wall_padded(
                 u_bar_history=self._u_bar_history,
                 du_bar_dt_history=self._du_bar_dt_history,
                 forcing_history=self._forcing_history,
-                element_idx=elem_idx,
-                n_les_nodes=self.n_nodes,
+                node_idx=elem_idx, # node idx = element's left node so this is equivalent
+                n_nodes=self.n_nodes,
             )
             if input_vec is not None:
                 input_rows.append(input_vec)

@@ -25,7 +25,7 @@ from constants import (
     NUM_HIDDEN_LAYERS,
     OUTPUT_UNITS,
 )
-from ml.data_assembly.a_priori_verification_stash import run_apriori_verification
+from ml.a_priori_verification import run_apriori_verification
 
 
 # ---------------------------------------------------------------------------

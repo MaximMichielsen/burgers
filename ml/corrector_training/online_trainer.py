@@ -649,7 +649,7 @@ class OnlineAVTrainer:
             while not done_flag:
                 if self._stats.total_env_steps < self._config.warmup_steps:
                     random_scalar = float(
-                        np.random.uniform(0.0, self._agent.policy.alpha_max / 10)
+                        np.random.uniform(-self._agent.policy.alpha_max, self._agent.policy.alpha_max)
                     )
                     action_dim = self._agent.policy.output_dim
                     alpha_action_val = np.full(
