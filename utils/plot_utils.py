@@ -19,10 +19,10 @@ from utils.pipeline_utils import RunPaths
 
 
 @dataclass
-class SolutionConfig:
+class VelocityPlotConfig:
     """Style and data config for one solution curve in a comparison plot."""
 
-    data_path: Path | str
+    data_path: Path
     label: str
     color: str
     linestyle: str = "--"
@@ -41,16 +41,16 @@ def build_plot_configs(
     dns_solution: NDArray,
     projected_solution: NDArray,
     les_sgsp_data_path: Path,
-    extra_configs: list[SolutionConfig] | None = None,
-) -> list[SolutionConfig]:
+    extra_configs: list[VelocityPlotConfig] | None = None,
+) -> list[VelocityPlotConfig]:
     """Build standard solution plot configs, with optional extra configs appended.
 
     The five base configs (DNS, LES-A, LES-no-model, projection, SGSP) are always
     included. Any caller-specific configs (e.g. AVC variants) are passed via
     ``extra_configs`` and appended at the end.
     """
-    base_configs: list[SolutionConfig] = [
-        SolutionConfig(
+    base_configs: list[VelocityPlotConfig] = [
+        VelocityPlotConfig(
             data_path=paths.dns_data,
             label="DNS",
             color="gray",
@@ -60,7 +60,7 @@ def build_plot_configs(
             mesh=disc_cfg.mesh_dns,
             solution=dns_solution,
         ),
-        SolutionConfig(
+        VelocityPlotConfig(
             data_path=paths.dns_data,
             label="LES - projection",
             color="lightgreen",
@@ -68,21 +68,21 @@ def build_plot_configs(
             mesh=disc_cfg.mesh_les,
             solution=projected_solution,
         ),
-        SolutionConfig(
+        VelocityPlotConfig(
             data_path=paths.les_a_data,
             label="LES - A",
             color="tab:orange",
             marker="^",
             mesh=disc_cfg.mesh_les,
         ),
-        SolutionConfig(
+        VelocityPlotConfig(
             data_path=paths.les_nm_data,
             label="LES - no model",
             color="gold",
             marker=".",
             mesh=disc_cfg.mesh_les,
         ),
-        SolutionConfig(
+        VelocityPlotConfig(
             data_path=les_sgsp_data_path,
             label="LES - SGSP",
             color="crimson",
@@ -122,12 +122,12 @@ def _build_legend_label(base_label: str, final_time: float | None) -> str:
 
 
 def plot_solution_comparison(
-    configs: list[SolutionConfig],
+    configs: list[VelocityPlotConfig],
     output_path: Path,
     title: str = "Comparison of DNS and LES Solutions",
     xlabel: str = "Spatial Domain",
     ylabel: str = "Solution Value",
-    figsize: tuple = (16, 9),
+    figsize: tuple = (12, 6),
     filename: str = "comparison_solvers.png",
     dpi: int = 150,
     show_fig: bool = False,
@@ -326,3 +326,72 @@ def plot_solutions_from_run_id_animated(
     plt.tight_layout()
     plt.show()
     return ani
+
+
+def create_velocity_plot_configs(
+    paths: RunPaths, disc_cfg: DiscretizationConfig
+) -> list[VelocityPlotConfig]:
+    """Create configs for the velocity profile comparison plot.
+
+    Checks if data in the path exists, skips it if its not."""
+    if paths.dns_data is not None:
+        dns_solution, _ = read_data(directory=paths.dns_data, final_only=True)
+        dns_config = VelocityPlotConfig(
+            data_path=paths.dns_data,
+            label="DNS",
+            color="gray",
+            linestyle="-",
+            marker="",
+            alpha=0.7,
+            mesh=disc_cfg.mesh_dns,
+            solution=dns_solution,
+        )
+    else:
+        raise ValueError("No viable DNS path found! Cannot plot velocity profile.")
+
+    if paths.projection is not None:
+        projected_solution, _ = read_data(directory=paths.projection, final_only=True)
+        projection_config = VelocityPlotConfig(
+            data_path=paths.projection,
+            label="LES - projection",
+            color="lightgreen",
+            marker="x",
+            mesh=disc_cfg.mesh_les,
+            solution=projected_solution,
+        )
+
+    no_model_config = VelocityPlotConfig(
+        data_path=paths.les_nm_data,
+        label="LES - No SGS Model",
+        color="gold",
+        marker="x",
+        mesh=disc_cfg.mesh_les,
+    )
+
+    analytical_config = VelocityPlotConfig(
+        data_path=paths.les_a_data,
+        label="LES - A",
+        color="tab:orange",
+        marker="^",
+        mesh=disc_cfg.mesh_les,
+    )
+
+    sgsp_config = VelocityPlotConfig(
+        data_path=paths.les_sgsp_data,
+        label="LES - SGSP",
+        color="crimson",
+        marker="d",
+        mesh=disc_cfg.mesh_les,
+    )
+
+    avcg_config = VelocityPlotConfig(
+        data_path=paths.les_avc_data / "global",
+        label="LES - AVC (global)",
+        color="royalblue",
+        linestyle="--",
+        marker="s",
+        mesh=disc_cfg.mesh_les,
+    )
+
+    _configs = [dns_config, projection_config, no_model_config, analytical_config, sgsp_config, avcg_config]
+    return [config for config in _configs if config.data_path.exists()]

@@ -4,9 +4,6 @@
 # Simulation defaults
 # ---------------------------------------------------------------------------
 
-STANDARD_EXTRACTION_AMOUNT: int = 10
-DNS_SNAPSHOT_AMOUNT: int = 2000
-
 TOLERANCE_RESIDUAL: float = 1e-6
 TOLERANCE_UPDATE: float = 1e-6
 MAXIMUM_ITERATIONS_DNS: int = 50
@@ -24,8 +21,8 @@ DNS_TO_LES_RATIO: int = 2**5
 # Predictor agent hyperparameters
 # ---------------------------------------------------------------------------
 
-NUM_HIDDEN_LAYERS = 5
-HIDDEN_UNITS: int = 256
+NUM_HIDDEN_LAYERS = 3
+HIDDEN_UNITS: int = 64
 INPUT_UNITS: int = 20
 OUTPUT_UNITS: int = 5
 BATCH_SIZE: int = 128

@@ -20,7 +20,6 @@ from solvers.burgers_base import BurgersBase
 from ml.ml_agents.solver_configs import SGSPConfig, AVCRunConfig, AVCTrainerConfig
 from utils.enegy_evolution_utils import plot_energy_comparison
 from utils.io_utils import (
-    read_data,
     load_first_projected_solution,
 )
 from utils.pipeline_utils import (
@@ -32,8 +31,8 @@ from utils.pipeline_utils import (
 )
 from utils.plot_utils import (
     plot_solution_comparison,
-    SolutionConfig,
     is_viable_solution_path,
+    create_velocity_plot_configs,
 )
 
 
@@ -41,23 +40,26 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
-problem: Problem = Problems.raj_two
-problem = replace(problem, domain_timespan=10.0)
+problem: Problem = Problems.pipeline_test
+problem = replace(problem, domain_timespan=0.5)
 
 clip_pusuluri: bool = False
 clip_rajampeta: bool = False
-run_analytical_les: bool = True
+
+run_analytical_les: bool = False
+run_no_model_les: bool = False
 
 # general simulation parameters
-n_nodes_les: int = 17
+n_nodes_les: int = 9
 temporal_refinement: int = 1
 courant_les: float = 0.1
 
 # AVC (hyper-)parameters
-ALPHA_MAX: float = 10 * problem.viscosity
-OUTPUT_SCALE: float = 1
-AVC_EPOCHS: int = 40
-N_SKIP: int = 5
+AVC_ALPHA_MAX: float = problem.viscosity / 2  # currently the parameter that
+# sets the lower and upper limits for random batch filling
+
+AVC_EPOCHS: int = 10
+AVC_N_SKIP: int = 5
 
 # discretization dict
 disc_cfg = DiscretizationConfig(
@@ -102,9 +104,14 @@ if __name__ == "__main__":
     )
     run_sgsp_coupled_solver(problem, disc_cfg, paths.les_sgsp_data, sgsp_cfg)
 
+    # --------------------------------------- Bare LES solvers --------------------------------------- #
     if run_analytical_les:
         les_run = BurgersBase(problem, disc_cfg, "les", paths.les_a_data)
         les_run.run_simulation()
+
+    if run_no_model_les:
+        no_model_run = BurgersBase(problem, disc_cfg, "no_model", paths.les_nm_data)
+        no_model_run.run_simulation()
 
     # --------------------------------------- GAVC training --------------------------------------- #
     if not paths.avcg_model.exists():
@@ -135,13 +142,13 @@ if __name__ == "__main__":
             dns_energy_spectrum=dns_positive_spectrum,
             dns_dissipation=dns_dissipation_ref,
             correction_mode="global",
-            n_skip_steps=N_SKIP,
+            n_skip_steps=AVC_N_SKIP,
             exclude_diss_from_reward=True,
             simulation_mode="avc",
         )
 
         av_corrector_global = AVController(
-            alpha_max=ALPHA_MAX * problem.viscosity,
+            alpha_max=AVC_ALPHA_MAX * problem.viscosity,
             output_scale=1,
             n_wavenumber_bins=n_wavenumber_bins,
             correction_mode=avc_trainer_cfg.correction_mode,
@@ -151,7 +158,7 @@ if __name__ == "__main__":
         save_corrector(av_corrector_global, paths.avcg_model)
 
         sac_config = SACConfig(
-            n_skip_steps=N_SKIP,
+            n_skip_steps=AVC_N_SKIP,
             warmup_steps=500,
             batch_size=64 * 2,
         )
@@ -192,71 +199,26 @@ if __name__ == "__main__":
     solver_avc_global.post_processing()
 
     # -------------------------------------- Plotting --------------------------------------- #
-    if paths.projection is not None and paths.dns_data is not None:
-        dns_solution, _ = read_data(directory=paths.dns_data, final_only=True)
-        projected_solution, _ = read_data(directory=paths.projection, final_only=True)
+    plot_solution_comparison(
+        configs=create_velocity_plot_configs(paths, disc_cfg),
+        output_path=paths.master,
+        filename="comparison_dns_sgsp.png",
+    )
 
-        plot_solution_comparison(
-            configs=[
-                SolutionConfig(
-                    data_path=paths.dns_data,
-                    label="DNS",
-                    color="gray",
-                    linestyle="-",
-                    marker="",
-                    alpha=0.7,
-                    mesh=disc_cfg.mesh_dns,
-                    solution=dns_solution,
-                ),
-                SolutionConfig(
-                    data_path=paths.projection,
-                    label="LES - projection",
-                    color="lightgreen",
-                    marker="x",
-                    mesh=disc_cfg.mesh_les,
-                    solution=projected_solution,
-                ),
-                SolutionConfig(
-                    data_path=paths.les_a_data,
-                    label="LES - A",
-                    color="tab:orange",
-                    marker="^",
-                    mesh=disc_cfg.mesh_les,
-                ),
-                SolutionConfig(
-                    data_path=paths.les_sgsp_data,
-                    label="LES - SGSP",
-                    color="crimson",
-                    marker="d",
-                    mesh=disc_cfg.mesh_les,
-                ),
-                SolutionConfig(
-                    data_path=paths.les_avc_data / "global",
-                    label="LES - AVC (global)",
-                    color="royalblue",
-                    linestyle="--",
-                    marker="s",
-                    mesh=disc_cfg.mesh_les,
-                ),
-            ],
-            output_path=paths.master,
-            filename="comparison_dns_sgsp.png",
-        )
-
-        plot_energy_comparison(
-            dns_dir=paths.dns_data,
-            les_a_dir=paths.les_a_data,
-            les_nm_dir=paths.les_nm_data
-            if is_viable_solution_path(paths.les_nm_data)
-            else None,
-            les_sgsp_dir=paths.les_sgsp_data
-            if is_viable_solution_path(paths.les_sgsp_data)
-            else None,
-            les_avcg_dir=paths.les_avc_data / "global"
-            if is_viable_solution_path(paths.les_avc_data / "global")
-            else None,
-            output_path=paths.master,
-            viscosity=problem.viscosity,
-            domain_length=problem.domain_length,
-            projection_dir=paths.projection,
-        )
+    plot_energy_comparison(
+        dns_dir=paths.dns_data,
+        les_a_dir=paths.les_a_data,
+        les_nm_dir=paths.les_nm_data
+        if is_viable_solution_path(paths.les_nm_data)
+        else None,
+        les_sgsp_dir=paths.les_sgsp_data
+        if is_viable_solution_path(paths.les_sgsp_data)
+        else None,
+        les_avcg_dir=paths.les_avc_data / "global"
+        if is_viable_solution_path(paths.les_avc_data / "global")
+        else None,
+        output_path=paths.master,
+        viscosity=problem.viscosity,
+        domain_length=problem.domain_length,
+        projection_dir=paths.projection,
+    )

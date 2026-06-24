@@ -6,11 +6,12 @@ from pathlib import Path
 import matplotlib
 
 from constants import RUNS_FOLDER
-from pipeline_settings import PipelineConfig, RunPaths
 from problems_and_configurations.disc_config import DiscretizationConfig
-from problems_and_configurations.problems import Problems, Problem
+from problems_and_configurations.problems import Problems
 from utils.pipeline_utils import (
     run_dns,
+    get_run_id,
+    RunPaths,
 )
 
 
@@ -22,8 +23,6 @@ matplotlib.use("Agg")  # needed when running on M12
 problem_one = replace(Problems.raj_one, domain_timespan=4.0, name="Raj_one")
 problem_two = replace(Problems.raj_two, domain_timespan=12.0, name="Raj_two")
 problem_three = replace(Problems.raj_three, domain_timespan=4.0, name="Raj_three")
-
-pipeline = PipelineConfig.all(manual_path=r"")
 
 n_nodes_les: int = 9
 temporal_refinement: int = 1
@@ -42,20 +41,16 @@ disc_cfg_3 = DiscretizationConfig(
     courant_les=courant_les,
     domain_length=1.0,
 )
-master_path_one = (
-    CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem_one.name)
-)
+master_path_one = CURRENT_DIR / RUNS_FOLDER / get_run_id(problem_name=problem_one.name)
 paths_one = RunPaths.from_master(master_path_one)
 paths_one.create_master()
 
-master_path_two = (
-    CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem_two.name)
-)
+master_path_two = CURRENT_DIR / RUNS_FOLDER / get_run_id(problem_name=problem_two.name)
 paths_two = RunPaths.from_master(master_path_two)
 paths_two.create_master()
 
 master_path_three = (
-    CURRENT_DIR / RUNS_FOLDER / pipeline.get_run_id(problem_name=problem_three.name)
+    CURRENT_DIR / RUNS_FOLDER / get_run_id(problem_name=problem_three.name)
 )
 paths_three = RunPaths.from_master(master_path_three)
 paths_three.create_master()

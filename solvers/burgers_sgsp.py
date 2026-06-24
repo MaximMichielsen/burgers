@@ -512,7 +512,7 @@ class BurgersSGSP(BurgersBase):
                 u_bar_history=self._u_bar_history,
                 du_bar_dt_history=self._du_bar_dt_history,
                 forcing_history=self._forcing_history,
-                node_idx=elem_idx, # node idx = element's left node so this is equivalent
+                node_idx=elem_idx,  # node idx = element's left node so this is equivalent
                 n_nodes=self.n_nodes,
             )
             if input_vec is not None:
