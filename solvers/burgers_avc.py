@@ -38,7 +38,7 @@ from numpy.typing import NDArray
 from ml.ml_agents.corrector import AVControllerGlobal, load_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
-from ml.ml_agents.solver_configs import SGSPConfig, AVCRunConfig, AVCTrainerConfig
+from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
 from solvers.burgers_sgsp import BurgersSGSP
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class BurgersAVC(BurgersSGSP):
         simulation_mode: str,
         master_path: Path,
         sgsp_cfg: SGSPConfig,
-        avc_cfg: AVCRunConfig | AVCTrainerConfig,
+        avc_cfg: AVCConfig,
         snapshot_factor: int = 1,
     ) -> None:
         super().__init__(
@@ -92,14 +92,10 @@ class BurgersAVC(BurgersSGSP):
         For AVCTrainerConfig, av_correction is driven externally by
         BurgersAVCEnvironment.step() and must not be overwritten here.
         """
-        if not isinstance(self._avc_cfg, AVCTrainerConfig):
+        if not self._avc_cfg.externally_driven:
             if self._step_counter % self._avc_cfg.n_skip_steps == 0:
                 self.av_correction = self._calc_avc_correction()
-                logger.debug(
-                    "AVC correction applied: α=%s  (t=%.4f)",
-                    self.av_correction,
-                    self.simulation_time_elapsed,
-                )
+                print(f"AVC correction applied: α={self.av_correction}  (t={self.simulation_time_elapsed:.4f})")
 
         self._step_counter += 1
         step_ok = super().advance_time_step()
@@ -302,11 +298,6 @@ class BurgersAVC(BurgersSGSP):
     def post_logging(self) -> None:
         """Write run summary plus AVC-specific fields to the log file."""
         super().post_logging()
-        self.logger.info(
-            "AVC — alpha_max: %.4e  correction_mode: %s",
-            self.corrector.alpha_max,
-            self.corrector.correction_mode,
-        )
         if self.av_history:
             # For local mode each entry is an NDArray; flatten to a single array
             # of all per-node values across all steps for summary statistics.

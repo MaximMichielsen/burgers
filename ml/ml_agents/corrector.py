@@ -19,9 +19,9 @@ class AVControllerGlobal(nn.Module):
     """
 
     def __init__(
-            self,
-            n_wavenumber_bins: int,
-            output_scale: float,
+        self,
+        n_wavenumber_bins: int,
+        output_scale: float,
     ) -> None:
         super().__init__()
 
@@ -51,9 +51,7 @@ def save_corrector(model: AVControllerGlobal, save_path: Path) -> None:
     torch.save(
         {
             "model_state_dict": model.state_dict(),
-            "alpha_max": model.alpha_max,
             "n_wavenumber_bins": model.n_wavenumber_bins,
-            "hidden_dim": model.hidden_dim,
             "correction_mode": model.correction_mode,
             "n_output_nodes": model.output_dim,
             "output_scale": model.output_scale,
@@ -66,11 +64,7 @@ def load_corrector(model_path: Path) -> AVControllerGlobal:
     """Load corrector from model_path."""
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
     model = AVControllerGlobal(
-        alpha_max=checkpoint["alpha_max"],
         n_wavenumber_bins=checkpoint["n_wavenumber_bins"],
-        hidden_dim=checkpoint["hidden_dim"],
-        correction_mode=checkpoint.get("correction_mode", "global"),
-        n_output_nodes=checkpoint.get("n_output_nodes", 1),
         output_scale=checkpoint.get("output_scale", None),
     )
     model.load_state_dict(checkpoint["model_state_dict"])

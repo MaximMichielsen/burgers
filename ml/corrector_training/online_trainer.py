@@ -58,13 +58,13 @@ from ml.corrector_training.DNS_snapshot_converter import ProjectionReferenceSche
 from ml.ml_agents.corrector import AVControllerGlobal, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
-from ml.ml_agents.solver_configs import SGSPConfig, AVCTrainerConfig
+from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
 from utils.io_utils import compute_adjusted_dt
 from solvers.burgers_avc import BurgersAVC
 
 logger = logging.getLogger(__name__)
 
-BLOWN_UP_PENALTY: float = -10.0
+BLOWN_UP_PENALTY: float = -100.0
 
 # ---------------------------------------------------------------------------
 # Hyperparameter config
@@ -119,11 +119,10 @@ class SACConfig:
     updates_per_step: int = 1
     target_entropy: float = -1.0
     n_skip_steps: int = 5
-    reward_weight_energy: float = 1.0
+    reward_weight_energy: float = 3.0
     reward_weight_dissipation: float = 0.1
     reward_spectral_exponent: float = 5.0 / 3.0
     critic_hidden_dim: int = 256
-    include_diss_from_reward: bool = True
     tau_transient_warmup: float = 0.3
 
 
@@ -243,7 +242,7 @@ class BurgersAVCEnvironment:
         problem: Problem,
         disc_cfg: DiscretizationConfig,
         sgsp_cfg: SGSPConfig,
-        avc_cfg: AVCTrainerConfig,
+        avc_cfg: AVCConfig,
         master_path: Path,
         sac_config: SACConfig,
         proj_ref_schedule: ProjectionReferenceSchedule,
@@ -255,18 +254,16 @@ class BurgersAVCEnvironment:
         self._master_path = master_path
         self._sac_config = sac_config
         self.proj_ref_schedule = proj_ref_schedule
-        self.include_diss_reward = sac_config.include_diss_from_reward
 
         self.zero_run = avc_cfg.perform_zero_run
-
-        self._total_les_steps: int = 0
 
         _, self._n_time_steps = compute_adjusted_dt(
             disc_cfg.dt_les, problem.domain_timespan
         )
         self._max_les_steps: int = self._n_time_steps
+        self._total_les_steps: int = 0
 
-        self.n_wavenumber_bins: int = (disc_cfg.n_nodes_les + 1) // 2
+        self.n_wavenumber_bins: int = avc_cfg.n_wavenumber_bins
         self.state_dim: int = self.n_wavenumber_bins + 2
 
         self.correction_mode: str = avc_cfg.correction_mode
@@ -280,7 +277,7 @@ class BurgersAVCEnvironment:
         """Instantiate a fresh BurgersAVC solver and return initial state sₙ."""
         self._solver = BurgersAVC(
             problem=self._problem,
-            disc_cfg=dataclasses.replace(self._disc_cfg, suppress_file_logging=True),
+            disc_cfg=dataclasses.replace(self._disc_cfg, suppress_file_logging=False),
             simulation_mode=self._avc_cfg.simulation_mode,
             master_path=self._master_path,
             sgsp_cfg=self._sgsp_cfg,
@@ -296,6 +293,7 @@ class BurgersAVCEnvironment:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done)."""
         assert self._solver is not None, "Call reset() before step()."
 
+        # to check reward calculation when SGSP is near-perfect
         if self._avc_cfg.perform_zero_run:
             alpha_action = 0.0
 
@@ -306,12 +304,12 @@ class BurgersAVCEnvironment:
                 f"got {alpha_array.shape}"
             )
             self._solver.av_correction = alpha_array
-        else:
+        elif self.correction_mode == "global":
             self._solver.av_correction = float(
                 np.asarray(alpha_action, dtype=np.float64).item()
             )
-
-        logger.info(f"Applying correction of: {self._solver.av_correction}")
+        else:
+            raise ValueError(f"Wrong correction mode chosen {self.correction_mode}")
 
         blown_up = False
         for _ in range(self._sac_config.n_skip_steps):
@@ -320,6 +318,8 @@ class BurgersAVCEnvironment:
             if not step_ok:
                 blown_up = True
                 break
+
+
 
         reward_val = self._compute_reward(blown_up=blown_up)
         done_flag = blown_up or self._total_les_steps >= self._max_les_steps
@@ -338,10 +338,10 @@ class BurgersAVCEnvironment:
 
         assert self._solver is not None
 
-        transient_weight = 1.0 - np.exp(
-            -self._solver.simulation_time_elapsed
-            / self._sac_config.tau_transient_warmup
-        )
+        # transient_weight = 1.0 - np.exp(
+        #     -self._solver.simulation_time_elapsed
+        #     / self._sac_config.tau_transient_warmup
+        # )
 
         wavenumbers_all, raw_spectrum_all = self._solver.compute_energy_spectrum(
             self._solver.solution
@@ -352,60 +352,27 @@ class BurgersAVCEnvironment:
         spectrum_k = positive_spectrum.astype(np.float64)
 
         w_energy = self._sac_config.reward_weight_energy
-        w_diss = self._sac_config.reward_weight_dissipation
         gamma_exp = self._sac_config.reward_spectral_exponent
 
-        proj_spectrum_k, proj_dissipation = self.proj_ref_schedule.query(
+        proj_spectrum_k, _ = self.proj_ref_schedule.query(
             self._solver.simulation_time_elapsed
         )
 
-        spectrum_k = spectrum_k[1:]  # drop DC
+        spectrum_k = spectrum_k[1:]
         proj_spectrum_k = proj_spectrum_k[1:]
         wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
 
-        compensated_les = wavenumber_indices**gamma_exp * spectrum_k
-        compensated_proj = wavenumber_indices**gamma_exp * proj_spectrum_k
-
-        proj_safe = np.where(compensated_proj > 0.0, compensated_proj, 1.0)
         spectral_penalty = float(
-            w_energy * np.mean(((compensated_les - compensated_proj) / proj_safe) ** 2)
-        )
-
-        energy_les = float(spectrum_k.sum())
-        energy_proj = float(proj_spectrum_k.sum())
-        energy_safe = max(energy_proj, 1e-12)
-        energy_penalty = float(((energy_les - energy_proj) / energy_safe) ** 2)
-
-        if not self.include_diss_reward:
-            return -(
-                transient_weight
-                * (spectral_penalty + energy_penalty)
-                / (1.0 + spectral_penalty)
+            np.sum(
+                w_energy
+                * wavenumber_indices**gamma_exp
+                * ((spectrum_k - proj_spectrum_k) / (proj_spectrum_k + 1e-12)) ** 2
             )
-
-        current_dissipation = (
-            self._solver.dissipation_history[-1]
-            if self._solver.dissipation_history
-            else 0.0
-        )
-        current_av_drain = (
-            self._solver.energy_drain_history[-1]
-            if self._solver.energy_drain_history
-            else 0.0
         )
 
-        dns_diss_safe = max(abs(proj_dissipation), 1e-12)
-        dissipation_penalty = float(
-            w_diss
-            * (
-                (current_dissipation + current_av_drain - proj_dissipation)
-                / dns_diss_safe
-            )
-            ** 2
-        )
+        print('pentalty:',spectral_penalty / (1.0 + spectral_penalty))
 
-        total_penalty = spectral_penalty + dissipation_penalty + energy_penalty
-        return -(transient_weight * total_penalty / (1.0 + total_penalty))
+        return -spectral_penalty / (1.0 + spectral_penalty)
 
 
 # ---------------------------------------------------------------------------
@@ -661,7 +628,7 @@ class OnlineAVTrainer:
                 if self._stats.total_env_steps < self._config.warmup_steps:
                     random_scalar = float(
                         np.random.uniform(
-                            -self._agent.policy.output_scale / 100,
+                            -self._agent.policy.output_scale / 10000,
                             self._agent.policy.output_scale * 10,
                         )
                     )

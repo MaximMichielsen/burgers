@@ -16,19 +16,11 @@ class SGSPConfig:
 
 
 @dataclass(frozen=True)
-class AVCTrainerConfig:
+class AVCConfig:
     avc_model_path: Path
+    n_wavenumber_bins: int
     simulation_mode: str = "avc"
     correction_mode: str = "global"
     n_skip_steps: int = 5
-    correction_is_fixed: bool = False
     perform_zero_run: bool = False
-
-
-@dataclass(frozen=True)
-class AVCRunConfig:
-    avc_model_path: Path
-    correction_mode: str = "global"
-    n_skip_steps: int = 5
-    correction_is_fixed: bool = False
-    exclude_diss_from_reward: bool = False
+    externally_driven:bool = False
