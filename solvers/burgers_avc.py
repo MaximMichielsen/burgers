@@ -95,7 +95,9 @@ class BurgersAVC(BurgersSGSP):
         if not self._avc_cfg.externally_driven:
             if self._step_counter % self._avc_cfg.n_skip_steps == 0:
                 self.av_correction = self._calc_avc_correction()
-                print(f"AVC correction applied: α={self.av_correction}  (t={self.simulation_time_elapsed:.4f})")
+                print(
+                    f"AVC correction applied: α={self.av_correction}  (t={self.simulation_time_elapsed:.4f})"
+                )
 
         self._step_counter += 1
         step_ok = super().advance_time_step()

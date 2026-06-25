@@ -38,7 +38,7 @@ matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 problem: Problem = Problems.raj_one
-problem = replace(problem, domain_timespan=3.0)
+problem = replace(problem, domain_timespan=2.0)
 
 clip_pusuluri: bool = False
 clip_rajampeta: bool = False
@@ -52,11 +52,15 @@ temporal_refinement: int = 1
 courant_les: float = 0.1
 
 # AVC (hyper-)parameters
-AVC_EPOCHS: int = 40
+avc_output_scale = 2 * problem.viscosity
+
+AVC_EPOCHS: int = 50
 AVC_N_SKIP: int = 5
-AVC_WARMUP_STEPS: int = 264
-AVC_ZERO_RUN: bool = True
-TAU_REWARD_WARMUP: float = 0.1
+AVC_WARMUP_STEPS: int = 500
+TAU_REWARD_WARMUP: float = 0.2
+
+# DEBUG FLAGS
+AVC_ZERO_RUN: bool = False
 SET_OFF_SGSP: bool = False
 
 # discretization config
@@ -125,14 +129,14 @@ if __name__ == "__main__":
             simulation_mode="avc",
             correction_mode="global",
             n_skip_steps=AVC_N_SKIP,
-            perform_zero_run=AVC_ZERO_RUN,
+            set_off_corrector=AVC_ZERO_RUN,
             n_wavenumber_bins=(n_nodes_les + 1) // 2,
             externally_driven=True,
         )
 
         av_corrector_global = AVControllerGlobal(
             n_wavenumber_bins=(n_nodes_les + 1) // 2,
-            output_scale= problem.viscosity * 10
+            output_scale=avc_output_scale,
         )
         paths.agents.mkdir(parents=True, exist_ok=True)
         save_corrector(av_corrector_global, paths.avcg_model)
@@ -168,8 +172,9 @@ if __name__ == "__main__":
         save_corrector(sac_agent_global.policy, paths.avcg_model)
 
     # --------------------------------------- GAVC run --------------------------------------- #
-    avc_run_cfg = AVCConfig(avc_model_path=paths.avcg_model,
-    n_wavenumber_bins = (n_nodes_les + 1) // 2,
+    avc_run_cfg = AVCConfig(
+        avc_model_path=paths.avcg_model,
+        n_wavenumber_bins=(n_nodes_les + 1) // 2,
     )
     solver_avc_global = BurgersAVC(
         problem,

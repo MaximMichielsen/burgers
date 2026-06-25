@@ -22,5 +22,5 @@ class AVCConfig:
     simulation_mode: str = "avc"
     correction_mode: str = "global"
     n_skip_steps: int = 5
-    perform_zero_run: bool = False
-    externally_driven:bool = False
+    set_off_corrector: bool = False
+    externally_driven: bool = False

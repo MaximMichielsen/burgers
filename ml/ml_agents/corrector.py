@@ -4,12 +4,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from constants import SGSP_HIDDEN_UNITS, AVC_HIDDEN_UNITS, AVC_GLOBAL_OUTPUT_UNITS
-
-
-def load_corrector_training_data(data_path: Path) -> dict:
-    """Load training data for the AVCorrector, only used if training is offline."""
-    pass
+from constants import AVC_HIDDEN_UNITS, AVC_GLOBAL_OUTPUT_UNITS
 
 
 class AVControllerGlobal(nn.Module):

@@ -119,7 +119,7 @@ class SACConfig:
     updates_per_step: int = 1
     target_entropy: float = -1.0
     n_skip_steps: int = 5
-    reward_weight_energy: float = 3.0
+    reward_weight_energy: float = 1.0
     reward_weight_dissipation: float = 0.1
     reward_spectral_exponent: float = 5.0 / 3.0
     critic_hidden_dim: int = 256
@@ -247,6 +247,7 @@ class BurgersAVCEnvironment:
         sac_config: SACConfig,
         proj_ref_schedule: ProjectionReferenceSchedule,
     ) -> None:
+
         self._problem = problem
         self._disc_cfg = disc_cfg
         self._sgsp_cfg = sgsp_cfg
@@ -255,7 +256,7 @@ class BurgersAVCEnvironment:
         self._sac_config = sac_config
         self.proj_ref_schedule = proj_ref_schedule
 
-        self.zero_run = avc_cfg.perform_zero_run
+        self.set_off_corrector = avc_cfg.set_off_corrector
 
         _, self._n_time_steps = compute_adjusted_dt(
             disc_cfg.dt_les, problem.domain_timespan
@@ -277,7 +278,7 @@ class BurgersAVCEnvironment:
         """Instantiate a fresh BurgersAVC solver and return initial state sₙ."""
         self._solver = BurgersAVC(
             problem=self._problem,
-            disc_cfg=dataclasses.replace(self._disc_cfg, suppress_file_logging=False),
+            disc_cfg=dataclasses.replace(self._disc_cfg, suppress_file_logging=True),
             simulation_mode=self._avc_cfg.simulation_mode,
             master_path=self._master_path,
             sgsp_cfg=self._sgsp_cfg,
@@ -294,7 +295,7 @@ class BurgersAVCEnvironment:
         assert self._solver is not None, "Call reset() before step()."
 
         # to check reward calculation when SGSP is near-perfect
-        if self._avc_cfg.perform_zero_run:
+        if self._avc_cfg.set_off_corrector:
             alpha_action = 0.0
 
         if self.correction_mode == "local":
@@ -319,8 +320,6 @@ class BurgersAVCEnvironment:
                 blown_up = True
                 break
 
-
-
         reward_val = self._compute_reward(blown_up=blown_up)
         done_flag = blown_up or self._total_les_steps >= self._max_les_steps
         next_state_array = (
@@ -338,10 +337,10 @@ class BurgersAVCEnvironment:
 
         assert self._solver is not None
 
-        # transient_weight = 1.0 - np.exp(
-        #     -self._solver.simulation_time_elapsed
-        #     / self._sac_config.tau_transient_warmup
-        # )
+        transient_weight = 1.0 - np.exp(
+            -self._solver.simulation_time_elapsed
+            / self._sac_config.tau_transient_warmup
+        )
 
         wavenumbers_all, raw_spectrum_all = self._solver.compute_energy_spectrum(
             self._solver.solution
@@ -366,13 +365,11 @@ class BurgersAVCEnvironment:
             np.sum(
                 w_energy
                 * wavenumber_indices**gamma_exp
-                * ((spectrum_k - proj_spectrum_k) / (proj_spectrum_k + 1e-12)) ** 2
+                * ((spectrum_k - proj_spectrum_k) / (np.mean(proj_spectrum_k) + 1e-12)) ** 2
             )
         )
 
-        print('pentalty:',spectral_penalty / (1.0 + spectral_penalty))
-
-        return -spectral_penalty / (1.0 + spectral_penalty)
+        return -np.log1p(transient_weight * spectral_penalty)
 
 
 # ---------------------------------------------------------------------------
@@ -617,8 +614,8 @@ class OnlineAVTrainer:
             f"| DNS ref: {'time-varying (projection)'}"
         )
         print("-" * 64)
-
-        for episode_idx in range(n_episodes):
+        episode_idx = 0
+        while episode_idx < n_episodes:
             state_current = self._env.reset()
             episode_reward_total = 0.0
             episode_step_count = 0
@@ -628,13 +625,13 @@ class OnlineAVTrainer:
                 if self._stats.total_env_steps < self._config.warmup_steps:
                     random_scalar = float(
                         np.random.uniform(
-                            -self._agent.policy.output_scale / 10000,
-                            self._agent.policy.output_scale * 10,
+                            0,
+                            self._agent.policy.output_scale,
                         )
                     )
                     action_dim = self._agent.policy.output_dim
                     alpha_action_val = np.full(
-                        action_dim, random_scalar, dtype=np.float64
+                        action_dim, random_scalar, dtype=np.float64 # TODO: adjust for local mode
                     )
                 else:
                     alpha_action_val = self._agent.select_action(state_current)
@@ -651,16 +648,17 @@ class OnlineAVTrainer:
                     f"| next state: {next_state_array}"
                 )
 
-                if not blown_up:
-                    self._replay_buffer.push(
-                        Transition(
-                            state=state_current,
-                            action=alpha_action_val,
-                            reward=reward_val,
-                            next_state=next_state_array,
-                            done=done_flag,
-                        )
+                self._replay_buffer.push(
+                    Transition(
+                        state=state_current,
+                        action=alpha_action_val,
+                        reward=reward_val,
+                        next_state=next_state_array,
+                        done=done_flag,
                     )
+                )
+                if blown_up:
+                    n_episodes += 1
 
                 state_current = next_state_array
                 episode_reward_total += reward_val
@@ -703,6 +701,8 @@ class OnlineAVTrainer:
 
             if (episode_idx + 1) % checkpoint_every == 0:
                 self._save_checkpoint(episode_idx=episode_idx)
+
+            episode_idx += 1
 
         self._save_checkpoint(episode_idx=n_episodes - 1, tag="final")
         print(f"\nTraining complete. Checkpoints saved to '{self._output_dir}'.")
