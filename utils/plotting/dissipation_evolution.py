@@ -39,9 +39,7 @@ def _compute_dissipation_spectrum(
     """Return positive wavenumbers and spectral dissipation D(k) = 2ν k² E(k)."""
     n_points = len(solution)
     u_hat = np.fft.fft(solution)
-    wavenumbers_all = (
-        np.fft.fftfreq(n_points, d=domain_length / n_points) * 2.0 * np.pi
-    )
+    wavenumbers_all = np.fft.fftfreq(n_points, d=domain_length / n_points) * 2.0 * np.pi
     energy_spectrum = 0.5 * np.abs(u_hat) ** 2 / n_points
     dissipation_spectrum = 2.0 * viscosity * wavenumbers_all**2 * energy_spectrum
     mask = wavenumbers_all > 0

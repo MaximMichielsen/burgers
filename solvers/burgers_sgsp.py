@@ -40,7 +40,7 @@ from numpy.typing import NDArray
 from tqdm import tqdm
 
 from constants import (
-    OUTPUT_UNITS,
+    SGSP_OUTPUT_UNITS,
     BLOWUP_BUFFER_SIZE,
     BLOWUP_THRESHOLD,
 )
@@ -534,7 +534,7 @@ class BurgersSGSP(BurgersBase):
             y_phys = np.clip(y_phys, self._y_lower_bound, self._y_upper_bound)
 
         sgsp_correction_all = np.zeros(
-            (self.n_elements, OUTPUT_UNITS), dtype=np.float64
+            (self.n_elements, SGSP_OUTPUT_UNITS), dtype=np.float64
         )
         for local_idx, elem_idx in enumerate(valid_element_indices):
             y_elem = y_phys[local_idx].copy()

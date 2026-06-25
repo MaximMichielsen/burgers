@@ -21,7 +21,7 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from scipy.stats import pearsonr
 
-from constants import OUTPUT_UNITS
+from constants import SGSP_OUTPUT_UNITS
 
 from solvers.sgsp_training_data_generator import load_normalisation_stats_csv
 
@@ -43,7 +43,7 @@ OUTPUT_TERM_SHORT_LABELS: list[str] = [
     "temporal R",
     "viscous",
 ]
-N_OUTPUT_TERMS: int = OUTPUT_UNITS
+N_OUTPUT_TERMS: int = SGSP_OUTPUT_UNITS
 
 
 # ---------------------------------------------------------------------------

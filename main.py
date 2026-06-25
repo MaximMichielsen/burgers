@@ -12,7 +12,7 @@ from ml.corrector_training.online_trainer import (
     SACAgent,
     OnlineAVTrainer,
 )
-from ml.ml_agents.corrector import AVController, save_corrector
+from ml.ml_agents.corrector import AVControllerGlobal, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
 from solvers.burgers_avc import BurgersAVC
@@ -151,7 +151,7 @@ if __name__ == "__main__":
                 simulation_mode="avc",
             )
 
-            av_corrector_global = AVController(
+            av_corrector_global = AVControllerGlobal(
                 alpha_max=AVC_ALPHA_MAX * problem.viscosity,
                 output_scale=1,
                 n_wavenumber_bins=n_wavenumber_bins,

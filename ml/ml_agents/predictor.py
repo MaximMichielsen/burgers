@@ -17,13 +17,13 @@ from torch import Tensor
 from torch.utils.data import DataLoader, TensorDataset
 
 from constants import (
-    BATCH_SIZE,
-    EPOCHS,
-    HIDDEN_UNITS,
-    INPUT_UNITS,
-    LEARNING_RATE,
-    NUM_HIDDEN_LAYERS,
-    OUTPUT_UNITS,
+    SGSP_BATCH_SIZE,
+    SGSP_EPOCHS,
+    SGSP_HIDDEN_UNITS,
+    SGSP_INPUT_UNITS,
+    SGSP_LEARNING_RATE,
+    SGSP_NUM_HIDDEN_LAYERS,
+    SGSP_OUTPUT_UNITS,
 )
 from ml.a_priori_verification import run_apriori_verification
 
@@ -62,10 +62,10 @@ class SGSPredictor(nn.Module):
 
     def __init__(
         self,
-        input_dim: int = INPUT_UNITS,
-        hidden_dim: int = HIDDEN_UNITS,
-        num_hidden_layers: int = NUM_HIDDEN_LAYERS,
-        output_dim: int = OUTPUT_UNITS,
+        input_dim: int = SGSP_INPUT_UNITS,
+        hidden_dim: int = SGSP_HIDDEN_UNITS,
+        num_hidden_layers: int = SGSP_NUM_HIDDEN_LAYERS,
+        output_dim: int = SGSP_OUTPUT_UNITS,
     ) -> None:
         super().__init__()
         layer_list: list[nn.Module] = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
@@ -124,12 +124,12 @@ def train_predictor(
 
     train_loader = DataLoader(
         TensorDataset(x_train, y_train),
-        batch_size=BATCH_SIZE,
+        batch_size=SGSP_BATCH_SIZE,
         shuffle=True,
     )
 
     model = SGSPredictor()
-    optimizer = optim.NAdam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = optim.NAdam(model.parameters(), lr=SGSP_LEARNING_RATE)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=10
     )
@@ -145,11 +145,11 @@ def train_predictor(
 
     print(f"\nTraining SGS predictor — {x_train.shape[0]} training samples")
     print(
-        f"Architecture: {INPUT_UNITS} → {NUM_HIDDEN_LAYERS}×{HIDDEN_UNITS} → {OUTPUT_UNITS}"
+        f"Architecture: {SGSP_INPUT_UNITS} → {SGSP_NUM_HIDDEN_LAYERS}×{SGSP_HIDDEN_UNITS} → {SGSP_OUTPUT_UNITS}"
     )
     print("-" * 56)
 
-    for epoch_idx in range(EPOCHS):
+    for epoch_idx in range(SGSP_EPOCHS):
         model.train()
         epoch_mse_total = 0.0
         for batch_x, batch_y in train_loader:
@@ -173,7 +173,7 @@ def train_predictor(
         training_stats["train_mae"].append(train_mae_value)
         training_stats["val_mae"].append(val_mae_value)
 
-        if epoch_idx % 10 == 0 or epoch_idx == EPOCHS - 1:
+        if epoch_idx % 10 == 0 or epoch_idx == SGSP_EPOCHS - 1:
             gap = val_mae_value - train_mae_value
             print(
                 f"Epoch {epoch_idx:04d} | "
@@ -196,10 +196,10 @@ def train_predictor(
     torch.save(
         {
             "model_state_dict": model.state_dict(),
-            "input_dim": INPUT_UNITS,
-            "hidden_dim": HIDDEN_UNITS,
-            "num_hidden_layers": NUM_HIDDEN_LAYERS,
-            "output_dim": OUTPUT_UNITS,
+            "input_dim": SGSP_INPUT_UNITS,
+            "hidden_dim": SGSP_HIDDEN_UNITS,
+            "num_hidden_layers": SGSP_NUM_HIDDEN_LAYERS,
+            "output_dim": SGSP_OUTPUT_UNITS,
         },
         model_save_path,
     )

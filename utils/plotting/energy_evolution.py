@@ -198,7 +198,7 @@ def plot_energy_comparison(
             color=entry["color"],
             linewidth=entry["lw"],
             label=label,
-            linestyle='--' if label in ("LES - SGSP", "LES - AVCG") else '-'
+            linestyle="--" if label in ("LES - SGSP", "LES - AVCG") else "-",
         )
     first_entry = next(iter(data.values()))
     wn_ref = first_entry["wavenumbers"]

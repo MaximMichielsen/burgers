@@ -12,7 +12,7 @@ from ml.corrector_training.online_trainer import (
     SACAgent,
     OnlineAVTrainer,
 )
-from ml.ml_agents.corrector import AVController, save_corrector
+from ml.ml_agents.corrector import AVControllerGlobal, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
 from solvers.burgers_base import BurgersBase
@@ -52,7 +52,7 @@ temporal_refinement: int = 1
 courant_les: float = 0.1
 
 # AVC (hyper-)parameters
-AVC_ALPHA_MAX: float = 1/20
+AVC_ALPHA_MAX: float = 1 / 20
 AVC_OUTPUT_SCALE = problem.viscosity
 AVC_EPOCHS: int = 50
 AVC_N_SKIP: int = 5
@@ -127,10 +127,10 @@ if __name__ == "__main__":
             simulation_mode="avc",
             correction_mode="global",
             n_skip_steps=AVC_N_SKIP,
-            perform_zero_run=AVC_ZERO_RUN
+            perform_zero_run=AVC_ZERO_RUN,
         )
 
-        av_corrector_global = AVController(
+        av_corrector_global = AVControllerGlobal(
             alpha_max=AVC_ALPHA_MAX,
             output_scale=AVC_OUTPUT_SCALE,
             n_wavenumber_bins=(n_nodes_les + 1) // 2,
@@ -146,7 +146,6 @@ if __name__ == "__main__":
             batch_size=128,
             include_diss_from_reward=AVC_INCLUDE_DISS_REWARD,
             tau_transient_warmup=TAU_REWARD_WARMUP,
-
         )
 
         environment_global = BurgersAVCEnvironment(
@@ -199,7 +198,6 @@ if __name__ == "__main__":
         domain_length=problem.domain_length,
     )
 
-    plot_dissipation_comparison(paths,
-                                paths.master,
-                                problem.viscosity,
-                                problem.domain_length)
+    plot_dissipation_comparison(
+        paths, paths.master, problem.viscosity, problem.domain_length
+    )

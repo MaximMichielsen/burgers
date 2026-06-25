@@ -55,7 +55,7 @@ from numpy.typing import NDArray
 from torch import Tensor
 
 from ml.corrector_training.DNS_snapshot_converter import ProjectionReferenceSchedule
-from ml.ml_agents.corrector import AVController, save_corrector
+from ml.ml_agents.corrector import AVControllerGlobal, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCTrainerConfig
@@ -338,7 +338,10 @@ class BurgersAVCEnvironment:
 
         assert self._solver is not None
 
-        transient_weight = 1.0 - np.exp(-self._solver.simulation_time_elapsed / self._sac_config.tau_transient_warmup)
+        transient_weight = 1.0 - np.exp(
+            -self._solver.simulation_time_elapsed
+            / self._sac_config.tau_transient_warmup
+        )
 
         wavenumbers_all, raw_spectrum_all = self._solver.compute_energy_spectrum(
             self._solver.solution
@@ -360,8 +363,8 @@ class BurgersAVCEnvironment:
         proj_spectrum_k = proj_spectrum_k[1:]
         wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
 
-        compensated_les = wavenumber_indices ** gamma_exp * spectrum_k
-        compensated_proj = wavenumber_indices ** gamma_exp * proj_spectrum_k
+        compensated_les = wavenumber_indices**gamma_exp * spectrum_k
+        compensated_proj = wavenumber_indices**gamma_exp * proj_spectrum_k
 
         proj_safe = np.where(compensated_proj > 0.0, compensated_proj, 1.0)
         spectral_penalty = float(
@@ -374,7 +377,11 @@ class BurgersAVCEnvironment:
         energy_penalty = float(((energy_les - energy_proj) / energy_safe) ** 2)
 
         if not self.include_diss_reward:
-            return -(transient_weight * (spectral_penalty + energy_penalty) / (1.0 + spectral_penalty))
+            return -(
+                transient_weight
+                * (spectral_penalty + energy_penalty)
+                / (1.0 + spectral_penalty)
+            )
 
         current_dissipation = (
             self._solver.dissipation_history[-1]
@@ -396,8 +403,6 @@ class BurgersAVCEnvironment:
             )
             ** 2
         )
-
-
 
         total_penalty = spectral_penalty + dissipation_penalty + energy_penalty
         return -(transient_weight * total_penalty / (1.0 + total_penalty))
@@ -439,7 +444,7 @@ class SACAgent:
 
     def __init__(
         self,
-        av_corrector: AVController,
+        av_corrector: AVControllerGlobal,
         state_dim: int,
         sac_config: SACConfig,
     ) -> None:
@@ -656,7 +661,8 @@ class OnlineAVTrainer:
                 if self._stats.total_env_steps < self._config.warmup_steps:
                     random_scalar = float(
                         np.random.uniform(
-                            -self._agent.policy.output_scale / 100, self._agent.policy.output_scale * 10
+                            -self._agent.policy.output_scale / 100,
+                            self._agent.policy.output_scale * 10,
                         )
                     )
                     action_dim = self._agent.policy.output_dim
@@ -666,7 +672,9 @@ class OnlineAVTrainer:
                 else:
                     alpha_action_val = self._agent.select_action(state_current)
 
-                next_state_array, reward_val, done_flag, blown_up = self._env.step(alpha_action_val)
+                next_state_array, reward_val, done_flag, blown_up = self._env.step(
+                    alpha_action_val
+                )
 
                 logger.debug(
                     "Online training step:"
