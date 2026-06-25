@@ -22,8 +22,8 @@ import csv
 logger = logging.getLogger(__name__)
 
 
-class DNSReferenceSchedule:
-    """Pre-computed DNS spectra and dissipation rates indexed by simulation time.
+class ProjectionReferenceSchedule:
+    """Pre-computed Projection spectra and dissipation rates indexed by simulation time.
 
     Parameters
     ----------
@@ -65,85 +65,6 @@ class DNSReferenceSchedule:
         self.t_min: float = float(snapshot_times[0])
         self.t_max: float = float(snapshot_times[-1])
 
-    # ------------------------------------------------------------------
-    # Factory
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def from_directory(
-        cls,
-        dns_dir: Path,
-        domain_length: float,
-        viscosity: float,
-        n_wavenumber_bins: int,
-    ) -> "DNSReferenceSchedule":
-        """Build a schedule by reading all ``sol_t*.csv`` files in *dns_dir*.
-
-        Parameters
-        ----------
-        dns_dir:
-            Directory containing the DNS solver output CSVs.
-        domain_length:
-            Physical domain length L (needed for wavenumber computation).
-        viscosity:
-            Physical viscosity ν (needed for dissipation computation).
-        n_wavenumber_bins:
-            K — number of positive wavenumber bins to keep.  Should match
-            ``N_LES // 2`` so the schedule aligns with the LES state vector.
-        """
-        dns_dir = Path(dns_dir)
-        snapshot_csv_files = sorted(dns_dir.glob("sol_t*.csv"))
-        if not snapshot_csv_files:
-            raise FileNotFoundError(
-                f"No 'sol_t*.csv' snapshot files found in {dns_dir}."
-            )
-
-        snapshot_times_list: list[float] = []
-        spectra_list: list[NDArray] = []
-        dissipation_list: list[float] = []
-
-        for csv_path in snapshot_csv_files:
-            velocity_array, time_val = _load_snapshot_csv(csv_path)
-            spectrum_k = _compute_spectrum_bins(
-                velocity_array=velocity_array,
-                domain_length=domain_length,
-                n_wavenumber_bins=n_wavenumber_bins,
-            )
-            dissipation_val = _compute_dissipation(
-                velocity_array=velocity_array,
-                domain_length=domain_length,
-                viscosity=viscosity,
-            )
-            snapshot_times_list.append(time_val)
-            spectra_list.append(spectrum_k)
-            dissipation_list.append(dissipation_val)
-
-        snapshot_times_array = np.array(snapshot_times_list, dtype=np.float64)
-        spectra_array = np.stack(spectra_list, axis=0).astype(np.float64)
-        dissipation_array = np.array(dissipation_list, dtype=np.float64)
-
-        # Sort by time (glob order may not be strictly chronological on all OS).
-        sort_indices = np.argsort(snapshot_times_array)
-        snapshot_times_array = snapshot_times_array[sort_indices]
-        spectra_array = spectra_array[sort_indices]
-        dissipation_array = dissipation_array[sort_indices]
-
-        logger.info(
-            "DNSReferenceSchedule loaded %d snapshots from %s (t=[%.4f, %.4f], K=%d).",
-            len(snapshot_times_array),
-            dns_dir,
-            snapshot_times_array[0],
-            snapshot_times_array[-1],
-            n_wavenumber_bins,
-        )
-
-        return cls(
-            snapshot_times=snapshot_times_array,
-            spectra_array=spectra_array,
-            dissipation_array=dissipation_array,
-            n_wavenumber_bins=n_wavenumber_bins,
-        )
-
     @classmethod
     def from_projection_directory(
         cls,
@@ -151,50 +72,54 @@ class DNSReferenceSchedule:
         domain_length: float,
         viscosity: float,
         n_wavenumber_bins: int,
-    ) -> "DNSReferenceSchedule":
-        """Build a schedule from projected LES-grid snapshots.
-
-        Loads solutions_projection.npy and the corresponding time axis,
-        so all spectra are computed on the LES mesh and match the state vector.
-        """
+    ) -> "ProjectionReferenceSchedule":
+        """Build a schedule from projected LES-grid snapshots stored as CSV files."""
         projection_dir = Path(projection_dir)
 
-        solutions_les = np.load(projection_dir / "solutions_projection.npy")
-
-        times_path = projection_dir / "times.npy"
-        if times_path.exists():
-            snapshot_times_array = np.load(times_path).astype(np.float64)
-        else:
-            # Fall back: infer times from the number of snapshots and dt
+        csv_files = sorted(projection_dir.glob("sol_t*.csv"))
+        if not csv_files:
             raise FileNotFoundError(
-                f"times_projection.npy not found in {projection_dir}. "
-                "Ensure run_projection saves snapshot times."
+                f"No projected solution CSVs found in {projection_dir}"
             )
 
+        snapshot_times_list: list[float] = []
         spectra_list: list[NDArray] = []
         dissipation_list: list[float] = []
 
-        for solution_snapshot in solutions_les:
-            spectrum_k = _compute_spectrum_bins(
-                velocity_array=solution_snapshot,
-                domain_length=domain_length,
-                n_wavenumber_bins=n_wavenumber_bins,
+        for csv_path in csv_files:
+            time_value = float(csv_path.stem.replace("sol_t", ""))
+            velocity_array = np.loadtxt(csv_path, delimiter=",", skiprows=1, usecols=2)
+            snapshot_times_list.append(time_value)
+            spectra_list.append(
+                _compute_spectrum_bins(
+                    velocity_array=velocity_array,
+                    domain_length=domain_length,
+                    n_wavenumber_bins=n_wavenumber_bins,
+                )
             )
-            dissipation_val = _compute_dissipation(
-                velocity_array=solution_snapshot,
-                domain_length=domain_length,
-                viscosity=viscosity,
+            dissipation_list.append(
+                _compute_dissipation(
+                    velocity_array=velocity_array,
+                    domain_length=domain_length,
+                    viscosity=viscosity,
+                )
             )
-            spectra_list.append(spectrum_k)
-            dissipation_list.append(dissipation_val)
 
+        snapshot_times_array = np.array(snapshot_times_list, dtype=np.float64)
         spectra_array = np.stack(spectra_list, axis=0).astype(np.float64)
         dissipation_array = np.array(dissipation_list, dtype=np.float64)
 
+        sort_indices = np.argsort(snapshot_times_array)
+        snapshot_times_array = snapshot_times_array[sort_indices]
+        spectra_array = spectra_array[sort_indices]
+        dissipation_array = dissipation_array[sort_indices]
+
         logger.info(
-            "DNSReferenceSchedule loaded %d projected snapshots from %s (K=%d).",
+            "ProjectionReferenceSchedule loaded %d snapshots from %s (t=[%.4f, %.4f], K=%d).",
             len(snapshot_times_array),
             projection_dir,
+            snapshot_times_array[0],
+            snapshot_times_array[-1],
             n_wavenumber_bins,
         )
 
@@ -273,7 +198,7 @@ class DNSReferenceSchedule:
                 )
         axes[0].set_xlabel("wavenumber k")
         axes[0].set_ylabel("E(k)")
-        axes[0].set_title("DNS spectra (all snapshots + queries)")
+        axes[0].set_title("Projected spectra (all snapshots + queries)")
         axes[0].legend(fontsize=8)
 
         # --- dissipation panel ---
@@ -290,7 +215,7 @@ class DNSReferenceSchedule:
                 axes[1].scatter([query_t], [queried_diss], color="coral", zorder=5)
         axes[1].set_xlabel("time t")
         axes[1].set_ylabel("dissipation ε")
-        axes[1].set_title("DNS dissipation over time")
+        axes[1].set_title("Projected dissipation over time")
 
         plt.tight_layout()
         if output_path:

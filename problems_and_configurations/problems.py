@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Callable
 
+from numpy.typing import NDArray
+
 from problems_and_configurations.forcings import (
     compute_sine_forcing,
     uniform_steady_forcing,
@@ -21,7 +23,7 @@ class Problem:
     domain_length: float
     domain_timespan: float
     reynolds: float
-    initial_condition: Callable
+    initial_condition: Callable | NDArray
     forcing: Callable | None
     forcing_is_steady: bool
     boundary_condition_type: str

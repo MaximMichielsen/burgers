@@ -15,13 +15,10 @@ from ml.corrector_training.online_trainer import (
 from ml.ml_agents.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
-from solvers.burgers_avc import BurgersAVC
 from solvers.burgers_base import BurgersBase
 from ml.ml_agents.solver_configs import SGSPConfig, AVCRunConfig, AVCTrainerConfig
+from utils.plotting.dissipation_evolution import plot_dissipation_comparison
 from utils.plotting.energy_evolution import plot_energy_comparison
-from utils.io_utils import (
-    load_first_projected_solution,
-)
 from utils.pipeline_utils import (
     run_dns,
     run_sgsp_training,
@@ -33,14 +30,15 @@ from utils.plotting.velocity_profiles import (
     plot_solution_comparison,
     create_velocity_plot_configs,
 )
+from solvers.burgers_avc import BurgersAVC
 
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
-problem: Problem = Problems.raj_three
-problem = replace(problem, domain_timespan=1)
+problem: Problem = Problems.raj_one
+problem = replace(problem, domain_timespan=2.0)
 
 clip_pusuluri: bool = False
 clip_rajampeta: bool = False
@@ -54,13 +52,16 @@ temporal_refinement: int = 1
 courant_les: float = 0.1
 
 # AVC (hyper-)parameters
-AVC_ALPHA_MAX: float = problem.viscosity / 2  # currently the parameter that
-# sets the lower and upper limits for random batch filling
-
+AVC_ALPHA_MAX: float = 1/20
+AVC_OUTPUT_SCALE = problem.viscosity
 AVC_EPOCHS: int = 50
 AVC_N_SKIP: int = 5
+AVC_WARMUP_STEPS: int = 64
+AVC_INCLUDE_DISS_REWARD: bool = False
+AVC_ZERO_RUN: bool = False
+TAU_REWARD_WARMUP: float = 0.1
 
-# discretization dict
+# discretization config
 disc_cfg = DiscretizationConfig(
     n_nodes_les,
     temporal_refinement,
@@ -73,7 +74,6 @@ paths = resolve_pathing(problem.name, CURRENT_DIR)
 
 manual_load_sgsp_model: str = r""
 training_path: str = r""
-
 manual_load_avcg_model: str = r""
 
 load_manual_models(paths, manual_load_sgsp_model, training_path, manual_load_avcg_model)
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     if paths.training is not None:
         sgsp_cfg = SGSPConfig(
             sgsp_model_path=paths.sgsp_model,
-            normalization_path=paths.training,  # contains normalisation_stats.csv
+            normalization_path=paths.training,
             blown_up_path=paths.les_sgsp_data / "blown_up",
             clip_pusuluri=clip_pusuluri,
             clip_rajampeta=clip_rajampeta,
@@ -114,93 +114,76 @@ if __name__ == "__main__":
         no_model_run.run_simulation()
 
     # --------------------------------------- GAVC training --------------------------------------- #
-    run_avc = False
-    if run_avc:
-        if not paths.avcg_model.exists():
-            dns_solution_on_les = load_first_projected_solution(paths.projection)
-
-            dns_solver_ref = BurgersBase(
-                problem,
-                disc_cfg,
-                simulation_mode="no_model",
-                master_path=paths.dns_data,
-            )
-            _, dns_positive_spectrum = dns_solver_ref.get_positive_spectrum(
-                *dns_solver_ref.compute_energy_spectrum(dns_solution_on_les)
-            )
-            dns_dissipation_ref = float(
-                dns_solver_ref.compute_dissipation(dns_solution_on_les)
-            )
-            n_wavenumber_bins = len(dns_positive_spectrum)
-            dns_reference_schedule = (
-                ProjectionReferenceSchedule.from_projection_directory(
-                    projection_dir=paths.projection,
-                    domain_length=problem.domain_length,
-                    viscosity=problem.viscosity,
-                    n_wavenumber_bins=n_wavenumber_bins,
-                )
-            )
-
-            avc_trainer_cfg = AVCTrainerConfig(
-                paths.avcg_model,
-                dns_energy_spectrum=dns_positive_spectrum,
-                dns_dissipation=dns_dissipation_ref,
-                correction_mode="global",
-                n_skip_steps=AVC_N_SKIP,
-                exclude_diss_from_reward=True,
-                simulation_mode="avc",
-            )
-
-            av_corrector_global = AVController(
-                alpha_max=AVC_ALPHA_MAX * problem.viscosity,
-                output_scale=1,
-                n_wavenumber_bins=n_wavenumber_bins,
-                correction_mode=avc_trainer_cfg.correction_mode,
-                n_output_nodes=1,
-            )
-            paths.agents.mkdir(parents=True, exist_ok=True)
-            save_corrector(av_corrector_global, paths.avcg_model)
-
-            sac_config = SACConfig(
-                n_skip_steps=AVC_N_SKIP,
-                warmup_steps=500,
-                batch_size=64 * 2,
-            )
-
-            environment_global = BurgersAVCEnvironment(
-                problem=problem,
-                disc_cfg=disc_cfg,
-                sgsp_cfg=sgsp_cfg,
-                avc_cfg=avc_trainer_cfg,
-                master_path=paths.les_avc_data / "training_global",
-                sac_config=sac_config,
-                proj_ref_schedule=dns_reference_schedule,
-            )
-            sac_agent_global = SACAgent(
-                av_corrector=av_corrector_global,
-                state_dim=environment_global.state_dim,
-                sac_config=sac_config,
-            )
-            trainer_global = OnlineAVTrainer(
-                environment=environment_global,
-                sac_agent=sac_agent_global,
-                sac_config=sac_config,
-                output_dir=paths.agents / "avcg_checkpoints",
-            )
-            trainer_global.train(n_episodes=AVC_EPOCHS)
-
-        # --------------------------------------- GAVC run --------------------------------------- #
-        avc_run_config = AVCRunConfig(avc_model_path=paths.avcg_model)
-        solver_avc_global = BurgersAVC(
-            problem,
-            disc_cfg,
-            "avc",
-            paths.les_avc_data / "global",
-            sgsp_cfg,
-            avc_run_config,
+    if not paths.avcg_model.exists() and paths.projection is not None:
+        proj_reference_schedule = ProjectionReferenceSchedule.from_projection_directory(
+            projection_dir=paths.projection,
+            domain_length=problem.domain_length,
+            viscosity=problem.viscosity,
+            n_wavenumber_bins=(n_nodes_les + 1) // 2,
         )
-        solver_avc_global.run_simulation()
-        solver_avc_global.post_processing()
+
+        avc_trainer_cfg = AVCTrainerConfig(
+            avc_model_path=paths.avcg_model,
+            simulation_mode="avc",
+            correction_mode="global",
+            n_skip_steps=AVC_N_SKIP,
+            perform_zero_run=AVC_ZERO_RUN
+        )
+
+        av_corrector_global = AVController(
+            alpha_max=AVC_ALPHA_MAX,
+            output_scale=AVC_OUTPUT_SCALE,
+            n_wavenumber_bins=(n_nodes_les + 1) // 2,
+            correction_mode="global",
+            n_output_nodes=1,
+        )
+        paths.agents.mkdir(parents=True, exist_ok=True)
+        save_corrector(av_corrector_global, paths.avcg_model)
+
+        sac_cfg = SACConfig(
+            n_skip_steps=AVC_N_SKIP,
+            warmup_steps=AVC_WARMUP_STEPS,
+            batch_size=128,
+            include_diss_from_reward=AVC_INCLUDE_DISS_REWARD,
+            tau_transient_warmup=TAU_REWARD_WARMUP,
+
+        )
+
+        environment_global = BurgersAVCEnvironment(
+            problem=problem,
+            disc_cfg=disc_cfg,
+            sgsp_cfg=sgsp_cfg,
+            avc_cfg=avc_trainer_cfg,
+            master_path=paths.les_avc_data / "training_global",
+            sac_config=sac_cfg,
+            proj_ref_schedule=proj_reference_schedule,
+        )
+        sac_agent_global = SACAgent(
+            av_corrector=av_corrector_global,
+            state_dim=environment_global.state_dim,
+            sac_config=sac_cfg,
+        )
+        trainer_global = OnlineAVTrainer(
+            environment=environment_global,
+            sac_agent=sac_agent_global,
+            sac_config=sac_cfg,
+            output_dir=paths.agents / "avcg_checkpoints",
+        )
+        trainer_global.train(n_episodes=AVC_EPOCHS)
+        save_corrector(sac_agent_global.policy, paths.avcg_model)
+
+    # --------------------------------------- GAVC run --------------------------------------- #
+    avc_run_cfg = AVCRunConfig(avc_model_path=paths.avcg_model)
+    solver_avc_global = BurgersAVC(
+        problem,
+        disc_cfg,
+        "avc",
+        paths.les_avc_data / "global",
+        sgsp_cfg,
+        avc_run_cfg,
+    )
+    solver_avc_global.run_simulation()
+    solver_avc_global.post_processing()
 
     # -------------------------------------- Plotting --------------------------------------- #
     plot_solution_comparison(
@@ -215,3 +198,8 @@ if __name__ == "__main__":
         viscosity=problem.viscosity,
         domain_length=problem.domain_length,
     )
+
+    plot_dissipation_comparison(paths,
+                                paths.master,
+                                problem.viscosity,
+                                problem.domain_length)

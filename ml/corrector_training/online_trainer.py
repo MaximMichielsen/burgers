@@ -54,17 +54,17 @@ import torch.optim as optim
 from numpy.typing import NDArray
 from torch import Tensor
 
-from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
+from ml.corrector_training.DNS_snapshot_converter import ProjectionReferenceSchedule
 from ml.ml_agents.corrector import AVController, save_corrector
-from problems_and_configurations.disc_config import DiscretisationConfig
+from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCTrainerConfig
-from solvers.burgers_base import compute_adjusted_dt
+from utils.io_utils import compute_adjusted_dt
 from solvers.burgers_avc import BurgersAVC
 
 logger = logging.getLogger(__name__)
 
-BLOWN_UP_PENALTY: float = 10.0
+BLOWN_UP_PENALTY: float = -10.0
 
 # ---------------------------------------------------------------------------
 # Hyperparameter config
@@ -123,6 +123,8 @@ class SACConfig:
     reward_weight_dissipation: float = 0.1
     reward_spectral_exponent: float = 5.0 / 3.0
     critic_hidden_dim: int = 256
+    include_diss_from_reward: bool = True
+    tau_transient_warmup: float = 0.3
 
 
 # ---------------------------------------------------------------------------
@@ -239,12 +241,12 @@ class BurgersAVCEnvironment:
     def __init__(
         self,
         problem: Problem,
-        disc_cfg: DiscretisationConfig,
+        disc_cfg: DiscretizationConfig,
         sgsp_cfg: SGSPConfig,
         avc_cfg: AVCTrainerConfig,
         master_path: Path,
         sac_config: SACConfig,
-        dns_reference_schedule: DNSReferenceSchedule | None = None,
+        proj_ref_schedule: ProjectionReferenceSchedule,
     ) -> None:
         self._problem = problem
         self._disc_cfg = disc_cfg
@@ -252,9 +254,10 @@ class BurgersAVCEnvironment:
         self._avc_cfg = avc_cfg
         self._master_path = master_path
         self._sac_config = sac_config
-        self.dns_reference_schedule = dns_reference_schedule
+        self.proj_ref_schedule = proj_ref_schedule
+        self.include_diss_reward = sac_config.include_diss_from_reward
 
-        self.exclude_diss_from_reward = avc_cfg.exclude_diss_from_reward
+        self.zero_run = avc_cfg.perform_zero_run
 
         self._total_les_steps: int = 0
 
@@ -289,9 +292,12 @@ class BurgersAVCEnvironment:
 
         return self._solver.create_avc_input_stencil()
 
-    def step(self, alpha_action: float | NDArray) -> tuple[NDArray, float, bool]:
+    def step(self, alpha_action: float | NDArray) -> tuple[NDArray, float, bool, bool]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done)."""
         assert self._solver is not None, "Call reset() before step()."
+
+        if self._avc_cfg.perform_zero_run:
+            alpha_action = 0.0
 
         if self.correction_mode == "local":
             alpha_array = np.asarray(alpha_action, dtype=np.float64).reshape(-1)
@@ -317,22 +323,13 @@ class BurgersAVCEnvironment:
 
         reward_val = self._compute_reward(blown_up=blown_up)
         done_flag = blown_up or self._total_les_steps >= self._max_les_steps
-        next_state_array = self._solver.create_avc_input_stencil()
-
-        return next_state_array, reward_val, done_flag
-
-    def _get_dns_targets(self) -> tuple[NDArray, float]:
-        """Return (dns_spectrum_k, dns_dissipation) for the current solver time."""
-        assert self._solver is not None
-
-        if self.dns_reference_schedule is not None:
-            current_time = self._solver.simulation_time_elapsed
-            return self.dns_reference_schedule.query(current_time)
-
-        return (
-            np.asarray(self._avc_cfg.dns_energy_spectrum, dtype=np.float64),
-            float(self._avc_cfg.dns_dissipation),
+        next_state_array = (
+            np.zeros(self.state_dim, dtype=np.float64)
+            if blown_up
+            else self._solver.create_avc_input_stencil()
         )
+
+        return next_state_array, reward_val, done_flag, blown_up
 
     def _compute_reward(self, blown_up: bool) -> float:
         """Compute rₙ from eq. (2.10); large terminal penalty on blow-up."""
@@ -340,6 +337,8 @@ class BurgersAVCEnvironment:
             return BLOWN_UP_PENALTY
 
         assert self._solver is not None
+
+        transient_weight = 1.0 - np.exp(-self._solver.simulation_time_elapsed / self._sac_config.tau_transient_warmup)
 
         wavenumbers_all, raw_spectrum_all = self._solver.compute_energy_spectrum(
             self._solver.solution
@@ -349,28 +348,33 @@ class BurgersAVCEnvironment:
         )
         spectrum_k = positive_spectrum.astype(np.float64)
 
-        proj_spectrum_k, proj_dissipation = self._get_dns_targets()
-
-        wavenumber_indices = np.arange(1, self.n_wavenumber_bins + 1, dtype=np.float64)
-
         w_energy = self._sac_config.reward_weight_energy
         w_diss = self._sac_config.reward_weight_dissipation
         gamma_exp = self._sac_config.reward_spectral_exponent
 
-        # Normalize spectra by total energy to compare shape only
-        normalised_les = spectrum_k / max(spectrum_k.sum(), 1e-12)
-        normalised_dns = proj_spectrum_k / max(proj_spectrum_k.sum(), 1e-12)
-
-        compensated_les = wavenumber_indices**gamma_exp * normalised_les
-        compensated_dns = wavenumber_indices**gamma_exp * normalised_dns
-
-        dns_safe = np.where(compensated_dns > 0.0, compensated_dns, 1.0)
-        spectral_penalty = float(
-            w_energy * np.mean(((compensated_les - compensated_dns) / dns_safe) ** 2)
+        proj_spectrum_k, proj_dissipation = self.proj_ref_schedule.query(
+            self._solver.simulation_time_elapsed
         )
 
-        if self.exclude_diss_from_reward:
-            return -(spectral_penalty / (1.0 + spectral_penalty))
+        spectrum_k = spectrum_k[1:]  # drop DC
+        proj_spectrum_k = proj_spectrum_k[1:]
+        wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
+
+        compensated_les = wavenumber_indices ** gamma_exp * spectrum_k
+        compensated_proj = wavenumber_indices ** gamma_exp * proj_spectrum_k
+
+        proj_safe = np.where(compensated_proj > 0.0, compensated_proj, 1.0)
+        spectral_penalty = float(
+            w_energy * np.mean(((compensated_les - compensated_proj) / proj_safe) ** 2)
+        )
+
+        energy_les = float(spectrum_k.sum())
+        energy_proj = float(proj_spectrum_k.sum())
+        energy_safe = max(energy_proj, 1e-12)
+        energy_penalty = float(((energy_les - energy_proj) / energy_safe) ** 2)
+
+        if not self.include_diss_reward:
+            return -(transient_weight * (spectral_penalty + energy_penalty) / (1.0 + spectral_penalty))
 
         current_dissipation = (
             self._solver.dissipation_history[-1]
@@ -393,8 +397,10 @@ class BurgersAVCEnvironment:
             ** 2
         )
 
-        total_penalty = spectral_penalty + dissipation_penalty
-        return -(total_penalty / (1.0 + total_penalty))
+
+
+        total_penalty = spectral_penalty + dissipation_penalty + energy_penalty
+        return -(transient_weight * total_penalty / (1.0 + total_penalty))
 
 
 # ---------------------------------------------------------------------------
@@ -488,7 +494,7 @@ class SACAgent:
         if deterministic:
             return action_tensor.numpy()
 
-        noise_std = 0.05 * self.policy.alpha_max
+        noise_std = 0.05 * self.policy.output_scale
         noisy_action = action_tensor.numpy() + np.random.normal(
             0.0, noise_std, size=action_tensor.shape
         )
@@ -498,7 +504,7 @@ class SACAgent:
             f"| action_tensor: {action_tensor} "
             f"\n noisy action: {noisy_action}"
         )
-        return np.clip(noisy_action, 0.0, self.policy.alpha_max).astype(np.float32)
+        return np.clip(noisy_action, 0.0, self.policy.output_scale).astype(np.float32)
 
     def update(self, replay_buffer: ReplayBuffer) -> tuple[float, float, float]:
         """One SAC gradient step on critic, actor, and temperature.
@@ -519,10 +525,10 @@ class SACAgent:
         with torch.no_grad():
             next_actions_batch = self.policy(next_states_batch)
             target_noise = (
-                torch.randn_like(next_actions_batch) * 0.05 * self.policy.alpha_max
+                torch.randn_like(next_actions_batch) * 0.05 * self.policy.output_scale
             )
             next_actions_batch = (next_actions_batch + target_noise).clamp(
-                0.0, self.policy.alpha_max
+                0.0, self.policy.output_scale
             )
             q1_next_val, q2_next_val = self._critic_target(
                 next_states_batch, next_actions_batch
@@ -631,12 +637,12 @@ class OnlineAVTrainer:
         -------
         TrainingStats with per-episode and per-update diagnostics.
         """
-        using_schedule = self._env.dns_reference_schedule is not None
+
         print(
             f"\nOnline SAC training (AVC - {self._env.correction_mode}) — {n_episodes} episodes "
             f"| warmup: {self._config.warmup_steps} steps "
             f"| Nₛₖᵢₚ: {self._config.n_skip_steps} "
-            f"| DNS ref: {'time-varying' if using_schedule else 'static terminal'}"
+            f"| DNS ref: {'time-varying (projection)'}"
         )
         print("-" * 64)
 
@@ -649,7 +655,9 @@ class OnlineAVTrainer:
             while not done_flag:
                 if self._stats.total_env_steps < self._config.warmup_steps:
                     random_scalar = float(
-                        np.random.uniform(0.0, self._agent.policy.alpha_max / 10)
+                        np.random.uniform(
+                            -self._agent.policy.output_scale / 100, self._agent.policy.output_scale * 10
+                        )
                     )
                     action_dim = self._agent.policy.output_dim
                     alpha_action_val = np.full(
@@ -658,9 +666,7 @@ class OnlineAVTrainer:
                 else:
                     alpha_action_val = self._agent.select_action(state_current)
 
-                next_state_array, reward_val, done_flag = self._env.step(
-                    alpha_action_val
-                )
+                next_state_array, reward_val, done_flag, blown_up = self._env.step(alpha_action_val)
 
                 logger.debug(
                     "Online training step:"
@@ -670,15 +676,16 @@ class OnlineAVTrainer:
                     f"| next state: {next_state_array}"
                 )
 
-                self._replay_buffer.push(
-                    Transition(
-                        state=state_current,
-                        action=alpha_action_val,
-                        reward=reward_val,
-                        next_state=next_state_array,
-                        done=done_flag,
+                if not blown_up:
+                    self._replay_buffer.push(
+                        Transition(
+                            state=state_current,
+                            action=alpha_action_val,
+                            reward=reward_val,
+                            next_state=next_state_array,
+                            done=done_flag,
+                        )
                     )
-                )
 
                 state_current = next_state_array
                 episode_reward_total += reward_val
