@@ -5,7 +5,7 @@ from pathlib import Path
 
 import matplotlib
 
-from ml.corrector_training.DNS_snapshot_converter import ProjectionReferenceSchedule
+from ml.corrector_training.projection_schedule import ProjectionReferenceSchedule
 from ml.corrector_training.online_trainer import (
     SACConfig,
     BurgersAVCEnvironment,

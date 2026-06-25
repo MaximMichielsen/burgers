@@ -35,8 +35,6 @@ Haarnoja et al. (2018) "Soft Actor–Critic: Off-Policy Maximum Entropy Deep
 Research Proposal §2.3.2, §3.1.
 """
 
-# TODO: change random sampling in buffer filling
-
 from __future__ import annotations
 
 import copy
@@ -54,7 +52,7 @@ import torch.optim as optim
 from numpy.typing import NDArray
 from torch import Tensor
 
-from ml.corrector_training.DNS_snapshot_converter import ProjectionReferenceSchedule
+from ml.corrector_training.projection_schedule import ProjectionReferenceSchedule
 from ml.ml_agents.corrector import AVControllerGlobal, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
@@ -99,8 +97,6 @@ class SACConfig:
         LES timesteps per control interval Δtc = Nₛₖᵢₚ·Δt_LES.
     reward_weight_energy:
         w_E in eq. (2.10).
-    reward_weight_dissipation:
-        w_ε in eq. (2.10).
     reward_spectral_exponent:
         γ exponent per wavenumber in eq. (2.10); 5/3 for inertial range.
     critic_hidden_dim:
@@ -120,7 +116,6 @@ class SACConfig:
     target_entropy: float = -1.0
     n_skip_steps: int = 5
     reward_weight_energy: float = 1.0
-    reward_weight_dissipation: float = 0.1
     reward_spectral_exponent: float = 5.0 / 3.0
     critic_hidden_dim: int = 256
     tau_transient_warmup: float = 0.3
@@ -353,7 +348,7 @@ class BurgersAVCEnvironment:
         w_energy = self._sac_config.reward_weight_energy
         gamma_exp = self._sac_config.reward_spectral_exponent
 
-        proj_spectrum_k, _ = self.proj_ref_schedule.query(
+        proj_spectrum_k = self.proj_ref_schedule.query(
             self._solver.simulation_time_elapsed
         )
 

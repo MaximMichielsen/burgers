@@ -32,8 +32,6 @@ class ProjectionReferenceSchedule:
     spectra_array:
         DNS energy spectra at each snapshot, shape (T, K).
         Column k holds E_DNS(k+1, t) (positive wavenumbers, DC skipped).
-    dissipation_array:
-        DNS dissipation rates at each snapshot, shape (T,).
     n_wavenumber_bins:
         K — number of positive wavenumber bins kept (must match LES state dim).
     """
@@ -42,7 +40,6 @@ class ProjectionReferenceSchedule:
         self,
         snapshot_times: NDArray,
         spectra_array: NDArray,
-        dissipation_array: NDArray,
         n_wavenumber_bins: int,
     ) -> None:
         if snapshot_times.ndim != 1:
@@ -52,15 +49,10 @@ class ProjectionReferenceSchedule:
                 f"spectra_array shape {spectra_array.shape} does not match "
                 f"(T={len(snapshot_times)}, K={n_wavenumber_bins})."
             )
-        if dissipation_array.shape != (len(snapshot_times),):
-            raise ValueError(
-                f"dissipation_array shape {dissipation_array.shape} does not match "
-                f"(T={len(snapshot_times)},)."
-            )
+
 
         self._snapshot_times = snapshot_times
         self._spectra_array = spectra_array
-        self._dissipation_array = dissipation_array
         self.n_wavenumber_bins = n_wavenumber_bins
         self.t_min: float = float(snapshot_times[0])
         self.t_max: float = float(snapshot_times[-1])
@@ -70,7 +62,6 @@ class ProjectionReferenceSchedule:
         cls,
         projection_dir: Path,
         domain_length: float,
-        viscosity: float,
         n_wavenumber_bins: int,
     ) -> "ProjectionReferenceSchedule":
         """Build a schedule from projected LES-grid snapshots stored as CSV files."""
@@ -84,7 +75,6 @@ class ProjectionReferenceSchedule:
 
         snapshot_times_list: list[float] = []
         spectra_list: list[NDArray] = []
-        dissipation_list: list[float] = []
 
         for csv_path in csv_files:
             time_value = float(csv_path.stem.replace("sol_t", ""))
@@ -97,22 +87,13 @@ class ProjectionReferenceSchedule:
                     n_wavenumber_bins=n_wavenumber_bins,
                 )
             )
-            dissipation_list.append(
-                _compute_dissipation(
-                    velocity_array=velocity_array,
-                    domain_length=domain_length,
-                    viscosity=viscosity,
-                )
-            )
 
         snapshot_times_array = np.array(snapshot_times_list, dtype=np.float64)
         spectra_array = np.stack(spectra_list, axis=0).astype(np.float64)
-        dissipation_array = np.array(dissipation_list, dtype=np.float64)
 
         sort_indices = np.argsort(snapshot_times_array)
         snapshot_times_array = snapshot_times_array[sort_indices]
         spectra_array = spectra_array[sort_indices]
-        dissipation_array = dissipation_array[sort_indices]
 
         logger.info(
             "ProjectionReferenceSchedule loaded %d snapshots from %s (t=[%.4f, %.4f], K=%d).",
@@ -126,7 +107,6 @@ class ProjectionReferenceSchedule:
         return cls(
             snapshot_times=snapshot_times_array,
             spectra_array=spectra_array,
-            dissipation_array=dissipation_array,
             n_wavenumber_bins=n_wavenumber_bins,
         )
 
@@ -134,7 +114,7 @@ class ProjectionReferenceSchedule:
     # Query
     # ------------------------------------------------------------------
 
-    def query(self, t: float) -> tuple[NDArray, float]:
+    def query(self, t: float) -> NDArray:
         """Return DNS spectrum and dissipation interpolated to time *t*.
 
         Linear interpolation between the two nearest snapshots.  Clamps to
@@ -163,15 +143,12 @@ class ProjectionReferenceSchedule:
             ],
             dtype=np.float64,
         )
-        dns_dissipation = float(
-            np.interp(t_clamped, self._snapshot_times, self._dissipation_array)
-        )
-        return dns_spectrum_k, dns_dissipation
+        return dns_spectrum_k
 
     def plot_schedule(
         self, query_times: NDArray | None = None, output_path: Path | None = None
     ) -> None:
-        """Visualise all snapshot spectra and optionally overlay queried interpolations."""
+        """Visualize all snapshot spectra and optionally overlay queried interpolations."""
         import matplotlib.pyplot as plt
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4))
@@ -187,7 +164,7 @@ class ProjectionReferenceSchedule:
             )
         if query_times is not None:
             for query_t in query_times:
-                queried_spectrum, _ = self.query(query_t)
+                queried_spectrum = self.query(query_t)
                 axes[0].loglog(
                     np.arange(1, self.n_wavenumber_bins + 1),
                     queried_spectrum,
@@ -200,22 +177,6 @@ class ProjectionReferenceSchedule:
         axes[0].set_ylabel("E(k)")
         axes[0].set_title("Projected spectra (all snapshots + queries)")
         axes[0].legend(fontsize=8)
-
-        # --- dissipation panel ---
-        axes[1].plot(
-            self._snapshot_times,
-            self._dissipation_array,
-            color="steelblue",
-            linewidth=1.5,
-        )
-        if query_times is not None:
-            for query_t in query_times:
-                _, queried_diss = self.query(query_t)
-                axes[1].axvline(query_t, color="coral", linestyle="--", linewidth=1.0)
-                axes[1].scatter([query_t], [queried_diss], color="coral", zorder=5)
-        axes[1].set_xlabel("time t")
-        axes[1].set_ylabel("dissipation ε")
-        axes[1].set_title("Projected dissipation over time")
 
         plt.tight_layout()
         if output_path:
@@ -270,32 +231,3 @@ def _compute_spectrum_bins(
             f"{n_wavenumber_bins} for n_nodes={n_nodes}."
         )
     return spectrum_k
-
-
-def _compute_dissipation(
-    velocity_array: NDArray,
-    domain_length: float,
-    viscosity: float,
-) -> float:
-    """Approximate ν · ∫(∂u/∂x)² dx via a spectral estimate.
-
-    Uses Parseval's theorem: ∫(∂u/∂x)² dx = Σ_k k² |û_k|² / N²,
-    which is exact for the periodic Fourier representation of the DNS
-    solution and avoids re-implementing the FEM quadrature loop here.
-
-    Parameters
-    ----------
-    velocity_array:
-        Nodal velocity values from one DNS snapshot.
-    domain_length:
-        Physical domain length L.
-    viscosity:
-        Physical kinematic viscosity ν.
-    """
-    n_nodes = len(velocity_array)
-    u_hat = np.fft.fft(velocity_array)
-    wavenumbers_all = np.fft.fftfreq(n_nodes, d=domain_length / n_nodes) * 2.0 * np.pi
-    dissipation_spectral = float(
-        viscosity * np.sum(wavenumbers_all**2 * np.abs(u_hat) ** 2) / (n_nodes**2)
-    )
-    return dissipation_spectral
