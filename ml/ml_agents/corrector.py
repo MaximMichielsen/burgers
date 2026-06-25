@@ -39,11 +39,12 @@ class AVController(nn.Module):
     def __init__(
         self,
         alpha_max: float,
+        output_scale: float,
         n_wavenumber_bins: int,
         hidden_dim: int = HIDDEN_UNITS,
         correction_mode: str = "global",
         n_output_nodes: int = 1,  # ignored for global; N_LES for local.
-        output_scale: float | None = None,
+
     ) -> None:
         super().__init__()
 
@@ -73,7 +74,7 @@ class AVController(nn.Module):
         input_dim: int = n_wavenumber_bins + 2
         output_dim: int = n_output_nodes
 
-        self.output_scale = output_scale if output_scale is not None else alpha_max
+        self.output_scale = output_scale
         self.alpha_max = alpha_max
         self.n_wavenumber_bins = n_wavenumber_bins
         self.hidden_dim = hidden_dim
@@ -91,9 +92,10 @@ class AVController(nn.Module):
         )
 
     def forward(self, state_input: Tensor) -> Tensor:
-        """Sigmoid-bounded output, hard-clamped to alpha_max as a safety ceiling."""
+        """Sigmoid-bounded output scaled to physical range [0, output_scale]."""
         raw_output = self.network(state_input)
-        return torch.sigmoid(raw_output)
+        scaled_output =  self.output_scale * torch.sigmoid(raw_output)
+        return torch.clamp(scaled_output, min=0, max=100)
 
 
 # ---------------------------------------------------------------------------

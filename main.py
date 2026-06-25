@@ -5,7 +5,7 @@ from pathlib import Path
 
 import matplotlib
 
-from ml.corrector_training.DNS_snapshot_converter import DNSReferenceSchedule
+from ml.corrector_training.DNS_snapshot_converter import ProjectionReferenceSchedule
 from ml.corrector_training.online_trainer import (
     SACConfig,
     BurgersAVCEnvironment,
@@ -40,7 +40,7 @@ matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 problem: Problem = Problems.raj_three
-problem = replace(problem, domain_timespan=2)
+problem = replace(problem, domain_timespan=1)
 
 clip_pusuluri: bool = False
 clip_rajampeta: bool = False
@@ -49,7 +49,7 @@ run_analytical_les: bool = False
 run_no_model_les: bool = False
 
 # general simulation parameters
-n_nodes_les: int = 17
+n_nodes_les: int = 9
 temporal_refinement: int = 1
 courant_les: float = 0.1
 
@@ -57,7 +57,7 @@ courant_les: float = 0.1
 AVC_ALPHA_MAX: float = problem.viscosity / 2  # currently the parameter that
 # sets the lower and upper limits for random batch filling
 
-AVC_EPOCHS: int = 10
+AVC_EPOCHS: int = 50
 AVC_N_SKIP: int = 5
 
 # discretization dict
@@ -132,11 +132,13 @@ if __name__ == "__main__":
                 dns_solver_ref.compute_dissipation(dns_solution_on_les)
             )
             n_wavenumber_bins = len(dns_positive_spectrum)
-            dns_reference_schedule = DNSReferenceSchedule.from_projection_directory(
-                projection_dir=paths.projection,
-                domain_length=problem.domain_length,
-                viscosity=problem.viscosity,
-                n_wavenumber_bins=n_wavenumber_bins,
+            dns_reference_schedule = (
+                ProjectionReferenceSchedule.from_projection_directory(
+                    projection_dir=paths.projection,
+                    domain_length=problem.domain_length,
+                    viscosity=problem.viscosity,
+                    n_wavenumber_bins=n_wavenumber_bins,
+                )
             )
 
             avc_trainer_cfg = AVCTrainerConfig(
@@ -172,7 +174,7 @@ if __name__ == "__main__":
                 avc_cfg=avc_trainer_cfg,
                 master_path=paths.les_avc_data / "training_global",
                 sac_config=sac_config,
-                dns_reference_schedule=dns_reference_schedule,
+                proj_ref_schedule=dns_reference_schedule,
             )
             sac_agent_global = SACAgent(
                 av_corrector=av_corrector_global,
