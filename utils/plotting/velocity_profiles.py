@@ -347,7 +347,7 @@ def create_velocity_plot_configs(
     paths: RunPaths, disc_cfg: DiscretizationConfig
 ) -> list[VelocityPlotConfig]:
     """Create configs for the velocity profile comparison plot."""
-    reference_time = _infer_final_time_from_directory(paths.les_sgsp_data)
+    reference_time = _infer_final_time_from_directory(paths.sgsp_data)
 
     if paths.dns_data is None:
         raise ValueError("No viable DNS path found! Cannot plot velocity profile.")
@@ -400,7 +400,7 @@ def create_velocity_plot_configs(
     )
 
     sgsp_config = VelocityPlotConfig(
-        data_path=paths.les_sgsp_data,
+        data_path=paths.sgsp_data,
         label="LES - SGSP",
         color="crimson",
         marker="d",
@@ -408,11 +408,20 @@ def create_velocity_plot_configs(
     )
 
     avcg_config = VelocityPlotConfig(
-        data_path=paths.les_avc_data / "global",
+        data_path=paths.avc_data / "global",
         label="LES - AVC (global)",
         color="royalblue",
         linestyle="--",
         marker="s",
+        mesh=disc_cfg.mesh_les,
+    )
+
+    avc_gl_config = VelocityPlotConfig(
+        data_path=paths.avc_data / "gl_hybrid",
+        label="LES - AVC (GL-hybrid)",
+        color="blueviolet",
+        linestyle="--",
+        marker="v",
         mesh=disc_cfg.mesh_les,
     )
 
@@ -423,5 +432,6 @@ def create_velocity_plot_configs(
         analytical_config,
         sgsp_config,
         avcg_config,
+        avc_gl_config,
     ]
     return [config for config in _configs if config.data_path.exists()]

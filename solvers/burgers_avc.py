@@ -35,7 +35,7 @@ import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-from ml.ml_agents.corrector import AVControllerGlobal, load_corrector
+from ml.ml_agents.corrector import AVController, load_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
@@ -73,7 +73,7 @@ class BurgersAVC(BurgersSGSP):
         self._avc_cfg = avc_cfg
 
         self._avc_model_path: Path = avc_cfg.avc_model_path
-        self.corrector: AVControllerGlobal = load_corrector(avc_cfg.avc_model_path)
+        self.corrector: AVController = load_corrector(avc_cfg.avc_model_path)
         self.corrector.eval()
 
         self.av_correction: float | NDArray = 0.0
@@ -95,9 +95,6 @@ class BurgersAVC(BurgersSGSP):
         if not self._avc_cfg.externally_driven:
             if self._step_counter % self._avc_cfg.n_skip_steps == 0:
                 self.av_correction = self._calc_avc_correction()
-                print(
-                    f"AVC correction applied: α={self.av_correction}  (t={self.simulation_time_elapsed:.4f})"
-                )
 
         self._step_counter += 1
         step_ok = super().advance_time_step()
@@ -132,8 +129,7 @@ class BurgersAVC(BurgersSGSP):
         dissipation_val = np.float64(
             self.dissipation_history[-1] if self.dissipation_history else 0.0
         )
-        if self._avc_cfg.correction_mode == "local":
-            # TODO: Fix previous observed correction if in local mode.
+        if isinstance(self.av_correction, np.ndarray):
             alpha_prev_val = np.float64(float(np.mean(self.av_correction)))
         else:
             alpha_prev_val = np.float64(self.av_correction)
@@ -282,7 +278,7 @@ class BurgersAVC(BurgersSGSP):
         print("─" * W)
         _row("model path", str(self._avc_model_path))
         _row("correction mode", str(self.corrector.correction_mode))
-        _row("alpha_max", f"{self.corrector.alpha_max:.4e}")
+        _row("output_scale", f"{self.corrector.output_scale:.4e}")
         _row("n_wavenumber_bins", str(self._n_wavenumber_bins))
         print("═" * W)
 
@@ -380,7 +376,7 @@ class BurgersAVC(BurgersSGSP):
 
         Skipped silently if correction_mode is global or av_history is empty.
         """
-        if self._avc_cfg.correction_mode != "local":
+        if self._avc_cfg.correction_mode == "global":
             return
         if not self.av_history:
             logger.warning("plot_local_avc_spatial: no AV history to plot, skipping.")

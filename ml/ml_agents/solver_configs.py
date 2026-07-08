@@ -19,8 +19,8 @@ class SGSPConfig:
 class AVCConfig:
     avc_model_path: Path
     n_wavenumber_bins: int
+    correction_mode: str
+    input_mode: str = "global"
     simulation_mode: str = "avc"
-    correction_mode: str = "global"
     n_skip_steps: int = 5
-    set_off_corrector: bool = False
     externally_driven: bool = False

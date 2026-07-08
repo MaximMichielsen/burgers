@@ -436,18 +436,18 @@ class BurgersBase:
         return (f["u_k"] - f["u_n"]) / self.dt + u_mid * du_mid
 
     def _residual_integrand(
-        self,
-        i: int,
-        basis: NDArray,
-        gradient_basis: NDArray,
-        f: dict[str, float],
-        mid: dict[str, float],
-        f_interp: float = 0.0,
+            self,
+            i: int,
+            basis: NDArray,
+            gradient_basis: NDArray,
+            f: dict[str, float],
+            mid: dict[str, float],
+            f_interp: float = 0.0,
     ) -> float:
-        """Galerkin weak-form residual integrand for node i."""
+        """Endpoint (implicit-Euler) residual integrand — midpoint-vs-endpoint test."""
         time_derivative = basis[i] * (f["u_k"] - f["u_n"]) / self.dt
-        diffusion = self.viscosity * mid["du_mid"] * gradient_basis[i]
-        advection = basis[i] * mid["u_mid"] * mid["du_mid"]
+        diffusion = self.viscosity * f["du_k"] * gradient_basis[i]
+        advection = basis[i] * f["u_k"] * f["du_k"]
         forcing = basis[i] * f_interp
         return time_derivative + diffusion + advection - forcing
 
@@ -463,18 +463,18 @@ class BurgersBase:
         return (u_mid * gradient_basis[i]) * self.compute_tau(u_mid) * u_mid * du_mid
 
     def _jacobian_integrand(
-        self,
-        i: int,
-        j: int,
-        basis: NDArray,
-        gradient_basis: NDArray,
-        f: dict[str, float],
+            self,
+            i: int,
+            j: int,
+            basis: NDArray,
+            gradient_basis: NDArray,
+            f: dict[str, float],
     ) -> float:
-        """Galerkin Jacobian integrand for nodes i, j."""
+        """Endpoint Galerkin Jacobian integrand for nodes i, j."""
         mass = basis[i] * basis[j] / self.dt
         stiffness = self.viscosity * gradient_basis[i] * gradient_basis[j]
         advection = basis[i] * (basis[j] * f["du_k"] + f["u_k"] * gradient_basis[j])
-        return mass + 0.5 * (stiffness + advection)
+        return mass + stiffness + advection
 
     def _vms_jacobian_integrand(
         self,

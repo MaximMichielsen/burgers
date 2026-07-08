@@ -96,9 +96,9 @@ def plot_dissipation_comparison(
         ("Projection", paths.projection, "lightgreen", "-", 1.2),
         ("LES - A", paths.les_a_data, "tab:orange", "--", 1.4),
         ("LES - NM", paths.les_nm_data, "gold", "-.", 1.4),
-        ("LES - SGSP", paths.les_sgsp_data, "crimson", "-", 1.8),
-        ("LES - AVCG", paths.les_avcg_data, "royalblue", "-", 1.8),
-        ("LES - AVCL", paths.avcl_model, "blueviolet", "--", 1.8),
+        ("LES - SGSP", paths.sgsp_data, "crimson", "-", 1.8),
+        ("LES - AVCG", paths.avc_gg_data, "royalblue", "-", 1.8),
+        ("LES - AVCL", paths.avc_gl_model, "blueviolet", "--", 1.8),
     ]
 
     solver_configs: dict[str, tuple[Path, str, str, float]] = {

@@ -53,7 +53,7 @@ from numpy.typing import NDArray
 from torch import Tensor
 
 from ml.corrector_training.projection_schedule import ProjectionReferenceSchedule
-from ml.ml_agents.corrector import AVControllerGlobal, save_corrector
+from ml.ml_agents.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
@@ -251,8 +251,6 @@ class BurgersAVCEnvironment:
         self._sac_config = sac_config
         self.proj_ref_schedule = proj_ref_schedule
 
-        self.set_off_corrector = avc_cfg.set_off_corrector
-
         _, self._n_time_steps = compute_adjusted_dt(
             disc_cfg.dt_les, problem.domain_timespan
         )
@@ -289,15 +287,11 @@ class BurgersAVCEnvironment:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done)."""
         assert self._solver is not None, "Call reset() before step()."
 
-        # to check reward calculation when SGSP is near-perfect
-        if self._avc_cfg.set_off_corrector:
-            alpha_action = 0.0
-
         if self.correction_mode == "local":
             alpha_array = np.asarray(alpha_action, dtype=np.float64).reshape(-1)
             assert alpha_array.shape == (self._n_output_nodes,), (
-                f"Local mode expects action shape ({self._n_output_nodes},), "
-                f"got {alpha_array.shape}"
+                f"{self.correction_mode} mode expects action shape "
+                f"({self._n_output_nodes},), got {alpha_array.shape}"
             )
             self._solver.av_correction = alpha_array
         elif self.correction_mode == "global":
@@ -360,7 +354,8 @@ class BurgersAVCEnvironment:
             np.sum(
                 w_energy
                 * wavenumber_indices**gamma_exp
-                * ((spectrum_k - proj_spectrum_k) / (np.mean(proj_spectrum_k) + 1e-12)) ** 2
+                * ((spectrum_k - proj_spectrum_k) / (np.mean(proj_spectrum_k) + 1e-12))
+                ** 2
             )
         )
 
@@ -403,7 +398,7 @@ class SACAgent:
 
     def __init__(
         self,
-        av_corrector: AVControllerGlobal,
+        av_corrector: AVController,
         state_dim: int,
         sac_config: SACConfig,
     ) -> None:
@@ -618,16 +613,31 @@ class OnlineAVTrainer:
 
             while not done_flag:
                 if self._stats.total_env_steps < self._config.warmup_steps:
-                    random_scalar = float(
-                        np.random.uniform(
-                            0,
-                            self._agent.policy.output_scale,
+                    if self._env.correction_mode == "global":
+                        random_scalar = float(
+                            np.random.uniform(
+                                0,
+                                self._agent.policy.output_scale,
+                            )
                         )
-                    )
-                    action_dim = self._agent.policy.output_dim
-                    alpha_action_val = np.full(
-                        action_dim, random_scalar, dtype=np.float64 # TODO: adjust for local mode
-                    )
+                        alpha_action_val = np.full(
+                            self._agent.policy.output_dim,
+                            random_scalar,
+                            dtype=np.float64,
+                        )
+                    elif self._env.correction_mode == "local":
+                        base = np.random.uniform(0.0, self._agent.policy.output_scale)
+                        perturb = np.random.normal(
+                            0.0, 0.1 * self._agent.policy.output_scale, size=self._agent.policy.output_dim
+                        )
+                        alpha_action_val = np.clip(
+                            base + perturb, 0.0, self._agent.policy.output_scale
+                        )
+                    else:
+                        raise ValueError(
+                            f"Correction mode is not being passed on correctly, got {self._env.correction_mode}"
+                        )
+
                 else:
                     alpha_action_val = self._agent.select_action(state_current)
 

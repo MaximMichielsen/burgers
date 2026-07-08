@@ -50,7 +50,6 @@ class ProjectionReferenceSchedule:
                 f"(T={len(snapshot_times)}, K={n_wavenumber_bins})."
             )
 
-
         self._snapshot_times = snapshot_times
         self._spectra_array = spectra_array
         self.n_wavenumber_bins = n_wavenumber_bins

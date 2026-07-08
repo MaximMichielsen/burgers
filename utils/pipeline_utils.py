@@ -63,7 +63,7 @@ def load_manual_models(
     """Manually set paths to the SGSP and/or AVC models."""
     paths.sgsp_model = Path(sgsp_path) if sgsp_path != "" else paths.sgsp_model
     paths.training = Path(training_path) if training_path != "" else paths.training
-    paths.avcg_model = Path(avcg_path) if avcg_path != "" else paths.avcg_model
+    paths.avc_gg_model = Path(avcg_path) if avcg_path != "" else paths.avc_gg_model
 
 
 def run_dns(
@@ -221,15 +221,16 @@ class RunPaths:
     dns_data: Path | None
     les_a_data: Path
     les_nm_data: Path
-    les_sgsp_data: Path
-    les_avc_data: Path
-    les_avcg_data: Path
+    sgsp_data: Path
+    avc_data: Path
+    avc_gg_data: Path
+    avc_gl_data: Path
     projection: Path | None
     training: Path | None
     agents: Path
     sgsp_model: Path
-    avcg_model: Path
-    avcl_model: Path
+    avc_gg_model: Path
+    avc_gl_model: Path
     apriori: Path
 
     @classmethod
@@ -241,19 +242,20 @@ class RunPaths:
             dns_data=None,
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
-            les_sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,
-            les_avcg_data=master_path
+            sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,
+            avc_gg_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH / "global",
+            avc_gl_data=master_path
             / SOLVER_DATA_FOLDER
             / LES_AVC_SAVE_PATH
-            / "global",
+            / "global_local",
             projection=None,
             training=None,
             agents=master_path / AGENT_FOLDER,
             sgsp_model=master_path / AGENT_FOLDER / "sgs_predictor.pt",
-            avcg_model=master_path / AGENT_FOLDER / "av_global_corrector.pt",
-            avcl_model=master_path / AGENT_FOLDER / "av_local_corrector.pt",
+            avc_gg_model=master_path / AGENT_FOLDER / "av_global_corrector.pt",
+            avc_gl_model=master_path / AGENT_FOLDER / "av_gl_hybrid.pt",
             apriori=master_path / A_PRIORI_FOLDER,
-            les_avc_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH,
+            avc_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH,
         )
 
     def create_master(self) -> None:

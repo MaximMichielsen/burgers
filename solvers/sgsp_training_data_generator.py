@@ -518,8 +518,16 @@ class BurgersDataGenerator(BurgersBase):
         n_snapshots = len(self.assembled_input_stencils)
         times_sliced = self.requested_snapshots[:n_snapshots]
 
+        # LFS: features at level n predict closure at level n+1 (Rajampeta Sec. 5.3).
+        # Requires consecutive snapshots — one list entry == one dt.
+        assert self.snapshot_factor == 1, (
+            "LFS label shift assumes snapshot_factor == 1; "
+            f"got {self.snapshot_factor}. Shift would span multiple dt."
+        )
+
         for stencil_list, sgs_term_list in zip(
-            self.assembled_input_stencils, self.assembled_sgs_terms
+            self.assembled_input_stencils[:-1],
+            self.assembled_sgs_terms[1:],
         ):
             for stencil_vec, element_terms in zip(stencil_list, sgs_term_list):
                 if stencil_vec is None:
@@ -748,6 +756,7 @@ class ProjDNSReconstructor(BurgersBase):
         snapshot_factor: int = 1,
         use_closure_terms: bool = True,
         use_temporal_terms: bool = True,
+        warmup_offset: int = WARMUP_STEPS,
     ) -> None:
         super().__init__(
             problem, disc_cfg, simulation_mode, master_path, snapshot_factor
@@ -761,18 +770,27 @@ class ProjDNSReconstructor(BurgersBase):
         self.closure_terms = closure_terms
         self.use_closure_terms = use_closure_terms
         self.use_temporal_terms = use_temporal_terms
+        self.warmup_offset = warmup_offset
 
         self.time_steps_stepped: int = 0
 
     def recreate_solution(self) -> None:
-        """Run the full time-marching simulation and write output."""
+        """March from the first closured level using exact closure terms.
+
+        Seeds from the projected DNS at level ``warmup_offset`` (the last level
+        with no closure term) so ``closure_terms[0]`` (IT at warmup_offset+1)
+        lands on the first solve.
+        """
+        self.solution = self.u_bar_solutions[self.warmup_offset].copy()
+        self.initial_condition = self.solution.copy()
+        self.simulation_time_elapsed = self.warmup_offset * self.dt
+
         self.resolve_current_forcing()
         self._extract_snapshot()
 
-        for time_step in range(self._n_time_steps):
+        for _ in range(len(self.closure_terms)):
             self.advance_time_step()
-            if (time_step + 1) in self._snapshot_step_indices:
-                self._extract_snapshot()
+            self._extract_snapshot()
 
         self.write_config_to_json()
         self.write_solution_to_csv()
@@ -784,7 +802,7 @@ class ProjDNSReconstructor(BurgersBase):
         residual_history_loop: list = []
         update_history_loop: list = []
 
-        self.max_iterations = 1
+        self.max_iterations = 50
 
         for _ in range(self.max_iterations):
             elemental_residuals, elemental_jacobians = zip(
@@ -881,15 +899,17 @@ class ProjDNSReconstructor(BurgersBase):
 
     def plot_solution_comparison(
         self,
-        snapshot_idx: int,
+        reconstructed_idx: int,
         dns_solutions: list[NDArray],
         u_bar_solutions: list[NDArray],
         reconstructed_no_model: NDArray | None = None,
     ) -> None:
-        """Compare DNS, LES projection, and reconstructed solutions at a snapshot."""
-        dns_sol: NDArray = dns_solutions[snapshot_idx]
-        u_bar_sol: NDArray = u_bar_solutions[snapshot_idx]
-        reconstructed_sol: NDArray = self.snapshots[snapshot_idx][0]
+        """Compare DNS, LES projection, and reconstruction at one reconstructed step."""
+        truth_idx: int = self.warmup_offset + reconstructed_idx
+        dns_sol: NDArray = dns_solutions[truth_idx]
+        u_bar_sol: NDArray = u_bar_solutions[truth_idx]
+        reconstructed_sol: NDArray = self.snapshots[reconstructed_idx][0]
+
 
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.plot(self.disc_cfg.mesh_dns, dns_sol, label="DNS", color="gray", alpha=0.8)
@@ -912,13 +932,13 @@ class ProjDNSReconstructor(BurgersBase):
         if reconstructed_no_model is not None:
             ax.plot(
                 self.disc_cfg.mesh_les,
-                reconstructed_no_model[snapshot_idx][0],
+                reconstructed_no_model[reconstructed_idx][0],
                 label="reconstructed (no closure)",
                 color="tab:green",
                 marker="s",
                 linestyle=":",
             )
-        ax.set_title(f"Snapshot {snapshot_idx}")
+        ax.set_title(f"Snapshot {reconstructed_idx}")
         ax.set_xlabel("x")
         ax.set_ylabel("u")
         ax.grid(True)
@@ -939,7 +959,7 @@ if __name__ == "__main__":
         domain_length=1,
     )
     _path = Path(__file__).parent.parent / "test_suite"
-    _problem = replace(Problems.raj_two, domain_timespan=4.0)
+    _problem = replace(Problems.raj_two, domain_timespan=1.0)
 
     _solver = BurgersDataGenerator(
         _problem,
@@ -976,7 +996,7 @@ if __name__ == "__main__":
     )
     _recreator.recreate_solution()
     _recreator.plot_solution_comparison(
-        snapshot_idx=len(_solver.solution_history) - 1,
+        reconstructed_idx=len(_recreator.snapshots) - 1,
         dns_solutions=_solver.solution_history,
         u_bar_solutions=_solver.u_bar_history,
         reconstructed_no_model=_recreator_no_model.snapshots,

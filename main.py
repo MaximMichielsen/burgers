@@ -12,7 +12,7 @@ from ml.corrector_training.online_trainer import (
     SACAgent,
     OnlineAVTrainer,
 )
-from ml.ml_agents.corrector import AVControllerGlobal, save_corrector
+from ml.ml_agents.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
 from solvers.burgers_base import BurgersBase
@@ -37,8 +37,8 @@ CURRENT_DIR = Path(__file__).parent.resolve()
 matplotlib.use("Agg")  # needed when running on M12
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
-problem: Problem = Problems.raj_one
-problem = replace(problem, domain_timespan=2.0)
+problem: Problem = Problems.raj_two
+problem = replace(problem, domain_timespan=4.0)
 
 clip_pusuluri: bool = False
 clip_rajampeta: bool = False
@@ -47,16 +47,17 @@ run_analytical_les: bool = False
 run_no_model_les: bool = False
 
 # general simulation parameters
-n_nodes_les: int = 9
+n_nodes_les: int = 17
 temporal_refinement: int = 1
 courant_les: float = 0.1
 
 # AVC (hyper-)parameters
 avc_output_scale = 2 * problem.viscosity
 
-AVC_EPOCHS: int = 50
+AVC_EPOCHS: int = 10
 AVC_N_SKIP: int = 5
 AVC_WARMUP_STEPS: int = 500
+AVC_BATCH_SIZE = 264
 TAU_REWARD_WARMUP: float = 0.2
 
 # DEBUG FLAGS
@@ -99,12 +100,12 @@ if __name__ == "__main__":
         sgsp_cfg = SGSPConfig(
             sgsp_model_path=paths.sgsp_model,
             normalization_path=paths.training,
-            blown_up_path=paths.les_sgsp_data / "blown_up",
+            blown_up_path=paths.sgsp_data / "blown_up",
             clip_pusuluri=clip_pusuluri,
             clip_rajampeta=clip_rajampeta,
             turn_off_predictor=SET_OFF_SGSP,
         )
-        run_sgsp_coupled_solver(problem, disc_cfg, paths.les_sgsp_data, sgsp_cfg)
+        run_sgsp_coupled_solver(problem, disc_cfg, paths.sgsp_data, sgsp_cfg)
 
     # --------------------------------------- Bare LES solvers --------------------------------------- #
     if run_analytical_les:
@@ -116,44 +117,44 @@ if __name__ == "__main__":
         no_model_run.run_simulation()
 
     # --------------------------------------- GAVC training --------------------------------------- #
-    if not paths.avcg_model.exists() and paths.projection is not None:
+    if not paths.avc_gg_model.exists() and paths.projection is not None:
         proj_reference_schedule = ProjectionReferenceSchedule.from_projection_directory(
             projection_dir=paths.projection,
             domain_length=problem.domain_length,
-            viscosity=problem.viscosity,
             n_wavenumber_bins=(n_nodes_les + 1) // 2,
         )
 
-        avc_trainer_cfg = AVCConfig(
-            avc_model_path=paths.avcg_model,
+        avc_trainer_cfg_global = AVCConfig(
+            avc_model_path=paths.avc_gg_model,
             simulation_mode="avc",
             correction_mode="global",
             n_skip_steps=AVC_N_SKIP,
-            set_off_corrector=AVC_ZERO_RUN,
             n_wavenumber_bins=(n_nodes_les + 1) // 2,
             externally_driven=True,
         )
 
-        av_corrector_global = AVControllerGlobal(
+        av_corrector_global = AVController(
             n_wavenumber_bins=(n_nodes_les + 1) // 2,
             output_scale=avc_output_scale,
+            correction_mode="global",
+            output_dim=1
+
         )
         paths.agents.mkdir(parents=True, exist_ok=True)
-        save_corrector(av_corrector_global, paths.avcg_model)
+        save_corrector(av_corrector_global, paths.avc_gg_model)
 
         sac_cfg = SACConfig(
             n_skip_steps=AVC_N_SKIP,
             warmup_steps=AVC_WARMUP_STEPS,
-            batch_size=128,
+            batch_size=AVC_BATCH_SIZE,
             tau_transient_warmup=TAU_REWARD_WARMUP,
         )
-
         environment_global = BurgersAVCEnvironment(
             problem=problem,
             disc_cfg=disc_cfg,
             sgsp_cfg=replace(sgsp_cfg, turn_off_predictor=SET_OFF_SGSP),
-            avc_cfg=avc_trainer_cfg,
-            master_path=paths.les_avc_data / "training_global",
+            avc_cfg=avc_trainer_cfg_global,
+            master_path=paths.avc_data / "training_global",
             sac_config=sac_cfg,
             proj_ref_schedule=proj_reference_schedule,
         )
@@ -169,23 +170,96 @@ if __name__ == "__main__":
             output_dir=paths.agents / "avcg_checkpoints",
         )
         trainer_global.train(n_episodes=AVC_EPOCHS)
-        save_corrector(sac_agent_global.policy, paths.avcg_model)
+        save_corrector(sac_agent_global.policy, paths.avc_gg_model)
 
     # --------------------------------------- GAVC run --------------------------------------- #
     avc_run_cfg = AVCConfig(
-        avc_model_path=paths.avcg_model,
+        avc_model_path=paths.avc_gg_model,
         n_wavenumber_bins=(n_nodes_les + 1) // 2,
+        correction_mode="global",
     )
     solver_avc_global = BurgersAVC(
         problem,
         disc_cfg,
         "avc",
-        paths.les_avc_data / "global",
+        paths.avc_data / "global",
         replace(sgsp_cfg, turn_off_predictor=SET_OFF_SGSP),
         avc_run_cfg,
     )
     solver_avc_global.run_simulation()
     solver_avc_global.post_processing()
+
+    # --------------------------------------- Global-Local AVC training --------------------------------------- #
+    if not paths.avc_gl_model.exists() and paths.projection is not None:
+        proj_reference_schedule = ProjectionReferenceSchedule.from_projection_directory(
+            projection_dir=paths.projection,
+            domain_length=problem.domain_length,
+            n_wavenumber_bins=(n_nodes_les + 1) // 2,
+        )
+
+        avc_trainer_cfg_gl = AVCConfig(
+            avc_model_path=paths.avc_gl_model,
+            simulation_mode="avc",
+            correction_mode="local",
+            n_skip_steps=AVC_N_SKIP,
+            n_wavenumber_bins=(n_nodes_les + 1) // 2,
+            externally_driven=True,
+        )
+
+        av_corrector_gl_hybrid = AVController(
+            n_wavenumber_bins=(n_nodes_les + 1) // 2,
+            output_scale=avc_output_scale,
+            correction_mode="local",
+            output_dim=disc_cfg.n_nodes_les,
+        )
+        paths.agents.mkdir(parents=True, exist_ok=True)
+        save_corrector(av_corrector_gl_hybrid, paths.avc_gl_model)
+
+        sac_cfg_gl = SACConfig(
+            n_skip_steps=AVC_N_SKIP,
+            warmup_steps=AVC_WARMUP_STEPS,
+            batch_size=AVC_BATCH_SIZE,
+            tau_transient_warmup=TAU_REWARD_WARMUP,
+        )
+        environment_gl_hybrid = BurgersAVCEnvironment(
+            problem=problem,
+            disc_cfg=disc_cfg,
+            sgsp_cfg=replace(sgsp_cfg, turn_off_predictor=SET_OFF_SGSP),
+            avc_cfg=avc_trainer_cfg_gl,
+            master_path=paths.avc_data / "training_gl_hybrid",
+            sac_config=sac_cfg_gl,
+            proj_ref_schedule=proj_reference_schedule,
+        )
+        sac_agent_gl_hybrid = SACAgent(
+            av_corrector=av_corrector_gl_hybrid,
+            state_dim=environment_gl_hybrid.state_dim,
+            sac_config=sac_cfg_gl,
+        )
+        trainer_gl_hybrid = OnlineAVTrainer(
+            environment=environment_gl_hybrid,
+            sac_agent=sac_agent_gl_hybrid,
+            sac_config=sac_cfg_gl,
+            output_dir=paths.agents / "avc_gl_checkpoints",
+        )
+        trainer_gl_hybrid.train(n_episodes=AVC_EPOCHS)
+        save_corrector(sac_agent_gl_hybrid.policy, paths.avc_gl_model)
+
+        # --------------------------------------- GL-hybrid AVC run --------------------------------------- #
+        avc_run_cfg_gl = AVCConfig(
+            avc_model_path=paths.avc_gl_model,
+            n_wavenumber_bins=(n_nodes_les + 1) // 2,
+            correction_mode="local",
+        )
+        solver_avc_gl_hybrid = BurgersAVC(
+            problem,
+            disc_cfg,
+            "avc",
+            paths.avc_data / "gl_hybrid",
+            replace(sgsp_cfg, turn_off_predictor=SET_OFF_SGSP),
+            avc_run_cfg_gl,
+        )
+        solver_avc_gl_hybrid.run_simulation()
+        solver_avc_gl_hybrid.post_processing()
 
     # -------------------------------------- Plotting --------------------------------------- #
     plot_solution_comparison(

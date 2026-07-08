@@ -201,6 +201,8 @@ class BurgersSGSP(BurgersBase):
         self.clip_pusuluri: bool = sgsp_cfg.clip_pusuluri
         self.clip_rajampeta: bool = sgsp_cfg.clip_rajampeta
 
+        self._disc_cfg = disc_cfg
+
         if self.clip_rajampeta and not self.clip_pusuluri:
             raise ValueError("clip_rajampeta requires clip_pusuluri to be enabled.")
 
@@ -382,7 +384,7 @@ class BurgersSGSP(BurgersBase):
                 )
 
         u_bar_new = self.solution.copy()
-        du_bar_dt_new = (u_bar_new - self._u_bar_history[-1]) / self.dt
+        du_bar_dt_new = (u_bar_new - self._u_bar_history[-1]) / self._disc_cfg.dt_les
 
         self._u_bar_history.append(u_bar_new)
         self._du_bar_dt_history.append(du_bar_dt_new)
@@ -638,7 +640,7 @@ class BurgersSGSP(BurgersBase):
         u_nm1 = projected_solutions[1].copy()
 
         du_dt_nm2 = np.zeros(self.n_nodes)
-        du_dt_nm1 = (u_nm1 - u_nm2) / self.dt
+        du_dt_nm1 = (u_nm1 - u_nm2) / self._disc_cfg.dt_les
 
         f_nm2 = (
             forcing_fn(self.mesh, -2 * self.dt)
