@@ -39,7 +39,7 @@ from ml.ml_agents.corrector import AVController, load_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
-from solvers.burgers_sgsp import BurgersSGSP
+from solvers.implicit.burgers_sgsp import BurgersSGSP
 
 logger = logging.getLogger(__name__)
 

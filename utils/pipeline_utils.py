@@ -14,7 +14,7 @@ from dns_scripts.dns_caching import (
     extend_dns_run,
     write_dns_parameters,
 )
-from solvers.sgsp_training_data_generator import BurgersDataGenerator
+from solvers.implicit.sgsp_training_data_generator import BurgersDataGenerator
 from ml.a_priori_verification import run_apriori_verification
 from ml.ml_agents.predictor import (
     plot_training_diagnostics,
@@ -22,7 +22,7 @@ from ml.ml_agents.predictor import (
     train_predictor,
 )
 from ml.ml_agents.solver_configs import SGSPConfig
-from solvers.burgers_sgsp import BurgersSGSP
+from solvers.implicit.burgers_sgsp import BurgersSGSP
 
 
 from dataclasses import dataclass

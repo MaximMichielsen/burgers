@@ -58,7 +58,7 @@ from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
 from utils.io_utils import compute_adjusted_dt
-from solvers.burgers_avc import BurgersAVC
+from solvers.implicit.burgers_avc import BurgersAVC
 
 logger = logging.getLogger(__name__)
 
@@ -628,7 +628,9 @@ class OnlineAVTrainer:
                     elif self._env.correction_mode == "local":
                         base = np.random.uniform(0.0, self._agent.policy.output_scale)
                         perturb = np.random.normal(
-                            0.0, 0.1 * self._agent.policy.output_scale, size=self._agent.policy.output_dim
+                            0.0,
+                            0.1 * self._agent.policy.output_scale,
+                            size=self._agent.policy.output_dim,
                         )
                         alpha_action_val = np.clip(
                             base + perturb, 0.0, self._agent.policy.output_scale

@@ -39,7 +39,7 @@ from utils.io_utils import compute_adjusted_dt
 logger = logging.getLogger(__name__)
 
 
-class BurgersBase:
+class BaseImplicitEuler:
     """Burgers FEM solver: M·U_t + A(U)·U + ν·K₀·U + C_fs(U) = f."""
 
     _VALID_SIMULATION_MODES: frozenset[str] = frozenset(
@@ -436,13 +436,13 @@ class BurgersBase:
         return (f["u_k"] - f["u_n"]) / self.dt + u_mid * du_mid
 
     def _residual_integrand(
-            self,
-            i: int,
-            basis: NDArray,
-            gradient_basis: NDArray,
-            f: dict[str, float],
-            mid: dict[str, float],
-            f_interp: float = 0.0,
+        self,
+        i: int,
+        basis: NDArray,
+        gradient_basis: NDArray,
+        f: dict[str, float],
+        mid: dict[str, float],
+        f_interp: float = 0.0,
     ) -> float:
         """Endpoint (implicit-Euler) residual integrand — midpoint-vs-endpoint test."""
         time_derivative = basis[i] * (f["u_k"] - f["u_n"]) / self.dt
@@ -463,12 +463,12 @@ class BurgersBase:
         return (u_mid * gradient_basis[i]) * self.compute_tau(u_mid) * u_mid * du_mid
 
     def _jacobian_integrand(
-            self,
-            i: int,
-            j: int,
-            basis: NDArray,
-            gradient_basis: NDArray,
-            f: dict[str, float],
+        self,
+        i: int,
+        j: int,
+        basis: NDArray,
+        gradient_basis: NDArray,
+        f: dict[str, float],
     ) -> float:
         """Endpoint Galerkin Jacobian integrand for nodes i, j."""
         mass = basis[i] * basis[j] / self.dt

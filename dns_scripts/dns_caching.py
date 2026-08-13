@@ -9,7 +9,7 @@ from typing import Callable
 from constants import DNS_FOLDER
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
-from solvers.sgsp_training_data_generator import BurgersDataGenerator
+from solvers.implicit.sgsp_training_data_generator import BurgersDataGenerator
 from utils.io_utils import read_data
 
 

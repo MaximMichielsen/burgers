@@ -50,8 +50,8 @@ from ml.ml_agents.predictor import SGSPredictor, load_predictor
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig
-from solvers.burgers_base import BurgersBase
-from solvers.sgsp_training_data_generator import (
+from solvers.implicit.burgers_base import BaseImplicitEuler
+from solvers.implicit.sgsp_training_data_generator import (
     load_normalisation_stats_csv,
     build_input_stencil_wall_padded,
 )
@@ -169,7 +169,7 @@ def diagnose_sgsp_predictions(
 WARMUP_STEPS = 3
 
 
-class BurgersSGSP(BurgersBase):
+class BurgersSGSP(BaseImplicitEuler):
     """Burgers FEM solver with ANN-predicted SGS closure.
 
     Extends BurgersPure by injecting the trained SGS predictor into the
