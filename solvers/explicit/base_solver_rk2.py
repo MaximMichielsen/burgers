@@ -259,11 +259,7 @@ class BaseRK2:
 
                 # TODO: fix modes
                 if self.simulation_mode == "shakib":
-                    tau = 1.0 / np.sqrt(
-                        (2.0 / self.dt) ** 2
-                        + (2.0 * u_interp / h) ** 2
-                        + (4.0 * nu / h**2) ** 2
-                    )
+                    tau = self.shakib_tau_one(u_e)
                     # strong-form residual, quasi-static closure:
                     # ∂²u/∂x² = 0 exactly for linear elements; ∂u/∂t dropped
                     # (algebraic sub-scale approximation)
@@ -287,6 +283,13 @@ class BaseRK2:
         # TODO: add periodic handling
 
         return residual
+
+    def shakib_tau_one(self, u_e) -> float:
+        """Compute tau based on the Shakib model, taken from Wouter Edeling eq. 6.8"""
+        elemental_average = (u_e[0] + u_e[1]) / 2
+        a = 2 * elemental_average / self.element_size
+        b = 4 * self.viscosity / self.element_size**2
+        return (a**2 + b **2)**(-0.5)
 
     def calculate_lumped_mass(self) -> NDArray:
         """Create lumped mass matrix."""
@@ -728,7 +731,7 @@ if __name__ == "__main__":
     CURRENT_DIR = Path(__file__).parent.parent.parent.resolve()
     path = CURRENT_DIR / "test_suite" / "manufactured_test"
     reynolds = 100
-    nu = 1 / 100
+    nu = 2*np.pi / 100
 
     def manufactured_solution(x, t):
         return np.sin(x) * np.cos(t)
@@ -752,7 +755,7 @@ if __name__ == "__main__":
     )
 
     disc_cfg = DiscretizationConfig(
-        n_nodes_les=18,
+        n_nodes_les=64,
         temporal_refinement=1,
         courant_les=0.1,
         domain_length=2 * np.pi,
@@ -770,10 +773,7 @@ if __name__ == "__main__":
     simulated_solution = solver.solution
     exact_solution = manufactured_solution(x=disc_cfg.mesh_les, t=2 * np.pi)
 
-    print(disc_cfg.mesh_les)
-    print(exact_solution)
 
     plt.plot(disc_cfg.mesh_les, exact_solution)
-
     plt.plot(disc_cfg.mesh_les, simulated_solution)
     plt.show()
