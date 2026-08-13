@@ -208,7 +208,6 @@ class BaseRK2:
 
         return solution_current + self.dt / 2 * (k1 + k2)
 
-    # TODO: calculate residual does not utilize t as of yet
     def calculate_residual(self, nodal_coefficients, t) -> NDArray:
         """
         Assemble R(d) = F - C(d)d - K d - S(d) (VMS term only in 'shakib' mode).
@@ -257,7 +256,6 @@ class BaseRK2:
                 # Forcing
                 local_residual += N * f_interp * gauss_weight * jacobian
 
-                # TODO: fix modes
                 if self.simulation_mode == "shakib":
                     tau = self.shakib_tau_one(u_e)
                     # strong-form residual, quasi-static closure:
