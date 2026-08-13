@@ -20,6 +20,7 @@ from time import perf_counter
 from typing import Callable, Generator, Any
 
 import numpy as np
+from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
 
@@ -207,9 +208,85 @@ class BaseRK2:
 
         return solution_current + self.dt / 2 * (k1 + k2)
 
+    # TODO: calculate residual does not utilize t as of yet
     def calculate_residual(self, nodal_coefficients, t) -> NDArray:
-        """Calculate the RHS residual."""
-        
+        """
+        Assemble R(d) = F - C(d)d - K d - S(d) (VMS term only in 'shakib' mode).
+        Does NOT apply M^-1 -- that's done by the caller (time_march_rk2).
+        """
+        residual = np.zeros_like(nodal_coefficients)
+
+        gauss_points, gauss_weights = self.gauss_legendre(3)
+        if not self.forcing_is_steady:  # wrapper to handle k_2 predicted time-step
+            forcing = (
+                self.forcing(self.mesh, t)
+                if self.forcing_current is not None
+                else np.zeros(self.n_nodes)
+            )
+        else:
+            forcing = (
+                self.forcing_current
+                if self.forcing_current is not None
+                else np.zeros(self.n_nodes)
+            )
+        h = self.element_size
+        nu = self.viscosity
+        dN_dx = self.reference_gradient_basis_functions()
+
+        for element in self.elements:
+            u_e = nodal_coefficients[element]
+            f_e = forcing[element]
+
+            local_residual = np.zeros(2)
+
+            for gauss_point, gauss_weight in zip(gauss_points, gauss_weights):
+                N = self.reference_basis_functions(gauss_point)
+                u_interp = N @ u_e
+                du_dx_interp = dN_dx @ u_e
+                f_interp = N @ f_e
+                jacobian = h / 2
+
+                # Advection
+                local_residual -= (
+                    N * (u_interp * du_dx_interp) * gauss_weight * jacobian
+                )
+
+                # Diffusion
+                local_residual -= dN_dx * (nu * du_dx_interp) * gauss_weight * jacobian
+
+                # Forcing
+                local_residual += N * f_interp * gauss_weight * jacobian
+
+                # TODO: fix modes
+                if self.simulation_mode == "shakib":
+                    tau = 1.0 / np.sqrt(
+                        (2.0 / self.dt) ** 2
+                        + (2.0 * u_interp / h) ** 2
+                        + (4.0 * nu / h**2) ** 2
+                    )
+                    # strong-form residual, quasi-static closure:
+                    # ∂²u/∂x² = 0 exactly for linear elements; ∂u/∂t dropped
+                    # (algebraic sub-scale approximation)
+                    strong_residual = u_interp * du_dx_interp - f_interp
+
+                    # SUPG weighting: u_h ∂N_a/∂x
+                    local_residual -= (
+                        (u_interp * dN_dx)
+                        * tau
+                        * strong_residual
+                        * gauss_weight
+                        * jacobian
+                    )
+
+            residual[element] += local_residual
+
+        if self.boundary_condition_type in ("dirichlet", "fixed"):
+            for node in self.boundary_nodes:
+                residual[node] = 0.0
+
+        # TODO: add periodic handling
+
+        return residual
 
     def calculate_lumped_mass(self) -> NDArray:
         """Create lumped mass matrix."""
@@ -266,6 +343,72 @@ class BaseRK2:
             if self.forcing_current is not None
             else np.zeros_like(self.solution)
         )
+
+    # ------------------------------------------------------------------ #
+    #  Energy and spectral analysis
+    # ------------------------------------------------------------------ #
+
+    def compute_energy(self, solution: NDArray) -> float:
+        """Integrate ½u² over the domain via Gaussian quadrature."""
+        energy = 0.0
+        jacobian = self.element_size / 2
+        points, weights = self.gauss_legendre(2)
+        for element in self.elements:
+            u_e = solution[element]
+            for g_p, g_w in zip(points, weights):
+                energy += (
+                    0.5
+                    * g_w
+                    * abs(jacobian)
+                    * (self.reference_basis_functions(g_p) @ u_e) ** 2
+                )
+        return energy
+
+    def compute_dissipation(self, solution: NDArray) -> float:
+        """Integrate ν(∂u/∂x)² over the domain."""
+        dissipation = 0.0
+        dn_dx = self.reference_gradient_basis_functions()
+        for element in self.elements:
+            u_e = solution[element]
+            dissipation += self.viscosity * self.element_size * (dn_dx @ u_e) ** 2
+        return dissipation
+
+    def compute_energy_spectrum(self, solution: NDArray) -> tuple[NDArray, NDArray]:
+        """Return wavenumbers and spectral energy of the solution."""
+        u_hat = np.fft.fft(solution)
+        wavenumbers = (
+            np.fft.fftfreq(len(solution), d=self.domain_length / len(solution))
+            * 2
+            * np.pi
+        )
+        spectrum = 0.5 * np.abs(u_hat) ** 2 / len(solution)
+        return wavenumbers, spectrum
+
+    @staticmethod
+    def get_positive_spectrum(
+        wavenumbers: NDArray, spectrum: NDArray
+    ) -> tuple[NDArray, NDArray]:
+        """Filter to non-negative wavenumbers."""
+        mask = wavenumbers >= 0
+        return wavenumbers[mask], spectrum[mask]
+
+    # ------------------------------------------------------------------ #
+    #  FEM primitives
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def gauss_legendre(number_of_points: int) -> tuple[Any, Any]:
+        """Return Gauss–Legendre quadrature points and weights."""
+        return np.polynomial.legendre.leggauss(deg=number_of_points)
+
+    @staticmethod
+    def reference_basis_functions(ksi: float) -> NDArray:
+        """Linear basis functions on the reference element [-1, 1]."""
+        return np.array([0.5 * (1 - ksi), 0.5 * (1 + ksi)])
+
+    def reference_gradient_basis_functions(self) -> NDArray:
+        """Gradient of linear basis functions mapped to physical space."""
+        return np.array([-0.5, 0.5]) * (2 / self.element_size)
 
     # ------------------------------------------------------------------ #
     #  Timing
@@ -346,9 +489,192 @@ class BaseRK2:
         with open(self.master_path / "config.json", "w") as file_handle:
             json.dump(config_serializable, file_handle, indent=2)
 
+    def post_processing(self) -> None:
+        """Run post-plotting and post-logging."""
+        self.post_plotting()
+        self.post_logging()
+
+    # ------------------------------------------------------------------ #
+    #  Post-plotting
+    # ------------------------------------------------------------------ #
+
+    def post_plotting(self, show_plot: bool = False) -> None:
+        """Plot solution and convergence diagnostics; save to disk."""
+        sgs_label = {
+            "dns": "DNS",
+            "les": "LES-VMS",
+            "sgsp": "LES-SGSP",
+            "avc": "LES-AVC",
+        }.get(self.simulation_mode, self.simulation_mode)
+
+        fig = plt.figure(figsize=(12, 6))
+        gs = fig.add_gridspec(2, 2)
+
+        ax0 = fig.add_subplot(gs[0, :])
+        ax0.plot(
+            self.mesh,
+            self.solution,
+            color="royalblue",
+            linestyle="-",
+            linewidth=2.0 if self.simulation_mode == "dns" else 1.0,
+            marker="none" if self.simulation_mode == "dns" else ".",
+            label="Resolved solution",
+        )
+        ax0.plot(
+            self.mesh,
+            self.initial_condition,
+            color="grey",
+            linestyle="--",
+            label="Initial solution",
+        )
+        ax0.set_xlabel(r"$x$")
+        ax0.set_ylabel("Velocity")
+        ax0.grid(True)
+        ax0.legend()
+        ax0.set_title(f"Solution  [Mode: {sgs_label}]")
+
+        ax1 = fig.add_subplot(gs[1, 0])
+        ax1.plot(
+            self.time_steps[: len(self.energy_history)],
+            self.energy_history,
+            color="red",
+            label="Total energy",
+        )
+        ax1.plot(
+            self.time_steps[: len(self.dissipation_history)],
+            self.dissipation_history,
+            color="purple",
+            label="Dissipation",
+        )
+        ax1.set_xlabel("Time step")
+        ax1.set_title("Energy and dissipation evolution")
+        ax1.grid(True)
+        ax1.legend()
+
+        ax2 = fig.add_subplot(gs[1, 1])
+        wn, sp = self.get_positive_spectrum(
+            *self.compute_energy_spectrum(self.solution)
+        )
+        ax2.loglog(wn[1:], sp[1:], marker=".", color="orangered")
+        ax2.set_xlabel("Wavenumber k")
+        ax2.set_ylabel("E(k)")
+        ax2.set_title("Spectral analysis (final state)")
+        ax2.grid(True)
+
+        plt.tight_layout()
+        plt.savefig(
+            self.master_path / f"post_plotting_{self.simulation_mode}.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+        print(
+            f"Post-simulation plot saved to: {self.master_path / f'post_plotting_{self.simulation_mode}.png'}"
+        )
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)
+
     # ------------------------------------------------------------------ #
     #  Logging
     # ------------------------------------------------------------------ #
+
+    def _format_config_for_display(self) -> dict[str, str]:
+        """Format solver state for display in logs and console output."""
+        if callable(self.forcing):
+            forcing_str = f"{self.forcing.__name__} (from {getattr(self.forcing, '__module__', '')})"
+        elif self.forcing is None:
+            forcing_str = "None"
+        else:
+            forcing_str = f"array, shape {np.array(self.forcing).shape}"
+
+        snapshots_str = (
+            f"{len(self.requested_snapshots)} snapshots, first 5: "
+            f"{[round(float(t), 4) for t in self.requested_snapshots[:5]]}"
+            if self.requested_snapshots is not None
+            else "None"
+        )
+
+        return {
+            "domain_timespan": f"{self.domain_timespan:.6g}",
+            "domain_length": f"{self.domain_length:.6g}",
+            "dt": f"{self.dt:.4e}",
+            "n_time_steps": str(self._n_time_steps),
+            "viscosity": f"{self.viscosity:.4e}",
+            "n_nodes": str(self.n_nodes),
+            "n_elements": str(self.n_elements),
+            "element_size": f"{self.element_size:.4e}",
+            "boundary_condition_type": self.boundary_condition_type,
+            "boundary_condition_value": str(self.boundary_condition_value),
+            "snapshot_factor": str(self.snapshot_factor),
+            "requested_snapshots": snapshots_str,
+            "forcing": forcing_str,
+            "forcing_is_steady": str(self.forcing_is_steady),
+            "problem_name": self.problem_name,
+        }
+
+    def print_configuration(self) -> None:
+        """Print run configuration in a clean tabular format."""
+        W = 72
+        COL = 30
+
+        def _row(label: str, value: str) -> None:
+            print(f"  {label:<{COL}} {value}")
+
+        def _sep(char: str = "─") -> None:
+            print(char * W)
+
+        def _section(title: str) -> None:
+            print()
+            print(f"  {title}")
+            _sep()
+
+        _sep("═")
+        print(
+            f"  Solver Configuration  ·  mode: {self.simulation_mode}  ·  Time-Marching: RK2"
+        )
+        _sep("═")
+
+        # --- Mesh ---
+        _section("Mesh")
+        _row("nodes", str(self.n_nodes))
+        _row("elements", str(self.n_elements))
+        _row("domain length", f"{self.domain_length:.4g}")
+        _row("element size h", f"{self.element_size:.4e}")
+
+        # --- Time ---
+        _section("Time")
+        _row("timespan", f"{self.domain_timespan:.4g}")
+        _row("dt", f"{self.dt:.4e}")
+        _row("total steps", str(self._n_time_steps))
+        if self.requested_snapshots is not None:
+            n_ext = len(self.requested_snapshots)
+            first_five = "  ".join(f"{t:.4f}" for t in self.requested_snapshots[:5])
+            _row("snapshots", str(n_ext))
+            _row("  first 5 times", first_five)
+
+        # --- Physics ---
+        _section("Physics")
+        _row("viscosity ν", f"{self.viscosity:.4e}")
+        if callable(self.forcing):
+            forcing_str = f"{self.forcing.__name__} (from {getattr(self.forcing, '__module__', '')})"
+        elif self.forcing is None:
+            forcing_str = "None"
+        else:
+            forcing_str = f"array, shape {np.array(self.forcing).shape}"
+        _row("forcing", forcing_str)
+        _row("forcing steady", str(self.forcing_is_steady))
+
+        # --- Boundary conditions ---
+        _section("Boundary conditions")
+        _row("type", self.boundary_condition_type)
+        _row("value", str(self.boundary_condition_value))
+
+        # --- Paths ---
+        _section("Paths")
+        _row("output", str(self.master_path))
+
+        _sep("═")
 
     def _setup_logger(self, suppress_file_logging: bool = False) -> logging.Logger:
         """Initialize a file logger for this run."""
@@ -367,3 +693,87 @@ class BaseRK2:
         logger_.propagate = False
         logging.getLogger("matplotlib").setLevel(logging.WARNING)
         return logger_
+
+    def post_logging(self) -> None:
+        """Write a structured run summary to the log file."""
+        self.logger.info("=" * 60)
+        self.logger.info("RUN COMPLETE — id: %s", self.run_id)
+        self.logger.info("Time Integration: Second Order Implicit Euler")
+        self.logger.info("Simulation mode: %s", self.simulation_mode)
+        self.logger.info("-" * 40)
+
+        for key, value in self._format_config_for_display().items():
+            self.logger.info("  %-30s %s", key, value)
+
+        self.logger.info("-" * 40)
+
+        if self.timings_performance:
+            total = self.timings_performance.get("total_simulation") or sum(
+                v
+                for k, v in self.timings_performance.items()
+                if k != "total_simulation"
+            )
+            for phase, time_elapsed in sorted(self.timings_performance.items()):
+                if phase != "total_simulation":
+                    pct = (100 * time_elapsed / total) if total > 0 else float("nan")
+                    self.logger.info(
+                        "  %-25s %.4fs (%5.1f%%)", phase, time_elapsed, pct
+                    )
+            self.logger.info("  %-25s %.4fs", "TOTAL", total)
+        self.logger.info("=" * 60)
+
+
+if __name__ == "__main__":
+    # Verify solver using MMS, u(x,t) = sin(x) cos(t)
+    CURRENT_DIR = Path(__file__).parent.parent.parent.resolve()
+    path = CURRENT_DIR / "test_suite" / "manufactured_test"
+    reynolds = 100
+    nu = 1 / 100
+
+    def manufactured_solution(x, t):
+        return np.sin(x) * np.cos(t)
+
+    def manufactured_forcing(x, t):
+        a = -np.sin(x) * np.sin(t)
+        b = np.sin(x) * np.cos(x) * (np.cos(t)) ** 2
+        c = nu * np.sin(x) * np.cos(t)
+        return a + b + c
+
+    mms_problem = Problem(
+        name="manufactured_problem",
+        domain_length=2 * np.pi,
+        domain_timespan=2 * np.pi,
+        reynolds=100,
+        initial_condition=np.sin,
+        forcing=manufactured_forcing,
+        forcing_is_steady=False,
+        boundary_condition_type="fixed",
+        boundary_condition_value=0,
+    )
+
+    disc_cfg = DiscretizationConfig(
+        n_nodes_les=18,
+        temporal_refinement=1,
+        courant_les=0.1,
+        domain_length=2 * np.pi,
+    )
+
+    solver = BaseRK2(
+        problem=mms_problem,
+        disc_cfg=disc_cfg,
+        simulation_mode="shakib",
+        master_path=path,
+    )
+
+    solver.run_simulation()
+
+    simulated_solution = solver.solution
+    exact_solution = manufactured_solution(x=disc_cfg.mesh_les, t=2 * np.pi)
+
+    print(disc_cfg.mesh_les)
+    print(exact_solution)
+
+    plt.plot(disc_cfg.mesh_les, exact_solution)
+
+    plt.plot(disc_cfg.mesh_les, simulated_solution)
+    plt.show()
