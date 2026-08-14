@@ -76,6 +76,13 @@ def build_plot_configs(
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(
+            data_path=paths.les_shakib_one_data,
+            label="LES - Shakib 1",
+            color="royalblue",
+            marker="d",
+            mesh=disc_cfg.mesh_les,
+        ),
+        VelocityPlotConfig(
             data_path=paths.les_nm_data,
             label="LES - no model",
             color="gold",
@@ -386,7 +393,7 @@ def create_velocity_plot_configs(
     no_model_config = VelocityPlotConfig(
         data_path=paths.les_nm_data,
         label="LES - No SGS Model",
-        color="gold",
+        color="tab:orange",
         marker="x",
         mesh=disc_cfg.mesh_les,
     )
@@ -394,8 +401,16 @@ def create_velocity_plot_configs(
     analytical_config = VelocityPlotConfig(
         data_path=paths.les_a_data,
         label="LES - A",
-        color="tab:orange",
+        color="gold",
         marker="^",
+        mesh=disc_cfg.mesh_les,
+    )
+
+    shakib_config = VelocityPlotConfig(
+        data_path=paths.les_shakib_one_data,
+        label="LES - Shakib 1",
+        color="royalblue",
+        marker="d",
         mesh=disc_cfg.mesh_les,
     )
 
@@ -430,6 +445,7 @@ def create_velocity_plot_configs(
         projection_config,
         no_model_config,
         analytical_config,
+        shakib_config,
         sgsp_config,
         avcg_config,
         avc_gl_config,

@@ -15,7 +15,7 @@ from ml.corrector_training.online_trainer import (
 from ml.ml_agents.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
-from solvers.implicit.burgers_base import BaseImplicitEuler
+from solvers.implicit.base_solver_implicit_euler import BaseImplicitEuler
 from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
 from utils.plotting.dissipation_evolution import plot_dissipation_comparison
 from utils.plotting.energy_evolution import plot_energy_comparison
@@ -30,7 +30,7 @@ from utils.plotting.velocity_profiles import (
     plot_solution_comparison,
     create_velocity_plot_configs,
 )
-from solvers.implicit.burgers_avc import BurgersAVC
+from solvers.implicit.avc_augment_implicit_euler import AVCSolverImplicit
 
 
 CURRENT_DIR = Path(__file__).parent.resolve()
@@ -179,7 +179,7 @@ if __name__ == "__main__":
         n_wavenumber_bins=(n_nodes_les + 1) // 2,
         correction_mode="global",
     )
-    solver_avc_global = BurgersAVC(
+    solver_avc_global = AVCSolverImplicit(
         problem,
         disc_cfg,
         "avc",
@@ -251,7 +251,7 @@ if __name__ == "__main__":
             n_wavenumber_bins=(n_nodes_les + 1) // 2,
             correction_mode="local",
         )
-        solver_avc_gl_hybrid = BurgersAVC(
+        solver_avc_gl_hybrid = AVCSolverImplicit(
             problem,
             disc_cfg,
             "avc",

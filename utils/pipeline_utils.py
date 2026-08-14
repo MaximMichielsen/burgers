@@ -6,7 +6,7 @@ import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from constants import DNS_FOLDER, RUNS_FOLDER
+from constants import DNS_FOLDER, RUNS_FOLDER, LES_SHAKIB_ONE_SAVE_PATH
 from dns_scripts.dns_caching import (
     DNSCacheKey,
     resolve_dns_cache,
@@ -22,7 +22,7 @@ from ml.ml_agents.predictor import (
     train_predictor,
 )
 from ml.ml_agents.solver_configs import SGSPConfig
-from solvers.implicit.burgers_sgsp import BurgersSGSP
+from solvers.implicit.sgsp_augment_implicit_euler import SGSPSolverImplicit
 
 
 from dataclasses import dataclass
@@ -200,7 +200,7 @@ def run_sgsp_coupled_solver(
     sgsp_cfg: SGSPConfig,
 ) -> None:
     """Run the LES solver with ANN-predicted SGS closure."""
-    solver = BurgersSGSP(
+    solver = SGSPSolverImplicit(
         problem,
         disc_cfg,
         "sgsp",
@@ -220,6 +220,7 @@ class RunPaths:
     solver_data: Path
     dns_data: Path | None
     les_a_data: Path
+    les_shakib_one_data: Path
     les_nm_data: Path
     sgsp_data: Path
     avc_data: Path
@@ -241,6 +242,9 @@ class RunPaths:
             solver_data=master_path / SOLVER_DATA_FOLDER,
             dns_data=None,
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
+            les_shakib_one_data=master_path
+            / SOLVER_DATA_FOLDER
+            / LES_SHAKIB_ONE_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
             sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,
             avc_gg_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH / "global",

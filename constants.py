@@ -37,9 +37,7 @@ BLOWUP_BUFFER_SIZE: int = 5000
 # ---------------------------------------------------------------------------
 
 AVC_HIDDEN_UNITS = 64
-
 AVC_GLOBAL_OUTPUT_UNITS = 1
-
 
 # ---------------------------------------------------------------------------
 # Path names
@@ -54,6 +52,7 @@ A_PRIORI_FOLDER: str = "apriori"
 
 DNS_FOLDER: str = "DNS"
 LES_ANALYTICAL_SAVE_PATH: str = "LES_A"
+LES_SHAKIB_ONE_SAVE_PATH: str = "LES_SHAKIB_ONE"
 LES_NO_MODEL_SAVE_PATH: str = "LES_NM"
 LES_SGSP_SAVE_PATH: str = "LES_SGSP"
 LES_AVC_SAVE_PATH: str = "LES_AVC"

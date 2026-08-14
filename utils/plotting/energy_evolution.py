@@ -113,6 +113,7 @@ def plot_energy_comparison(
         ("DNS", paths.dns_data, "gray", "-", 1.8),
         ("Projection", paths.projection, "lightgreen", "-", 1.2),
         ("LES - A", paths.les_a_data, "tab:orange", "--", 1.4),
+        ("LES - Shakib 1", paths.les_shakib_one_data, "royalblue", "--", 1.4),
         ("LES - NM", paths.les_nm_data, "gold", "-.", 1.4),
         ("LES - SGSP", paths.sgsp_data, "crimson", "-", 1.8),
         ("LES - AVCG", paths.avc_data / "global", "royalblue", "-", 1.8),

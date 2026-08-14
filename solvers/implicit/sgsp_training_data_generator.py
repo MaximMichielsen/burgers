@@ -31,7 +31,7 @@ from tqdm import tqdm
 
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem, Problems
-from solvers.implicit.burgers_base import BaseImplicitEuler
+from solvers.implicit.base_solver_implicit_euler import BaseImplicitEuler
 
 
 WARMUP_STEPS: int = 3

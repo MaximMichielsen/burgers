@@ -14,7 +14,6 @@ from utils.plotting.energy_evolution import plot_energy_comparison
 from utils.pipeline_utils import (
     run_dns,
     resolve_pathing,
-    load_manual_models,
 )
 from utils.plotting.velocity_profiles import (
     plot_solution_comparison,
@@ -46,22 +45,23 @@ disc_cfg = DiscretizationConfig(
 paths = resolve_pathing(problem.name, CURRENT_DIR)
 
 if __name__ == "__main__":
-    # --------------------------------------- DNS & SGSP data --------------------------------------- #
+    # ----------------------------------------- DNS data --------------------------------------------- #
     DNS_CACHE_ROOT = CURRENT_DIR / "dns_cache"
     run_dns(DNS_CACHE_ROOT, problem, disc_cfg, paths)
 
-    # --------------------------------------- Bare LES solvers --------------------------------------- #
-    les_run = BaseRK2(problem, disc_cfg, "shakib", paths.les_a_data)
-    les_run.run_simulation()
+    # ----------------------------------------- LES solvers ------------------------------------------ #
+    solver_shakib_one = BaseRK2(problem, disc_cfg, "shakib_one", paths.les_shakib_one_data)
+    solver_shakib_one.run_simulation()
+    solver_shakib_one.post_processing()
 
-    no_model_run = BaseRK2(problem, disc_cfg, "no_model", paths.les_nm_data)
-    no_model_run.run_simulation()
+    solver_no_model = BaseRK2(problem, disc_cfg, "no_model", paths.les_nm_data)
+    solver_no_model.run_simulation()
+    solver_no_model.post_processing()
 
     # -------------------------------------- Plotting --------------------------------------- #
     plot_solution_comparison(
         configs=create_velocity_plot_configs(paths, disc_cfg),
         output_path=paths.master,
-        filename="comparison_dns_sgsp.png",
     )
 
     plot_energy_comparison(

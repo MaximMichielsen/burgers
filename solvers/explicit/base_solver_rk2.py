@@ -35,7 +35,7 @@ class BaseRK2:
     Explicit time marching (RK2) is used with mass-lumping."""
 
     # TODO: add valid sgs models modes.
-    _VALID_SIMULATION_MODES: frozenset[str] = frozenset({"dns", "no_model", "shakib"})
+    _VALID_SIMULATION_MODES: frozenset[str] = frozenset({"dns", "no_model", "shakib_one"})
     _VALID_BC_TYPES: frozenset[str] = frozenset({"dirichlet", "fixed", "periodic"})
 
     def __init__(
@@ -185,8 +185,6 @@ class BaseRK2:
             self.write_config_to_json()
             self.write_solution_to_csv()
 
-    # TODO: All outputting needs to occur at the initial condition and post-step for the complete picture
-
     def advance_time_step(self) -> None:
         """Advance the solution by one time step: U^{n+1} ← U^n."""
         self.resolve_current_forcing()
@@ -256,8 +254,8 @@ class BaseRK2:
                 # Forcing
                 local_residual += N * f_interp * gauss_weight * jacobian
 
-                if self.simulation_mode == "shakib":
-                    tau = self.shakib_tau_one(u_e)
+                if self.simulation_mode == "shakib_one":
+                    tau = self.tau_shakib_one(u_e)
                     # strong-form residual, quasi-static closure:
                     # ∂²u/∂x² = 0 exactly for linear elements; ∂u/∂t dropped
                     # (algebraic sub-scale approximation)
@@ -282,7 +280,7 @@ class BaseRK2:
 
         return residual
 
-    def shakib_tau_one(self, u_e) -> float:
+    def tau_shakib_one(self, u_e) -> float:
         """Compute tau based on the Shakib model, taken from Wouter Edeling eq. 6.8"""
         elemental_average = (u_e[0] + u_e[1]) / 2
         a = 2 * elemental_average / self.element_size
@@ -699,7 +697,7 @@ class BaseRK2:
         """Write a structured run summary to the log file."""
         self.logger.info("=" * 60)
         self.logger.info("RUN COMPLETE — id: %s", self.run_id)
-        self.logger.info("Time Integration: Second Order Implicit Euler")
+        self.logger.info("Time Integration: RK2")
         self.logger.info("Simulation mode: %s", self.simulation_mode)
         self.logger.info("-" * 40)
 
@@ -762,7 +760,7 @@ if __name__ == "__main__":
     solver = BaseRK2(
         problem=mms_problem,
         disc_cfg=disc_cfg,
-        simulation_mode="shakib",
+        simulation_mode="shakib_one",
         master_path=path,
     )
 
