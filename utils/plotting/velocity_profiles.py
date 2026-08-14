@@ -156,7 +156,21 @@ def create_velocity_plot_configs(
         VelocityPlotConfig(
             data_path=paths.les_shakib_one_data,
             label="LES - Shakib 1",
+            color="dodgerblue",
+            marker="d",
+            mesh=disc_cfg.mesh_les,
+        ),
+        VelocityPlotConfig(
+            data_path=paths.les_shakib_two_data,
+            label="LES - Shakib 2",
             color="royalblue",
+            marker="d",
+            mesh=disc_cfg.mesh_les,
+        ),
+        VelocityPlotConfig(
+            data_path=paths.les_shakib_three_data,
+            label="LES - Shakib 3",
+            color="darkblue",
             marker="d",
             mesh=disc_cfg.mesh_les,
         ),
@@ -170,7 +184,7 @@ def create_velocity_plot_configs(
         VelocityPlotConfig(
             data_path=paths.avc_data / "global",
             label="LES - AVC (global)",
-            color="royalblue",
+            color="mediumblue",
             linestyle="--",
             marker="s",
             mesh=disc_cfg.mesh_les,

@@ -6,7 +6,13 @@ import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from constants import DNS_FOLDER, RUNS_FOLDER, LES_SHAKIB_ONE_SAVE_PATH
+from constants import (
+    DNS_FOLDER,
+    RUNS_FOLDER,
+    LES_SHAKIB_ONE_SAVE_PATH,
+    LES_SHAKIB_TWO_SAVE_PATH,
+    LES_SHAKIB_THREE_SAVE_PATH,
+)
 from dns_scripts.dns_caching import (
     DNSCacheKey,
     resolve_dns_cache,
@@ -221,6 +227,8 @@ class RunPaths:
     dns_data: Path | None
     les_a_data: Path
     les_shakib_one_data: Path
+    les_shakib_two_data: Path
+    les_shakib_three_data: Path
     les_nm_data: Path
     sgsp_data: Path
     avc_data: Path
@@ -245,6 +253,12 @@ class RunPaths:
             les_shakib_one_data=master_path
             / SOLVER_DATA_FOLDER
             / LES_SHAKIB_ONE_SAVE_PATH,
+            les_shakib_two_data=master_path
+            / SOLVER_DATA_FOLDER
+            / LES_SHAKIB_TWO_SAVE_PATH,
+            les_shakib_three_data=master_path
+            / SOLVER_DATA_FOLDER
+            / LES_SHAKIB_THREE_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
             sgsp_data=master_path / SOLVER_DATA_FOLDER / LES_SGSP_SAVE_PATH,
             avc_gg_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH / "global",

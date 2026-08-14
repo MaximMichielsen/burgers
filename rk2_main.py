@@ -56,6 +56,18 @@ if __name__ == "__main__":
     solver_shakib_one.run_simulation()
     solver_shakib_one.post_processing()
 
+    solver_shakib_two = BaseRK2(
+        problem, disc_cfg, "shakib_two", paths.les_shakib_two_data
+    )
+    solver_shakib_two.run_simulation()
+    solver_shakib_two.post_processing()
+
+    solver_shakib_three = BaseRK2(
+        problem, disc_cfg, "shakib_three", paths.les_shakib_three_data
+    )
+    solver_shakib_three.run_simulation()
+    solver_shakib_three.post_processing()
+
     solver_no_model = BaseRK2(problem, disc_cfg, "no_model", paths.les_nm_data)
     solver_no_model.run_simulation()
     solver_no_model.post_processing()
@@ -69,7 +81,6 @@ if __name__ == "__main__":
     plot_energy_comparison(
         paths=paths,
         output_path=paths.master,
-        viscosity=problem.viscosity,
         domain_length=problem.domain_length,
     )
 

@@ -36,7 +36,7 @@ class BaseRK2:
 
     # TODO: add valid sgs models modes.
     _VALID_SIMULATION_MODES: frozenset[str] = frozenset(
-        {"dns", "no_model", "shakib_one"}
+        {"dns", "no_model", "shakib_one", "shakib_two", "shakib_three"}
     )
     _VALID_BC_TYPES: frozenset[str] = frozenset({"dirichlet", "fixed", "periodic"})
 
@@ -256,8 +256,13 @@ class BaseRK2:
                 # Forcing
                 local_residual += N * f_interp * gauss_weight * jacobian
 
-                if self.simulation_mode == "shakib_one":
-                    tau = self.tau_shakib_one(u_e)
+                if self.simulation_mode in ("shakib_one", "shakib_two", "shakib_three"):
+                    if self.simulation_mode == "shakib_one":
+                        tau = self.tau_shakib_one(u_e)
+                    elif self.simulation_mode == "shakib_two":
+                        tau = self.tau_shakib_two(u_e)
+                    elif self.simulation_mode == "shakib_three":
+                        tau = self.tau_shakib_three(u_e)
                     # strong-form residual, quasi-static closure:
                     # ∂²u/∂x² = 0 exactly for linear elements; ∂u/∂t dropped
                     # (algebraic sub-scale approximation)
@@ -285,9 +290,33 @@ class BaseRK2:
     def tau_shakib_one(self, u_e) -> float:
         """Compute tau based on the Shakib model, taken from Wouter Edeling eq. 6.8"""
         elemental_average = (u_e[0] + u_e[1]) / 2
-        a = 2 * elemental_average / self.element_size
-        b = 4 * self.viscosity / self.element_size**2
+        h = self.element_size
+        a = 2 * elemental_average / h
+        b = 4 * self.viscosity / h**2
         return (a**2 + b**2) ** (-0.5)
+
+    # TODO: what is the a in eq 6.9? i assumed this is the same term as the eq 6.8
+    def tau_shakib_two(self, u_e) -> float:
+        """Compute tau based on the Shakib model, taken from Wouter Edeling eq. 6.9"""
+        elemental_average = (u_e[0] + u_e[1]) / 2
+        h = self.element_size
+        a = 2 * elemental_average / h
+        b = 4 * self.viscosity / h**2
+        return (a**2 + 9 * b**2) ** (-0.5)
+
+    def tau_shakib_three(
+        self, u_e, alpha: float = 0.099, beta: float = 9.39, gamma: float = 2.16
+    ) -> float:
+        """Compute tau based on the Shakib model, taken from Wouter Edeling eq. 6.10"""
+        h = self.element_size
+        elemental_average = (u_e[0] + u_e[1]) / 2
+        elemental_gradient = (u_e[1] - u_e[0]) / h
+
+        a = alpha * elemental_average / h
+        b = beta * self.viscosity / h**2
+        c = gamma * elemental_gradient
+
+        return (a**2 + b**2 + c**2) ** (-0.5)
 
     def calculate_lumped_mass(self) -> NDArray:
         """Create lumped mass matrix."""
@@ -762,7 +791,7 @@ if __name__ == "__main__":
     solver = BaseRK2(
         problem=mms_problem,
         disc_cfg=disc_cfg,
-        simulation_mode="shakib_one",
+        simulation_mode="shakib_two",
         master_path=path,
     )
 
