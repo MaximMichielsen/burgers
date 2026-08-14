@@ -5,6 +5,7 @@ Architecture (Pusuluri 2021 §3.3.2):
     Optimizer: NAdam | Loss: MSE | Early-stop metric: val MAE
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +27,17 @@ from constants import (
     SGSP_OUTPUT_UNITS,
 )
 from ml.ml_agents.before_rk2.a_priori_verification import run_apriori_verification
+
+
+@dataclass(frozen=True)
+class SGSPConfig:
+    sgsp_model_path: Path
+    normalization_path: Path
+    blown_up_path: Path
+    clip_pusuluri: bool = True
+    clip_rajampeta: bool = False
+    sigma_multiplier: float = 3.0
+    turn_off_predictor: bool = False
 
 
 # ---------------------------------------------------------------------------

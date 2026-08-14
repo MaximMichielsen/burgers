@@ -35,10 +35,9 @@ import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-from ml.ml_agents.before_rk2.corrector import AVController, load_corrector
+from ml.ml_agents.corrector import AVCConfig, AVController, load_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
-from ml.ml_agents.before_rk2.solver_configs import AVCConfig
 from solvers.explicit.base_solver_rk2 import BaseRK2
 
 logger = logging.getLogger(__name__)
@@ -54,35 +53,40 @@ class AVCSolverRK2(BaseRK2):
     def __init__(
         self,
         problem: Problem,
-        disc_cfg: DiscretizationConfig,
+        disc_config: DiscretizationConfig,
+        avc_config: AVCConfig,
         simulation_mode: str,
         master_path: Path,
-        avc_cfg: AVCConfig,
         snapshot_factor: int = 1,
     ) -> None:
         super().__init__(
             problem,
-            disc_cfg,
+            disc_config,
             simulation_mode,
             master_path,
             snapshot_factor,
         )
 
-        self._avc_cfg = avc_cfg
-
-        self._avc_model_path: Path = avc_cfg.avc_model_path
-        self.corrector: AVController = load_corrector(avc_cfg.avc_model_path)
+        self._avc_cfg = avc_config
+        self._n_wavenumber_bins: int = avc_config.n_wavenumber_bins
+        self._avc_model_path: Path = avc_config.avc_model_path
+        self.corrector: AVController = load_corrector(avc_config.avc_model_path)
         self.corrector.eval()
 
         self.av_correction: float | NDArray = 0.0
         self.av_history: list[float | NDArray] = []
         self.energy_drain_history: list[float] = []
-        self.sgsp_injection_history: list[float] = []
-
-        self._n_wavenumber_bins: int = (self.n_nodes + 1) // 2
-        self._current_element: tuple[int, int] = (0, 1)
 
         self._step_counter: int = 0
+
+    def resolve_viscosity(self) -> float:
+        """Resolve current viscosity to use in core loop."""
+        if self._avc_cfg.output_scope == "global" and isinstance(
+            self.av_correction, float
+        ):
+            return self.viscosity + self.av_correction
+
+        return self.viscosity
 
     def advance_time_step(self) -> None:
         """Query policy every n_skip_steps, then advance one LES step.
@@ -90,9 +94,8 @@ class AVCSolverRK2(BaseRK2):
         For AVCTrainerConfig, av_correction is driven externally by
         BurgersAVCEnvironment.step() and must not be overwritten here.
         """
-        if not self._avc_cfg.externally_driven:
-            if self._step_counter % self._avc_cfg.n_skip_steps == 0:
-                self.av_correction = self._calc_avc_correction()
+        if self._step_counter % self._avc_cfg.n_skip_steps == 0:
+            self.av_correction = self._calc_avc_correction()
 
         self._step_counter += 1
         super().advance_time_step()
@@ -154,52 +157,6 @@ class AVCSolverRK2(BaseRK2):
             return float(alpha_tensor.item())
         else:
             return alpha_tensor.numpy().astype(np.float64)
-
-    # ------------------------------------------------------------------ #
-    #  AVC-adjusted elemental integrands (eq. 2.7)
-    # ------------------------------------------------------------------ #
-
-    def _residual_integrand(
-        self,
-        i: int,
-        basis: NDArray,
-        gradient_basis: NDArray,
-        f: dict[str, float],
-        mid: dict[str, float],
-        f_interp: float = 0.0,
-    ) -> float:
-        """Weak-form residual integrand with effective viscosity νeff = ν + α."""
-        if self.corrector.correction_mode == "global" or isinstance(
-            self.av_correction, float
-        ):
-            av_local = float(self.av_correction)
-        else:
-            av_local = float(basis @ self.av_correction[list(self._current_element)])
-        time_derivative = basis[i] * (f["u_k"] - f["u_n"]) / self.dt
-        diffusion = (self.viscosity + av_local) * mid["du_mid"] * gradient_basis[i]
-        advection = basis[i] * mid["u_mid"] * mid["du_mid"]
-        forcing = basis[i] * f_interp
-        return time_derivative + diffusion + advection - forcing
-
-    def _jacobian_integrand(
-        self,
-        i: int,
-        j: int,
-        basis: NDArray,
-        gradient_basis: NDArray,
-        f: dict[str, float],
-    ) -> float:
-        """Jacobian integrand with effective viscosity νeff = ν + α."""
-        if self.corrector.correction_mode == "global" or isinstance(
-            self.av_correction, float
-        ):
-            av_local = float(self.av_correction)
-        else:
-            av_local = float(basis @ self.av_correction[list(self._current_element)])
-        mass = basis[i] * basis[j] / self.dt
-        stiffness = (self.viscosity + av_local) * gradient_basis[i] * gradient_basis[j]
-        advection = basis[i] * (basis[j] * f["du_k"] + f["u_k"] * gradient_basis[j])
-        return mass + 0.5 * (stiffness + advection)
 
     # ------------------------------------------------------------------ #
     #  Energy drain
@@ -322,13 +279,13 @@ class AVCSolverRK2(BaseRK2):
         axes[0].set_xlabel("Time")
         y_label = (
             r"$\alpha(t)$"
-            if self._avc_cfg.correction_mode == "global"
+            if self._avc_cfg.output_scope == "global"
             else r"$\alpha_{\text{mean}}(t)$"
         )
         axes[0].set_ylabel(y_label)
         title = (
             "Global AV correction applied by corrector policy"
-            if self._avc_cfg.correction_mode == "global"
+            if self._avc_cfg.output_scope == "global"
             else "Mean AV correction applied by local corrector policy"
         )
         axes[0].set_title(title)
@@ -351,7 +308,7 @@ class AVCSolverRK2(BaseRK2):
 
         Skipped silently if correction_mode is global or av_history is empty.
         """
-        if self._avc_cfg.correction_mode == "global":
+        if self._avc_cfg.output_scope == "global":
             return
         if not self.av_history:
             logger.warning("plot_local_avc_spatial: no AV history to plot, skipping.")

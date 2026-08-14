@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -5,6 +6,17 @@ import torch.nn as nn
 from torch import Tensor
 
 from constants import AVC_HIDDEN_UNITS, AVC_GLOBAL_OUTPUT_UNITS
+
+
+@dataclass(frozen=True)
+class AVCConfig:
+    avc_model_path: Path
+    n_wavenumber_bins: int
+    correction_mode: str
+    input_mode: str = "global"
+    simulation_mode: str = "avc"
+    n_skip_steps: int = 5
+    externally_driven: bool = False
 
 
 class AVController(nn.Module):
@@ -37,6 +49,7 @@ class AVController(nn.Module):
             nn.Linear(AVC_HIDDEN_UNITS, self.output_dim),
         )
 
+    # todo: just return raw output?
     def forward(self, state_input: Tensor) -> Tensor:
         """Sigmoid-bounded output scaled to physical range [0, output_scale]."""
         raw_output = self.network(state_input)

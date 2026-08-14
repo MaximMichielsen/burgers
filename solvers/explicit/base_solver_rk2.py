@@ -46,7 +46,7 @@ class BaseRK2:
     def __init__(
         self,
         problem: Problem,
-        disc_cfg: DiscretizationConfig,
+        disc_config: DiscretizationConfig,
         simulation_mode: str,
         master_path: Path,
         tau_model: str | None = None,
@@ -81,7 +81,7 @@ class BaseRK2:
         self.simulation_time_elapsed: float = t_start
         self.domain_length: float = problem.domain_length
         self._dt: float = (
-            disc_cfg.dt_dns if simulation_mode == "dns" else disc_cfg.dt_les
+            disc_config.dt_dns if simulation_mode == "dns" else disc_config.dt_les
         )
         self.dt, self._n_time_steps = compute_adjusted_dt(
             self._dt, self.domain_timespan
@@ -93,7 +93,9 @@ class BaseRK2:
 
         # Mesh
         self.n_nodes: int = (
-            disc_cfg.n_nodes_dns if simulation_mode == "dns" else disc_cfg.n_nodes_les
+            disc_config.n_nodes_dns
+            if simulation_mode == "dns"
+            else disc_config.n_nodes_les
         )
         self.n_elements: int = self.n_nodes - 1
         self.nodes: NDArray = np.arange(0, self.n_nodes)
@@ -156,7 +158,7 @@ class BaseRK2:
         self.energy_history: list = []
         self.dissipation_history: list = []
         self.logger = self._setup_logger(
-            suppress_file_logging=disc_cfg.suppress_file_logging
+            suppress_file_logging=disc_config.suppress_file_logging
         )
 
     # ------------------------------------------------------------------ #
@@ -219,6 +221,10 @@ class BaseRK2:
 
         return solution_current + self.dt / 2 * (k1 + k2)
 
+    def resolve_viscosity(self) -> float:
+        """Use for Augmented with AVC."""
+        return self.viscosity
+
     def calculate_residual(self, nodal_coefficients, t) -> NDArray:
         """
         Assemble R(d) = F - C(d)d - K d - S(d) (VMS term only in 'shakib' mode).
@@ -240,7 +246,7 @@ class BaseRK2:
                 else np.zeros(self.n_nodes)
             )
         h = self.element_size
-        nu = self.viscosity
+        nu = self.resolve_viscosity()
         dN_dx = self.reference_gradient_basis_functions()
 
         for element in self.elements:
@@ -803,7 +809,7 @@ if __name__ == "__main__":
 
     solver = BaseRK2(
         problem=mms_problem,
-        disc_cfg=disc_cfg,
+        disc_config=disc_cfg,
         simulation_mode="shakib_two",
         master_path=path,
     )

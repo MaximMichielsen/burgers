@@ -38,6 +38,7 @@ BLOWUP_BUFFER_SIZE: int = 5000
 
 AVC_HIDDEN_UNITS = 64
 AVC_GLOBAL_OUTPUT_UNITS = 1
+AVC_ADDITIONAL_INPUT_DIMENSIONS = 2
 
 # ---------------------------------------------------------------------------
 # Path names

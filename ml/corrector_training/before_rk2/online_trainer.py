@@ -52,8 +52,10 @@ import torch.optim as optim
 from numpy.typing import NDArray
 from torch import Tensor
 
-from ml.corrector_training.before_rk2.projection_schedule import ProjectionReferenceSchedule
-from ml.ml_agents.before_rk2.corrector import AVController, save_corrector
+from ml.corrector_training.before_rk2.projection_schedule import (
+    ProjectionReferenceSchedule,
+)
+from ml.ml_agents.before_rk2.corrector_implicit import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.before_rk2.solver_configs import SGSPConfig, AVCConfig
@@ -260,9 +262,9 @@ class BurgersAVCEnvironment:
         self.n_wavenumber_bins: int = avc_cfg.n_wavenumber_bins
         self.state_dim: int = self.n_wavenumber_bins + 2
 
-        self.correction_mode: str = avc_cfg.correction_mode
+        self.correction_mode: str = avc_cfg.output_scope
         self._n_output_nodes: int = (
-            1 if avc_cfg.correction_mode == "global" else disc_cfg.n_nodes_les
+            1 if avc_cfg.output_scope == "global" else disc_cfg.n_nodes_les
         )
 
         self._solver: AVCSolverImplicit | None = None

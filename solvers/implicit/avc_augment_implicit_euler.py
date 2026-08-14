@@ -35,7 +35,7 @@ import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-from ml.ml_agents.before_rk2.corrector import AVController, load_corrector
+from ml.ml_agents.before_rk2.corrector_implicit import AVController, load_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.before_rk2.solver_configs import SGSPConfig, AVCConfig
@@ -347,13 +347,13 @@ class AVCSolverImplicit(SGSPSolverImplicit):
         axes[0].set_xlabel("Time")
         y_label = (
             r"$\alpha(t)$"
-            if self._avc_cfg.correction_mode == "global"
+            if self._avc_cfg.output_scope == "global"
             else r"$\alpha_{\text{mean}}(t)$"
         )
         axes[0].set_ylabel(y_label)
         title = (
             "Global AV correction applied by corrector policy"
-            if self._avc_cfg.correction_mode == "global"
+            if self._avc_cfg.output_scope == "global"
             else "Mean AV correction applied by local corrector policy"
         )
         axes[0].set_title(title)
@@ -376,7 +376,7 @@ class AVCSolverImplicit(SGSPSolverImplicit):
 
         Skipped silently if correction_mode is global or av_history is empty.
         """
-        if self._avc_cfg.correction_mode == "global":
+        if self._avc_cfg.output_scope == "global":
             return
         if not self.av_history:
             logger.warning("plot_local_avc_spatial: no AV history to plot, skipping.")

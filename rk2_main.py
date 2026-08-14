@@ -20,6 +20,7 @@ from utils.plotting.velocity_profiles import (
     create_velocity_plot_configs,
 )
 
+#todo: move n_wavenumberbins to disc confg?
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 matplotlib.use("Agg")  # needed when running on M12

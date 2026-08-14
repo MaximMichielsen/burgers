@@ -5,14 +5,16 @@ from pathlib import Path
 
 import matplotlib
 
-from ml.corrector_training.before_rk2.projection_schedule import ProjectionReferenceSchedule
+from ml.corrector_training.before_rk2.projection_schedule import (
+    ProjectionReferenceSchedule,
+)
 from ml.corrector_training.before_rk2.online_trainer import (
     SACConfig,
     BurgersAVCEnvironment,
     SACAgent,
     OnlineAVTrainer,
 )
-from ml.ml_agents.before_rk2.corrector import AVController, save_corrector
+from ml.ml_agents.before_rk2.corrector_implicit import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
 from solvers.implicit.base_solver_implicit_euler import BaseImplicitEuler
