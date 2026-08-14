@@ -45,11 +45,11 @@ from constants import (
     BLOWUP_THRESHOLD,
 )
 
-from ml.ml_agents.predictor import SGSPredictor, load_predictor
+from ml.ml_agents.before_rk2.predictor import SGSPredictor, load_predictor
 
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
-from ml.ml_agents.solver_configs import SGSPConfig
+from ml.ml_agents.before_rk2.solver_configs import SGSPConfig
 from solvers.implicit.base_solver_implicit_euler import BaseImplicitEuler
 from solvers.implicit.sgsp_training_data_generator import (
     load_normalisation_stats_csv,

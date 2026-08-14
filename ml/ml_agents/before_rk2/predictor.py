@@ -25,7 +25,7 @@ from constants import (
     SGSP_NUM_HIDDEN_LAYERS,
     SGSP_OUTPUT_UNITS,
 )
-from ml.a_priori_verification import run_apriori_verification
+from ml.ml_agents.before_rk2.a_priori_verification import run_apriori_verification
 
 
 # ---------------------------------------------------------------------------

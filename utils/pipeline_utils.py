@@ -21,13 +21,13 @@ from dns_scripts.dns_caching import (
     write_dns_parameters,
 )
 from solvers.implicit.sgsp_training_data_generator import BurgersDataGenerator
-from ml.a_priori_verification import run_apriori_verification
-from ml.ml_agents.predictor import (
+from ml.ml_agents.before_rk2.a_priori_verification import run_apriori_verification
+from ml.ml_agents.before_rk2.predictor import (
     plot_training_diagnostics,
     evaluate_on_val_set,
     train_predictor,
 )
-from ml.ml_agents.solver_configs import SGSPConfig
+from ml.ml_agents.before_rk2.solver_configs import SGSPConfig
 from solvers.implicit.sgsp_augment_implicit_euler import SGSPSolverImplicit
 
 

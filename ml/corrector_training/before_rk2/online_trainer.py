@@ -52,11 +52,11 @@ import torch.optim as optim
 from numpy.typing import NDArray
 from torch import Tensor
 
-from ml.corrector_training.projection_schedule import ProjectionReferenceSchedule
-from ml.ml_agents.corrector import AVController, save_corrector
+from ml.corrector_training.before_rk2.projection_schedule import ProjectionReferenceSchedule
+from ml.ml_agents.before_rk2.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
-from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
+from ml.ml_agents.before_rk2.solver_configs import SGSPConfig, AVCConfig
 from utils.io_utils import compute_adjusted_dt
 from solvers.implicit.avc_augment_implicit_euler import AVCSolverImplicit
 
