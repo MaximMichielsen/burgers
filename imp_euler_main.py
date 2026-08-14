@@ -15,7 +15,7 @@ from ml.corrector_training.online_trainer import (
 from ml.ml_agents.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
-from solvers.burgers_base import BurgersBase
+from solvers.implicit.base_solver_implicit_euler import BaseImplicitEuler
 from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
 from utils.plotting.dissipation_evolution import plot_dissipation_comparison
 from utils.plotting.energy_evolution import plot_energy_comparison
@@ -30,7 +30,7 @@ from utils.plotting.velocity_profiles import (
     plot_solution_comparison,
     create_velocity_plot_configs,
 )
-from solvers.burgers_avc import BurgersAVC
+from solvers.implicit.avc_augment_implicit_euler import AVCSolverImplicit
 
 
 CURRENT_DIR = Path(__file__).parent.resolve()
@@ -109,11 +109,13 @@ if __name__ == "__main__":
 
     # --------------------------------------- Bare LES solvers --------------------------------------- #
     if run_analytical_les:
-        les_run = BurgersBase(problem, disc_cfg, "les", paths.les_a_data)
+        les_run = BaseImplicitEuler(problem, disc_cfg, "les", paths.les_a_data)
         les_run.run_simulation()
 
     if run_no_model_les:
-        no_model_run = BurgersBase(problem, disc_cfg, "no_model", paths.les_nm_data)
+        no_model_run = BaseImplicitEuler(
+            problem, disc_cfg, "no_model", paths.les_nm_data
+        )
         no_model_run.run_simulation()
 
     # --------------------------------------- GAVC training --------------------------------------- #
@@ -137,8 +139,7 @@ if __name__ == "__main__":
             n_wavenumber_bins=(n_nodes_les + 1) // 2,
             output_scale=avc_output_scale,
             correction_mode="global",
-            output_dim=1
-
+            output_dim=1,
         )
         paths.agents.mkdir(parents=True, exist_ok=True)
         save_corrector(av_corrector_global, paths.avc_gg_model)
@@ -178,7 +179,7 @@ if __name__ == "__main__":
         n_wavenumber_bins=(n_nodes_les + 1) // 2,
         correction_mode="global",
     )
-    solver_avc_global = BurgersAVC(
+    solver_avc_global = AVCSolverImplicit(
         problem,
         disc_cfg,
         "avc",
@@ -250,7 +251,7 @@ if __name__ == "__main__":
             n_wavenumber_bins=(n_nodes_les + 1) // 2,
             correction_mode="local",
         )
-        solver_avc_gl_hybrid = BurgersAVC(
+        solver_avc_gl_hybrid = AVCSolverImplicit(
             problem,
             disc_cfg,
             "avc",

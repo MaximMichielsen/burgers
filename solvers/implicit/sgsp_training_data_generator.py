@@ -31,7 +31,7 @@ from tqdm import tqdm
 
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem, Problems
-from solvers.burgers_base import BurgersBase
+from solvers.implicit.base_solver_implicit_euler import BaseImplicitEuler
 
 
 WARMUP_STEPS: int = 3
@@ -113,7 +113,7 @@ def build_input_stencil_wall_padded(
     )
 
 
-class BurgersDataGenerator(BurgersBase):
+class BurgersDataGenerator(BaseImplicitEuler):
     """DNS runner that simultaneously assembles SGSP training data.
 
     Generates DNS snapshots and computes per-element closure terms stored as
@@ -738,7 +738,7 @@ def load_normalisation_stats_csv(
 # ---------------------------------------------------------------------------
 
 
-class ProjDNSReconstructor(BurgersBase):
+class ProjDNSReconstructor(BaseImplicitEuler):
     """Reconstruct DNS on the LES grid using exact closure terms from BurgersDataGenerator.
 
     Used to validate that computed closure terms perfectly reproduce the DNS projection.
@@ -909,7 +909,6 @@ class ProjDNSReconstructor(BurgersBase):
         dns_sol: NDArray = dns_solutions[truth_idx]
         u_bar_sol: NDArray = u_bar_solutions[truth_idx]
         reconstructed_sol: NDArray = self.snapshots[reconstructed_idx][0]
-
 
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.plot(self.disc_cfg.mesh_dns, dns_sol, label="DNS", color="gray", alpha=0.8)

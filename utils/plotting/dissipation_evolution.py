@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 
 from utils.io_utils import read_data
 from utils.pipeline_utils import RunPaths
+from utils.plotting.configs_energy_and_dissipation import plotting_configs
 
 
 # ---------------------------------------------------------------------------
@@ -91,15 +92,7 @@ def plot_dissipation_comparison(
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    _all_configs: list[tuple[str, Path | None, str, str, float]] = [
-        ("DNS", paths.dns_data, "gray", "-", 1.8),
-        ("Projection", paths.projection, "lightgreen", "-", 1.2),
-        ("LES - A", paths.les_a_data, "tab:orange", "--", 1.4),
-        ("LES - NM", paths.les_nm_data, "gold", "-.", 1.4),
-        ("LES - SGSP", paths.sgsp_data, "crimson", "-", 1.8),
-        ("LES - AVCG", paths.avc_gg_data, "royalblue", "-", 1.8),
-        ("LES - AVCL", paths.avc_gl_model, "blueviolet", "--", 1.8),
-    ]
+    _all_configs = plotting_configs(paths)
 
     solver_configs: dict[str, tuple[Path, str, str, float]] = {
         label: (path, color, ls, lw)

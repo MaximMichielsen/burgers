@@ -58,7 +58,7 @@ from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problem
 from ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
 from utils.io_utils import compute_adjusted_dt
-from solvers.burgers_avc import BurgersAVC
+from solvers.implicit.avc_augment_implicit_euler import AVCSolverImplicit
 
 logger = logging.getLogger(__name__)
 
@@ -265,11 +265,11 @@ class BurgersAVCEnvironment:
             1 if avc_cfg.correction_mode == "global" else disc_cfg.n_nodes_les
         )
 
-        self._solver: BurgersAVC | None = None
+        self._solver: AVCSolverImplicit | None = None
 
     def reset(self) -> NDArray:
         """Instantiate a fresh BurgersAVC solver and return initial state sₙ."""
-        self._solver = BurgersAVC(
+        self._solver = AVCSolverImplicit(
             problem=self._problem,
             disc_cfg=dataclasses.replace(self._disc_cfg, suppress_file_logging=True),
             simulation_mode=self._avc_cfg.simulation_mode,
@@ -628,7 +628,9 @@ class OnlineAVTrainer:
                     elif self._env.correction_mode == "local":
                         base = np.random.uniform(0.0, self._agent.policy.output_scale)
                         perturb = np.random.normal(
-                            0.0, 0.1 * self._agent.policy.output_scale, size=self._agent.policy.output_dim
+                            0.0,
+                            0.1 * self._agent.policy.output_scale,
+                            size=self._agent.policy.output_dim,
                         )
                         alpha_action_val = np.clip(
                             base + perturb, 0.0, self._agent.policy.output_scale
