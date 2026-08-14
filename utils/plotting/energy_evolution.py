@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 
 from utils.io_utils import read_data
 from utils.pipeline_utils import RunPaths
+from utils.plotting.configs_energy_and_dissipation import plotting_configs
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +101,6 @@ def _trim_to_reference_length(
 def plot_energy_comparison(
     paths: RunPaths,
     output_path: Path,
-    viscosity: float,
     domain_length: float,
 ) -> None:
     """Read CSV solver outputs and produce a 3-panel energy comparison figure."""
@@ -109,16 +109,7 @@ def plot_energy_comparison(
 
     solver_configs: dict[str, tuple[Path, str, str, float]] = {}
 
-    _all_configs: list[tuple[str, Path | None, str, str, float]] = [
-        ("DNS", paths.dns_data, "gray", "-", 1.8),
-        ("Projection", paths.projection, "lightgreen", "-", 1.2),
-        ("LES - A", paths.les_a_data, "tab:orange", "--", 1.4),
-        ("LES - Shakib 1", paths.les_shakib_one_data, "royalblue", "--", 1.4),
-        ("LES - NM", paths.les_nm_data, "gold", "-.", 1.4),
-        ("LES - SGSP", paths.sgsp_data, "crimson", "-", 1.8),
-        ("LES - AVCG", paths.avc_data / "global", "royalblue", "-", 1.8),
-        ("LES - AVCL", paths.avc_data / "gl_hybrid", "blueviolet", "--", 1.8),
-    ]
+    _all_configs = plotting_configs(paths)
 
     for label, path, color, linestyle, linewidth in _all_configs:
         if path is not None:

@@ -35,7 +35,9 @@ class BaseRK2:
     Explicit time marching (RK2) is used with mass-lumping."""
 
     # TODO: add valid sgs models modes.
-    _VALID_SIMULATION_MODES: frozenset[str] = frozenset({"dns", "no_model", "shakib_one"})
+    _VALID_SIMULATION_MODES: frozenset[str] = frozenset(
+        {"dns", "no_model", "shakib_one"}
+    )
     _VALID_BC_TYPES: frozenset[str] = frozenset({"dirichlet", "fixed", "periodic"})
 
     def __init__(
@@ -751,7 +753,7 @@ if __name__ == "__main__":
     )
 
     disc_cfg = DiscretizationConfig(
-        n_nodes_les=64,
+        n_nodes_les=19,
         temporal_refinement=1,
         courant_les=0.1,
         domain_length=2 * np.pi,

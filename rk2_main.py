@@ -50,7 +50,9 @@ if __name__ == "__main__":
     run_dns(DNS_CACHE_ROOT, problem, disc_cfg, paths)
 
     # ----------------------------------------- LES solvers ------------------------------------------ #
-    solver_shakib_one = BaseRK2(problem, disc_cfg, "shakib_one", paths.les_shakib_one_data)
+    solver_shakib_one = BaseRK2(
+        problem, disc_cfg, "shakib_one", paths.les_shakib_one_data
+    )
     solver_shakib_one.run_simulation()
     solver_shakib_one.post_processing()
 
