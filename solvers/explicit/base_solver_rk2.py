@@ -36,7 +36,10 @@ class BaseRK2:
 
     # TODO: add valid sgs models modes.
     _VALID_SIMULATION_MODES: frozenset[str] = frozenset(
-        {"dns", "no_model", "shakib_one", "shakib_two", "shakib_three"}
+        {"dns", "no_model", "tau_model"}
+    )
+    _VALID_TAU_MODELS: frozenset[str] = frozenset(
+        {"shakib_one", "shakib_two", "shakib_three"}
     )
     _VALID_BC_TYPES: frozenset[str] = frozenset({"dirichlet", "fixed", "periodic"})
 
@@ -46,6 +49,7 @@ class BaseRK2:
         disc_cfg: DiscretizationConfig,
         simulation_mode: str,
         master_path: Path,
+        tau_model: str | None = None,
         snapshot_factor: int = 1,
         t_start: float = 0.0,
     ) -> None:
@@ -54,6 +58,12 @@ class BaseRK2:
             raise ValueError(
                 f"Unknown simulation_mode {simulation_mode!r}. "
                 f"Expected one of {self._VALID_SIMULATION_MODES}."
+            )
+
+        if simulation_mode == "tau_model" and tau_model is None:
+            raise ValueError(
+                f'Choose tau model if simulation mode is "tau_model". '
+                f"Expected one of {self._VALID_TAU_MODELS}"
             )
 
         if problem.boundary_condition_type not in self._VALID_BC_TYPES:
@@ -66,6 +76,7 @@ class BaseRK2:
 
         # Simulation settings
         self.simulation_mode: str = simulation_mode
+        self.tau_model: str | None = tau_model
         self.domain_timespan: float = problem.domain_timespan
         self.simulation_time_elapsed: float = t_start
         self.domain_length: float = problem.domain_length
@@ -256,13 +267,15 @@ class BaseRK2:
                 # Forcing
                 local_residual += N * f_interp * gauss_weight * jacobian
 
-                if self.simulation_mode in ("shakib_one", "shakib_two", "shakib_three"):
-                    if self.simulation_mode == "shakib_one":
+                if self.simulation_mode == "tau_model":
+                    if self.tau_model == "shakib_one":
                         tau = self.tau_shakib_one(u_e)
-                    elif self.simulation_mode == "shakib_two":
+                    elif self.tau_model == "shakib_two":
                         tau = self.tau_shakib_two(u_e)
-                    elif self.simulation_mode == "shakib_three":
+                    elif self.tau_model == "shakib_three":
                         tau = self.tau_shakib_three(u_e)
+                    else:
+                        raise ValueError('qmdlkfjqdmlkfjqdl')
                     # strong-form residual, quasi-static closure:
                     # ∂²u/∂x² = 0 exactly for linear elements; ∂u/∂t dropped
                     # (algebraic sub-scale approximation)
