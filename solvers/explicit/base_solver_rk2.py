@@ -275,7 +275,7 @@ class BaseRK2:
                     elif self.tau_model == "shakib_three":
                         tau = self.tau_shakib_three(u_e)
                     else:
-                        raise ValueError('qmdlkfjqdmlkfjqdl')
+                        raise ValueError("qmdlkfjqdmlkfjqdl")
                     # strong-form residual, quasi-static closure:
                     # ∂²u/∂x² = 0 exactly for linear elements; ∂u/∂t dropped
                     # (algebraic sub-scale approximation)

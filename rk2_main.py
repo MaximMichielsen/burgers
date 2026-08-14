@@ -5,13 +5,8 @@ from pathlib import Path
 
 import matplotlib
 
-from ml.corrector_training.online_trainer import SACConfig, BurgersAVCEnvironment, SACAgent, OnlineAVTrainer
-from ml.corrector_training.projection_schedule import ProjectionReferenceSchedule
-from ml.ml_agents.corrector import AVController, save_corrector
-from ml.ml_agents.solver_configs import AVCConfig
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
-from solvers.explicit.avc_augment_rk2 import AVCSolverRK2
 
 from solvers.explicit.base_solver_rk2 import BaseRK2
 from utils.plotting.dissipation_evolution import plot_dissipation_comparison
@@ -69,19 +64,31 @@ if __name__ == "__main__":
 
     # ----------------------------------------- LES solvers ------------------------------------------ #
     solver_shakib_one = BaseRK2(
-        problem, disc_cfg, simulation_mode="tau_model", tau_model="shakib_one", master_path=paths.les_shakib_one_data
+        problem,
+        disc_cfg,
+        simulation_mode="tau_model",
+        tau_model="shakib_one",
+        master_path=paths.les_shakib_one_data,
     )
     solver_shakib_one.run_simulation()
     solver_shakib_one.post_processing()
 
     solver_shakib_two = BaseRK2(
-        problem, disc_cfg, simulation_mode="tau_model", tau_model="shakib_two", master_path=paths.les_shakib_one_data
+        problem,
+        disc_cfg,
+        simulation_mode="tau_model",
+        tau_model="shakib_two",
+        master_path=paths.les_shakib_one_data,
     )
     solver_shakib_two.run_simulation()
     solver_shakib_two.post_processing()
 
     solver_shakib_three = BaseRK2(
-        problem, disc_cfg, simulation_mode="tau_model", tau_model="shakib_three", master_path=paths.les_shakib_one_data
+        problem,
+        disc_cfg,
+        simulation_mode="tau_model",
+        tau_model="shakib_three",
+        master_path=paths.les_shakib_one_data,
     )
     solver_shakib_three.run_simulation()
     solver_shakib_three.post_processing()
