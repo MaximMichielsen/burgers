@@ -5,8 +5,14 @@ from pathlib import Path
 
 import matplotlib
 
+from ml.corrector_training.SAC import SACConfig, SACAgent
+from ml.corrector_training.online_training import OnlineAVCTrainer, AVCTrainingConfig
+from ml.corrector_training.projection_schedule import ProjectionReferenceSchedule
+from ml.corrector_training.rl_environment import AVCEnvironment
+from ml.ml_agents.corrector import AVCConfig, AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
+from solvers.explicit.avc_augment_rk2 import AVCSolverRK2
 
 from solvers.explicit.base_solver_rk2 import BaseRK2
 from utils.plotting.dissipation_evolution import plot_dissipation_comparison
@@ -20,7 +26,7 @@ from utils.plotting.velocity_profiles import (
     create_velocity_plot_configs,
 )
 
-#todo: move n_wavenumberbins to disc confg?
+# todo: move n_wavenumberbins to disc confg?
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 matplotlib.use("Agg")  # needed when running on M12
@@ -97,6 +103,67 @@ if __name__ == "__main__":
     solver_no_model = BaseRK2(problem, disc_cfg, "no_model", paths.les_nm_data)
     solver_no_model.run_simulation()
     solver_no_model.post_processing()
+
+    # --------------------------------------- GAVC training --------------------------------------- #
+    if not paths.avc_gg_model.exists() and paths.projection is not None:
+        n_wavenumber_bins = (n_nodes_les + 1) // 2
+
+        proj_reference_schedule = ProjectionReferenceSchedule.from_projection_directory(
+            projection_dir=paths.projection,
+            domain_length=problem.domain_length,
+            n_wavenumber_bins=n_wavenumber_bins,
+        )
+
+        avc_config = AVCConfig(
+            avc_model_path=paths.avc_gg_model,
+            input_scope="global",
+            output_scope="global",
+            n_skip_steps=AVC_N_SKIP,
+            n_wavenumber_bins=n_wavenumber_bins,
+        )
+
+        av_corrector = AVController(avc_config)
+        paths.agents.mkdir(parents=True, exist_ok=True)
+        save_corrector(av_corrector, paths.avc_gg_model)
+
+        training_config = AVCTrainingConfig()
+        sac_config = SACConfig()
+
+        environment = AVCEnvironment(
+            problem=problem,
+            disc_config=disc_cfg,
+            avc_config=avc_config,
+            avc_training_config=AVCTrainingConfig,
+            simulation_mode="no_model",
+            master_path=paths.avc_data / "training_global",
+            proj_ref_schedule=proj_reference_schedule,
+        )
+        sac_agent = SACAgent(
+            av_corrector=av_corrector,
+            state_dim=av_corrector.output_dimensions,
+            sac_config=sac_config,
+            training_config=training_config,
+        )
+        trainer = OnlineAVCTrainer(
+            environment=environment,
+            agent=sac_agent,
+            agent_config=sac_config,
+            training_config=training_config,
+            output_dir=paths.agents / "avcg_checkpoints",
+        )
+        trainer.train(n_episodes=AVC_EPOCHS)
+        save_corrector(sac_agent.policy, paths.avc_gg_model)
+
+    # --------------------------------------- GAVC run --------------------------------------- #
+    solver_avc_global = AVCSolverRK2(
+        problem=problem,
+        disc_config=disc_cfg,
+        avc_config=avc_config,
+        simulation_mode="no_model",
+        master_path=paths.avc_data / "global",
+    )
+    solver_avc_global.run_simulation()
+    solver_avc_global.post_processing()
 
     # -------------------------------------- Plotting --------------------------------------- #
     plot_solution_comparison(

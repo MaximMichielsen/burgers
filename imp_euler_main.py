@@ -5,7 +5,7 @@ from pathlib import Path
 
 import matplotlib
 
-from ml.corrector_training.before_rk2.projection_schedule import (
+from ml.corrector_training.projection_schedule import (
     ProjectionReferenceSchedule,
 )
 from ml.corrector_training.before_rk2.online_trainer import (

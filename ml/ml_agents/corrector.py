@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 import torch
+from numpy.typing import NDArray
 from torch import nn, Tensor
 
 from constants import (
@@ -10,10 +12,31 @@ from constants import (
     AVC_HIDDEN_UNITS,
 )
 
+class Transition(NamedTuple):
+    """Single MDP transition (sₙ, αₙ, rₙ, sₙ₊₁, done)."""
+
+    state: NDArray
+    action: NDArray | float
+    reward: float
+    next_state: NDArray
+    done: bool
+
+@dataclass(frozen=True)
+class AVCTrainingConfig:
+    """Configuration file for the AVC training algorithm."""
+
+    batch_size: int = 256
+    reward_weight_energy: float = 1.0
+    reward_spectral_exponent: float = 5.0 / 3.0
+    n_warmup_steps: int = 100
+    exploration_bound_upper: float = 1.0
+    update_every: int = 1
+    updates_per_step: int = 1
+
 
 @dataclass(frozen=True)
 class AVCConfig:
-    """Configuration file for the AVC."""
+    """Configuration file for the AVC model."""
 
     avc_model_path: Path
     n_wavenumber_bins: int
@@ -30,19 +53,21 @@ class AVController(nn.Module):
 
     def __init__(
         self,
-        n_wavenumber_bins: int,
         avc_config: AVCConfig,
     ) -> None:
         super().__init__()
 
+        self.avc_config = avc_config
         self.input_scope = avc_config.input_scope
         self.output_scope = avc_config.output_scope
 
-        self.input_dimension: int = n_wavenumber_bins + AVC_ADDITIONAL_INPUT_DIMENSIONS
+        self.input_dimensions: int = (
+            avc_config.n_wavenumber_bins + AVC_ADDITIONAL_INPUT_DIMENSIONS
+        )
         self.output_dimensions: int = AVC_GLOBAL_OUTPUT_UNITS
 
         self.network = nn.Sequential(
-            nn.Linear(self.input_dimension, AVC_HIDDEN_UNITS),
+            nn.Linear(self.input_dimensions, AVC_HIDDEN_UNITS),
             nn.ReLU(),
             nn.Linear(AVC_HIDDEN_UNITS, AVC_HIDDEN_UNITS),
             nn.ReLU(),
@@ -59,10 +84,7 @@ def save_corrector(model: AVController, save_path: Path) -> None:
     torch.save(
         {
             "model_state_dict": model.state_dict(),
-            "input_scope": model.input_scope,
-            "output_scope": model.output_scope,
-            "input_dimensions": model.input_dimensions,
-            "output_dimensions": model.output_dimensions,
+            "avc_config": model.avc_config
         },
         save_path,
     )
@@ -72,10 +94,7 @@ def load_corrector(model_path: Path) -> AVController:
     """Load corrector from model_path."""
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
     model = AVController(
-        input_scope=checkpoint["input_scope"],
-        output_scope=checkpoint["output_scope"],
-        input_dimensions=checkpoint["input_dimensions"],
-        output_dimensions=checkpoint["output_dimensions"],
+        avc_config=checkpoint["avc_config"],
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()

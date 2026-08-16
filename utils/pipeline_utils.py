@@ -27,8 +27,8 @@ from ml.ml_agents.before_rk2.predictor import (
     evaluate_on_val_set,
     train_predictor,
 )
-from ml.ml_agents.before_rk2.solver_configs import SGSPConfig
-from solvers.implicit.sgsp_augment_implicit_euler import SGSPSolverImplicit
+
+
 
 
 from dataclasses import dataclass
@@ -199,23 +199,23 @@ def run_sgsp_training(
     )
 
 
-def run_sgsp_coupled_solver(
-    problem: Problem,
-    disc_cfg: DiscretizationConfig,
-    master_path: Path,
-    sgsp_cfg: SGSPConfig,
-) -> None:
-    """Run the LES solver with ANN-predicted SGS closure."""
-    solver = SGSPSolverImplicit(
-        problem,
-        disc_cfg,
-        "sgsp",
-        master_path,
-        sgsp_cfg,
-    )
-    solver.print_configuration()
-    solver.run_simulation()
-    solver.post_processing()
+# def run_sgsp_coupled_solver(
+#     problem: Problem,
+#     disc_cfg: DiscretizationConfig,
+#     master_path: Path,
+#     sgsp_cfg: SGSPConfig,
+# ) -> None:
+#     """Run the LES solver with ANN-predicted SGS closure."""
+#     solver = SGSPSolverImplicit(
+#         problem,
+#         disc_cfg,
+#         "sgsp",
+#         master_path,
+#         sgsp_cfg,
+#     )
+#     solver.print_configuration()
+#     solver.run_simulation()
+#     solver.post_processing()
 
 
 @dataclass
