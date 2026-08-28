@@ -72,7 +72,7 @@ def save_corrector(model: AVController, save_path: Path) -> None:
 
 def load_corrector(model_path: Path) -> AVController:
     """Load corrector from model_path."""
-    checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
+    checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
     model = AVController(
         n_wavenumber_bins=checkpoint["n_wavenumber_bins"],
         output_scale=checkpoint["output_scale"],

@@ -54,7 +54,7 @@ paths = resolve_pathing(problem.name, CURRENT_DIR)
 # AVC (hyper-)parameters
 avc_output_scale = 2 * problem.viscosity
 
-AVC_EPOCHS: int = 10
+AVC_EPOCHS: int = 30
 AVC_N_SKIP: int = 5
 AVC_WARMUP_STEPS: int = 500
 AVC_BATCH_SIZE = 264

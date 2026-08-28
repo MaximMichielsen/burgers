@@ -81,10 +81,11 @@ class AVController(nn.Module):
 
 def save_corrector(model: AVController, save_path: Path) -> None:
     """Save corrector to save_path."""
+    config_dict = {**vars(model.avc_config), "avc_model_path": str(model.avc_config.avc_model_path)}
     torch.save(
         {
             "model_state_dict": model.state_dict(),
-            "avc_config": model.avc_config
+            "avc_config": config_dict,
         },
         save_path,
     )
@@ -93,9 +94,11 @@ def save_corrector(model: AVController, save_path: Path) -> None:
 def load_corrector(model_path: Path) -> AVController:
     """Load corrector from model_path."""
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
-    model = AVController(
-        avc_config=checkpoint["avc_config"],
+    config_dict = checkpoint["avc_config"]
+    avc_config = AVCConfig(
+        **{**config_dict, "avc_model_path": Path(config_dict["avc_model_path"])}
     )
+    model = AVController(avc_config=avc_config)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     return model

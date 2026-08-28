@@ -206,7 +206,7 @@ class SACAgent:
         if deterministic:
             return action_tensor.numpy()
 
-        noise_std = 0.05 * self.policy.output_scale
+        noise_std = 0.05 * self.training_config.exploration_bound_upper
         noisy_action = action_tensor.numpy() + np.random.normal(
             0.0, noise_std, size=action_tensor.shape
         )
@@ -216,7 +216,7 @@ class SACAgent:
             f"| action_tensor: {action_tensor} "
             f"\n noisy action: {noisy_action}"
         )
-        return np.clip(noisy_action, 0.0, self.policy.output_scale).astype(np.float32)
+        return np.clip(noisy_action, 0.0, self.training_config.exploration_bound_upper).astype(np.float32)
 
     def update(self, replay_buffer: ReplayBuffer) -> tuple[float, float, float]:
         """One SAC gradient step on critic, actor, and temperature.

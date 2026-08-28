@@ -153,7 +153,7 @@ class AVCSolverRK2(BaseRK2):
         with torch.no_grad():
             alpha_tensor = self.corrector(state_tensor).squeeze(0)  # (output_dim,)
 
-        if self.corrector.correction_mode == "global":
+        if self.corrector.output_scope == "global":
             return float(alpha_tensor.item())
         else:
             return alpha_tensor.numpy().astype(np.float64)
