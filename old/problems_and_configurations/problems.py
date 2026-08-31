@@ -5,11 +5,11 @@ from typing import Callable
 
 from numpy.typing import NDArray
 
-from old.problems_and_configurations.forcings import (
+from new.setup.forcings import (
     compute_sine_forcing,
     uniform_steady_forcing,
 )
-from old.problems_and_configurations.initial_conditions import (
+from new.setup.initial_conditions import (
     uniform_initial_condition,
     zero_initial_condition,
 )

@@ -13,9 +13,9 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
 
-from new.config_discretization import DiscretizationConfig
-from new.io_utils import compute_adjusted_dt
-from new.problems import Problem
+from new.setup.config_discretization import DiscretizationConfig
+from new.utils.io_utils import compute_adjusted_dt
+from new.setup.problems import Problem
 
 
 TOLERANCE_RESIDUAL: float = 1e-6

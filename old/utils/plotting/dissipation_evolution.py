@@ -10,7 +10,7 @@ from matplotlib.gridspec import GridSpec
 from numpy.typing import NDArray
 
 from old.utils.io_utils import read_data
-from old.utils.pipeline_utils import RunPaths
+from new.utils.pipeline_utils import RunPaths
 from old.utils.plotting.configs_energy_and_dissipation import plotting_configs
 
 

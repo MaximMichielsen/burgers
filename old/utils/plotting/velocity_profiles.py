@@ -15,7 +15,7 @@ from old.utils.io_utils import read_data
 
 import re
 
-from old.utils.pipeline_utils import RunPaths
+from new.utils.pipeline_utils import RunPaths
 
 
 @dataclass
