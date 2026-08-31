@@ -13,6 +13,7 @@ from new.setup.config_discretization import DiscretizationConfig
 from new.setup.problems import Problem
 from new.solvers.solver_base import SolverBase
 
+
 @dataclass
 class ElementSGSTerms:
     """SGS closure terms for one element, in two forms.
@@ -58,7 +59,12 @@ class BurgersDataGenerator(SolverBase):
         append_mode: bool = False,
     ) -> None:
         super().__init__(
-            problem, disc_cfg, simulation_mode, master_path, "dns", snapshot_factor, t_start
+            problem=problem,
+            disc_config=disc_cfg,
+            simulation_mode=simulation_mode,
+            master_path=master_path,
+            snapshot_factor=snapshot_factor,
+            t_start=t_start,
         )
 
         self.dns_save_path = (
@@ -103,7 +109,11 @@ class BurgersDataGenerator(SolverBase):
     def advance_time_step(self) -> None:
         """Advance the simulation by one time step."""
         self.resolve_current_forcing()
-        self.solution = self.nr_iteration(self.solution)
+
+        new_solution = self.nr_iteration(self.solution, self.solution_previous)
+        self.solution_previous = self.solution
+        self.solution = new_solution
+
         self.simulation_time_elapsed += self.dt
         self.u_bar_now, self.interp_les_to_dns_u, self.projected_forcing = (
             self.project_u_to_les()
@@ -300,4 +310,3 @@ class BurgersDataGenerator(SolverBase):
         plt.grid(True)
         plt.legend()
         plt.show()
-
