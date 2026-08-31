@@ -58,7 +58,7 @@ class BurgersDataGenerator(SolverBase):
         append_mode: bool = False,
     ) -> None:
         super().__init__(
-            problem, disc_cfg, simulation_mode, master_path, snapshot_factor, t_start
+            problem, disc_cfg, simulation_mode, master_path, "dns", snapshot_factor, t_start
         )
 
         self.dns_save_path = (
@@ -66,11 +66,7 @@ class BurgersDataGenerator(SolverBase):
             if dns_save_path is not None
             else master_path / "solver_data" / "DNS"
         )
-        self.sgs_save_path = (
-            sgsp_training_data_path
-            if sgsp_training_data_path is not None
-            else master_path / "training_data" / "sgsp"
-        )
+
         self.projection_save_path = (
             projection_save_path
             if projection_save_path is not None
@@ -97,11 +93,6 @@ class BurgersDataGenerator(SolverBase):
         self.du_bar_dt_history: list[NDArray] = []
         self.u_prime_history: list[NDArray] = []
         self.forcing_history: list[NDArray] = []
-
-        # per-snapshot list of per-element ElementSGSTerms
-        self.assembled_sgs_terms: list[list[ElementSGSTerms]] = []
-        # SGSP input stencils: list[list[NDArray | None]] where inner NDArray is (20,)
-        self.assembled_input_stencils: list[list[NDArray | None]] = []
 
         self.append_mode = append_mode
 
@@ -162,12 +153,6 @@ class BurgersDataGenerator(SolverBase):
                     if (time_step + 1) in self._snapshot_step_indices:
                         self._extract_snapshot()
 
-                        input_stencils, sgs_terms = (
-                            self.create_snapshot_training_data()
-                        )
-                        self.assembled_input_stencils.append(input_stencils)
-                        self.assembled_sgs_terms.append(sgs_terms)
-
                     pbar.set_description(f"Eating Burgers | {self.throbber(time_step)}")
                     pbar.update(1)
                     pbar.set_postfix(
@@ -196,8 +181,6 @@ class BurgersDataGenerator(SolverBase):
         self.du_bar_dt_history.clear()
         self.u_prime_history.clear()
         self.forcing_history.clear()
-        self.assembled_input_stencils.clear()
-        self.assembled_sgs_terms.clear()
 
         for csv_path in csv_files:
             velocity_values = np.loadtxt(csv_path, delimiter=",", skiprows=1, usecols=2)
@@ -222,118 +205,10 @@ class BurgersDataGenerator(SolverBase):
                 )
                 self.du_bar_dt_history.append(self.du_bar_dt_now)
 
-            input_stencils, sgs_terms = self.create_snapshot_training_data()
-            self.assembled_input_stencils.append(input_stencils)
-            self.assembled_sgs_terms.append(sgs_terms)
-
             self.simulation_time_elapsed += self.dt
 
-        self.sgs_save_path.mkdir(parents=True, exist_ok=True)
         self.projection_save_path.mkdir(parents=True, exist_ok=True)
         self.write_projected_solution_to_csv(save_path=self.projection_save_path)
-        self.save_sgsp_training_csv(append_mode=False)  # full recompute, no append
-
-    # ------------------------------------------------------------------
-    # Snapshot data assembly
-    # ------------------------------------------------------------------
-
-    def create_snapshot_training_data(
-        self,
-    ) -> tuple[list[NDArray | None], list[ElementSGSTerms]]:
-        """Compute input stencils and closure terms for all elements at the current snapshot."""
-        input_stencils: list[NDArray | None] = []
-        sgs_terms: list[ElementSGSTerms] = []
-
-        for element_left_node in self.nodes_les[:-1]:
-            input_stencils.append(self.create_input_stencil(node_idx=element_left_node))
-            sgs_terms.append(self.compute_element_closure_terms(element_left_node))
-
-        return input_stencils, sgs_terms
-
-    def compute_element_closure_terms(self, element_left_node: int) -> ElementSGSTerms:
-        """Integrate SGS terms over element [i, i+1].
-
-        Returns an ElementSGSTerms with:
-            scatter: (2, 5) per-node contributions for solver residual scatter.
-            label: (5,) element-level target for SGSP predictor training,
-                using right-node gradient weight (w_x = +1/h) for gradient terms,
-                consistent with Rajampeta (2022) Table 4.4.
-        """
-        u_bar_interp = self.interp_les_to_dns_u
-        u_prime_now = self.u_prime_history[-1].copy()
-        u_prime_now[0] = 0.0
-        u_prime_now[-1] = 0.0
-
-        mesh_dns = self._mesh_dns
-        du_prime_dx_dns = np.gradient(u_prime_now, self._disc_cfg.h_dns)
-
-        # temporal derivative of u' (first-order backward, zero at IC)
-        if len(self.u_prime_history) >= 2:
-            u_prime_prev = self.u_prime_history[-2].copy()
-            u_prime_prev[0] = 0.0
-            u_prime_prev[-1] = 0.0
-            du_prime_dt_dns = (u_prime_now - u_prime_prev) / self._disc_cfg.dt_les
-        else:
-            du_prime_dt_dns = np.zeros_like(u_prime_now)
-
-        x_left = float(self._mesh_les[element_left_node])
-        x_right = float(self._mesh_les[element_left_node + 1])
-
-        gauss_pts, gauss_wts = np.polynomial.legendre.leggauss(
-            deg=3
-        )
-        grad_basis = self.basis_functions_gradient()
-        jacobian = self.element_size / 2.0
-
-        # per-node accumulators for solver scatter: shape (2,) each
-        cross_scatter = np.zeros(2)
-        reynolds_scatter = np.zeros(2)
-        temporal_l_scatter = np.zeros(2)
-        temporal_r_scatter = np.zeros(2)
-        viscous_scatter = np.zeros(2)
-
-        for gauss_pt, gauss_wt in zip(gauss_pts, gauss_wts):
-            x_phys = 0.5 * (x_left + x_right) + 0.5 * self._disc_cfg.h_les * gauss_pt
-            basis_vals = self.basis_functions(gauss_pt)
-            scale = gauss_wt * jacobian
-
-            u_bar_gp = float(np.interp(x_phys, mesh_dns, u_bar_interp))
-            u_prime_gp = float(np.interp(x_phys, mesh_dns, u_prime_now))
-            du_prime_dx_gp = float(np.interp(x_phys, mesh_dns, du_prime_dx_dns))
-            du_prime_dt_gp = float(np.interp(x_phys, mesh_dns, du_prime_dt_dns))
-
-            # scatter terms (per-node)
-            for node_local in range(2):
-                w_x = grad_basis[node_local]
-                cross_scatter[node_local] += scale * w_x * u_bar_gp * u_prime_gp
-                reynolds_scatter[node_local] += scale * w_x * 0.5 * u_prime_gp**2
-                viscous_scatter[node_local] += scale * w_x * du_prime_dx_gp
-            # temporal terms go to their respective node only
-            temporal_l_scatter[0] += scale * basis_vals[0] * du_prime_dt_gp
-            temporal_r_scatter[1] += scale * basis_vals[1] * du_prime_dt_gp
-
-        scatter_array = np.stack(
-            [
-                cross_scatter,
-                reynolds_scatter,
-                temporal_l_scatter,
-                temporal_r_scatter,
-                viscous_scatter,
-            ],
-            axis=1,
-        )
-
-        label_array = np.array(
-            [
-                cross_scatter[1],
-                reynolds_scatter[1],
-                temporal_l_scatter[0],
-                temporal_r_scatter[1],
-                viscous_scatter[1],
-            ]
-        )
-
-        return ElementSGSTerms(scatter=scatter_array, label=label_array)
 
     # ------------------------------------------------------------------
     # Utility
@@ -375,9 +250,6 @@ class BurgersDataGenerator(SolverBase):
         if self.projection_save_path is not None:
             self.projection_save_path.mkdir(parents=True, exist_ok=True)
             self.write_projected_solution_to_csv(save_path=self.projection_save_path)
-        if self.sgs_save_path is not None:
-            self.sgs_save_path.mkdir(parents=True, exist_ok=True)
-            self.save_sgsp_training_csv(append_mode=self.append_mode)
 
     def write_projected_solution_to_csv(self, save_path: Path | None = None) -> None:
         """Write extracted solution snapshots to CSV files."""
@@ -403,27 +275,6 @@ class BurgersDataGenerator(SolverBase):
                     )
 
         print(f"wrote {len(solutions)} snapshots at {self.master_path}")
-
-    @staticmethod
-    def _compute_normalisation_stats(
-        x_matrix: NDArray, y_matrix: NDArray
-    ) -> tuple[NDArray, NDArray, NDArray, NDArray]:
-        """Compute zero-mean unit-variance stats; clip std to avoid division by zero."""
-        x_mean = x_matrix.mean(axis=0)
-        x_std = x_matrix.std(axis=0)
-        x_std[x_std < 1e-12] = 1.0
-        y_mean = y_matrix.mean(axis=0)
-        y_std = y_matrix.std(axis=0)
-        y_std[y_std < 1e-12] = 1.0
-        return x_mean, x_std, y_mean, y_std
-
-    @staticmethod
-    def _write_csv(save_path: Path, data: NDArray, header: list[str]) -> None:
-        """Write a 2-D array to CSV with a header row."""
-        with open(save_path, mode="w", newline="") as file_handle:
-            writer = csv.writer(file_handle)
-            writer.writerow(header)
-            writer.writerows(data.tolist())
 
     # ------------------------------------------------------------------
     # Debug / diagnostics
