@@ -28,7 +28,7 @@ class SolverBase:
     """Burgers FEM solver: M·U_t + A(U)·U + ν·K₀·U + C_fs(U) = f."""
 
     _VALID_SIMULATION_MODES: frozenset[str] = frozenset(
-        {"dns", "no_model", "tau_model", "ann_augmented"}
+        {"dns", "no_model", "tau_model"}
     )
 
     _VALID_TAU_MODES: frozenset[str] = frozenset({"2", "3", "3_dt_augmented"})
@@ -242,7 +242,7 @@ class SolverBase:
 
             solution_k += delta_u
             if self.is_update_converged(delta_u) or self.is_residual_converged(
-                    global_residual
+                global_residual
             ):
                 break
 
@@ -283,7 +283,11 @@ class SolverBase:
                 )
                 if tau_e is not None:
                     residual_element[e_i] += scale * self._vms_residual_integrand(
-                        e_i, gradient_basis, interpolated_fields, strong_res, tau_e,
+                        e_i,
+                        gradient_basis,
+                        interpolated_fields,
+                        strong_res,
+                        tau_e,
                     )
                 for e_j in range(len(element)):
                     jacobian_element[e_i, e_j] += scale * self._jacobian_integrand(
@@ -369,7 +373,7 @@ class SolverBase:
 
     @staticmethod
     def _vms_residual_integrand(
-            i, gradient_basis: NDArray, f: dict[str, float], strong_res, tau_e: float
+        i, gradient_basis: NDArray, f: dict[str, float], strong_res, tau_e: float
     ) -> float:
         """Computes VMS part of the residual."""
         u_k = f["u_k"]
@@ -429,7 +433,7 @@ class SolverBase:
         """τ = [ (2⟨ū⟩_e/h)² + (4ν/h²)² ]^(-1/2), ⟨ū⟩_e = element-averaged u."""
         u_bar_e = 0.5 * (u_e[0] + u_e[1])
         term_adv = (2.0 * u_bar_e / self.element_size) ** 2
-        term_diff = (4.0 * self.viscosity / self.element_size ** 2) ** 2
+        term_diff = (4.0 * self.viscosity / self.element_size**2) ** 2
         return (term_adv + term_diff) ** -0.5
 
     # ------------------------------------------------------------------ #
@@ -453,10 +457,7 @@ class SolverBase:
     @property
     def _use_vms(self) -> bool:
         """True only for analytic VMS mode (les)."""
-        return (
-            self.simulation_mode == "tau_model"
-            or self.simulation_mode == "ann_augmented"
-        )
+        return self.simulation_mode == "tau_model"
 
     # ------------------------------------------------------------------ #
     #  Boundary conditions
@@ -499,7 +500,7 @@ class SolverBase:
             global_jacobian[node, node] = 1
         return global_residual, global_jacobian
 
-    #------------------------------------------------------------------  #
+    # ------------------------------------------------------------------  #
     #  Internal helpers
     # ------------------------------------------------------------------ #
 
@@ -567,7 +568,7 @@ class SolverBase:
             self.timings_performance.get(name, 0.0) + perf_counter() - start
         )
 
-    #------------------------------------------------------------------  #
+    # ------------------------------------------------------------------  #
     #  Logging
     # ------------------------------------------------------------------ #
 
@@ -804,10 +805,7 @@ class SolverBase:
             u_e = solution[element]
             for g_p, g_w in zip(points, weights):
                 energy += (
-                    0.5
-                    * g_w
-                    * abs(jacobian)
-                    * (self.basis_functions(g_p) @ u_e) ** 2
+                    0.5 * g_w * abs(jacobian) * (self.basis_functions(g_p) @ u_e) ** 2
                 )
         return energy
 
@@ -842,7 +840,6 @@ class SolverBase:
         """Filter to non-negative wavenumbers."""
         mask = wavenumbers >= 0
         return wavenumbers[mask], spectrum[mask]
-
 
     def post_plotting(self, show_plot: bool = False) -> None:
         """Plot solution and convergence diagnostics; save to disk."""
@@ -941,7 +938,7 @@ if __name__ == "__main__":
         name="manufactured_problem",
         domain_length=2 * np.pi,
         domain_timespan=2 * np.pi,
-        reynolds=100,                     # ← was reynolds=100; solver needs .viscosity directly
+        reynolds=100,  # ← was reynolds=100; solver needs .viscosity directly
         initial_condition=np.sin,
         forcing=manufactured_forcing,
         forcing_is_steady=False,
@@ -967,7 +964,9 @@ if __name__ == "__main__":
     solver.run_simulation()
 
     simulated_solution = solver.solution
-    exact_solution = manufactured_solution(x=solver.mesh, t=solver.simulation_time_elapsed)
+    exact_solution = manufactured_solution(
+        x=solver.mesh, t=solver.simulation_time_elapsed
+    )
 
     plt.plot(solver.mesh, exact_solution, label="exact")
     plt.plot(solver.mesh, simulated_solution, label="simulated")
