@@ -1,0 +1,12 @@
+{
+  "problem_name": "raj_one",
+  "domain_length": 1.0,
+  "viscosity": 0.01,
+  "forcing_name": "uniform_steady_forcing",
+  "bc_type": "dirichlet",
+  "bc_value": 0.0,
+  "n_nodes_dns": 288,
+  "temporal_refinement": 1,
+  "courant_les": 1.5,
+  "domain_timespan": 1.0
+}

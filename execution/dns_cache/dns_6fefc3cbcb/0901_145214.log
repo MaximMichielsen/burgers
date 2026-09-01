@@ -1,0 +1,24 @@
+[INFO] - ============================================================
+[INFO] - RUN COMPLETE — id: 0901_145214
+[INFO] - Time Integration: Second Order Implicit Euler
+[INFO] - Simulation mode: dns
+[INFO] - ----------------------------------------
+[INFO] -   domain_timespan                4
+[INFO] -   domain_length                  1
+[INFO] -   dt                             1.2500e-01
+[INFO] -   n_time_steps                   32
+[INFO] -   viscosity                      1.0000e-02
+[INFO] -   n_nodes                        288
+[INFO] -   n_elements                     287
+[INFO] -   element_size                   3.4843e-03
+[INFO] -   boundary_condition_type        dirichlet
+[INFO] -   boundary_condition_value       1.0
+[INFO] -   max_iterations                 20
+[INFO] -   snapshot_factor                1
+[INFO] -   requested_snapshots            33 snapshots, first 5: [0.0, 0.125, 0.25, 0.375, 0.5]
+[INFO] -   forcing                        compute_sine_forcing (from setup.forcings)
+[INFO] -   forcing_is_steady              False
+[INFO] -   problem_name                   raj_two
+[INFO] - ----------------------------------------
+[INFO] -   TOTAL                     9.1995s
+[INFO] - ============================================================

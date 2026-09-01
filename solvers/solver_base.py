@@ -266,7 +266,7 @@ class SolverBase:
         points, weights = self.gauss_legendre(3)
         gradient_basis = self.basis_functions_gradient()
 
-        tau_e = self.compute_tau(u_k) if self._use_vms else None
+        tau_e = self.compute_tau(u_k, self.basis_functions_gradient() @ u_k) if self._use_vms else None
 
         for gauss_point, gauss_weight in zip(points, weights):
             basis = self.basis_functions(gauss_point)
@@ -417,16 +417,14 @@ class SolverBase:
     #  Tau models
     # ------------------------------------------------------------------ #
 
-    def compute_tau(self, u_e: NDArray) -> float:
+    def compute_tau(self, u_e: NDArray, u_x_e: NDArray | None = None) -> float:
         """Dispatch to the configured tau model. u_e: nodal values for the element (length 2)."""
         if self.tau_model == "2":
             return self.tau_model_two_params(u_e)
-        elif self.tau_model in ("3", "3_dt_augmented"):
-            raise NotImplementedError(
-                f"tau_model={self.tau_model!r}: the quoted text describes adding a "
-                "gradient term but doesn't give its coefficient — not implemented "
-                "until that's specified."
-            )
+        elif self.tau_model == "3" and u_x_e is not None:
+            return self.tau_model_three_params(u_e, u_x_e)
+        elif self.tau_model =="3_dt_augmented" and u_x_e is not None:
+            return self.tau_model_three_dt_aug(u_e, u_x_e)
         raise ValueError(f"Unknown tau_model {self.tau_model!r}")
 
     def tau_model_two_params(self, u_e: NDArray) -> float:
@@ -436,6 +434,22 @@ class SolverBase:
         term_diff = (4.0 * self.viscosity / self.element_size**2) ** 2
         return (term_adv + term_diff) ** -0.5
 
+    def tau_model_three_params(self, u_e: NDArray, u_x_e, alpha: float = 0.099, beta: float = 9.39, gamma: float = 2.16) -> float:
+        u_bar_e = 0.5 * (u_e[0] + u_e[1])
+        u_x_bar_e = u_x_e # gradient of u is constant for linear elements (right?)
+        part_a = (alpha * u_bar_e / self.element_size)**2
+        part_b = (beta * self.viscosity / self.element_size**2)**2
+        part_c = (gamma * u_x_bar_e)**2
+        return (part_a + part_b + part_c)**-0.5
+
+    def tau_model_three_dt_aug(self, u_e: NDArray, u_x_e, alpha: float = 0.099, beta: float = 9.39, gamma: float = 2.16, delta: float = 1.0) -> float:
+        u_bar_e = 0.5 * (u_e[0] + u_e[1])
+        u_x_bar_e = u_x_e # gradient of u is constant for linear elements (right?)
+        part_a = (alpha * u_bar_e / self.element_size)**2
+        part_b = (beta * self.viscosity / self.element_size**2)**2
+        part_c = (gamma * u_x_bar_e)**2
+        part_dt = (delta * 2 / self.dt)**2
+        return (part_a + part_b + part_c + part_dt)**-0.5
     # ------------------------------------------------------------------ #
     #  FEM primitives
     # ------------------------------------------------------------------ #

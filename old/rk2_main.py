@@ -68,7 +68,7 @@ if __name__ == "__main__":
         disc_cfg,
         simulation_mode="tau_model",
         tau_model="shakib_one",
-        master_path=paths.les_shakib_one_data,
+        master_path=paths.les_tau_two_params_data,
     )
     solver_shakib_one.run_simulation()
     solver_shakib_one.post_processing()
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         disc_cfg,
         simulation_mode="tau_model",
         tau_model="shakib_two",
-        master_path=paths.les_shakib_one_data,
+        master_path=paths.les_tau_two_params_data,
     )
     solver_shakib_two.run_simulation()
     solver_shakib_two.post_processing()
@@ -88,7 +88,7 @@ if __name__ == "__main__":
         disc_cfg,
         simulation_mode="tau_model",
         tau_model="shakib_three",
-        master_path=paths.les_shakib_one_data,
+        master_path=paths.les_tau_two_params_data,
     )
     solver_shakib_three.run_simulation()
     solver_shakib_three.post_processing()

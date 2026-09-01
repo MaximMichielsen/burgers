@@ -164,9 +164,9 @@ class RunPaths:
     solver_data: Path
     dns_data: Path | None
     les_a_data: Path
-    les_shakib_one_data: Path
-    les_shakib_two_data: Path
-    les_shakib_three_data: Path
+    les_tau_two_params_data: Path
+    les_tau_three_params_data: Path
+    les_tau_four_params_data: Path
     les_nm_data: Path
     avc_data: Path
     avc_gg_data: Path
@@ -186,15 +186,15 @@ class RunPaths:
             solver_data=master_path / SOLVER_DATA_FOLDER,
             dns_data=None,
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
-            les_shakib_one_data=master_path
-            / SOLVER_DATA_FOLDER
-            / LES_SHAKIB_ONE_SAVE_PATH,
-            les_shakib_two_data=master_path
-            / SOLVER_DATA_FOLDER
-            / LES_SHAKIB_TWO_SAVE_PATH,
-            les_shakib_three_data=master_path
-            / SOLVER_DATA_FOLDER
-            / LES_SHAKIB_THREE_SAVE_PATH,
+            les_tau_two_params_data=master_path
+                                    / SOLVER_DATA_FOLDER
+                                    / LES_SHAKIB_ONE_SAVE_PATH,
+            les_tau_three_params_data=master_path
+                                      / SOLVER_DATA_FOLDER
+                                      / LES_SHAKIB_TWO_SAVE_PATH,
+            les_tau_four_params_data=master_path
+                                     / SOLVER_DATA_FOLDER
+                                     / LES_SHAKIB_THREE_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
             avc_gg_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH / "global",
             avc_gl_data=master_path
