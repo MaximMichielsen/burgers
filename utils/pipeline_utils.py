@@ -187,14 +187,14 @@ class RunPaths:
             dns_data=None,
             les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
             les_tau_two_params_data=master_path
-                                    / SOLVER_DATA_FOLDER
-                                    / LES_SHAKIB_ONE_SAVE_PATH,
+            / SOLVER_DATA_FOLDER
+            / LES_SHAKIB_ONE_SAVE_PATH,
             les_tau_three_params_data=master_path
-                                      / SOLVER_DATA_FOLDER
-                                      / LES_SHAKIB_TWO_SAVE_PATH,
+            / SOLVER_DATA_FOLDER
+            / LES_SHAKIB_TWO_SAVE_PATH,
             les_tau_four_params_data=master_path
-                                     / SOLVER_DATA_FOLDER
-                                     / LES_SHAKIB_THREE_SAVE_PATH,
+            / SOLVER_DATA_FOLDER
+            / LES_SHAKIB_THREE_SAVE_PATH,
             les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
             avc_gg_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH / "global",
             avc_gl_data=master_path

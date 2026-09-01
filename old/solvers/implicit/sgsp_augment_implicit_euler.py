@@ -49,7 +49,7 @@ from old.ml.ml_agents.predictor import SGSPredictor, load_predictor
 
 from old.problems_and_configurations.disc_config import DiscretizationConfig
 from old.problems_and_configurations.problems import Problem
-from old.ml.ml_agents.solver_configs import SGSPConfig
+from old.ml.ml_agents.ann_configs import SGSPConfig
 from old.solvers.implicit.base_solver_implicit_euler import BaseImplicitEuler
 from old.solvers.implicit.sgsp_training_data_generator import (
     load_normalisation_stats_csv,

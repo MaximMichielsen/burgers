@@ -16,7 +16,7 @@ from old.ml.ml_agents.corrector import AVController, save_corrector
 from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
 from solvers.implicit.base_solver_implicit_euler import BaseImplicitEuler
-from old.ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
+from old.ml.ml_agents.ann_configs import SGSPConfig, AVCConfig
 from dissipation_evolution import plot_dissipation_comparison
 from utils.plotting.energy_evolution import plot_energy_comparison
 from utils.pipeline_utils import (

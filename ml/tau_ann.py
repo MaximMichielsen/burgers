@@ -1,0 +1,69 @@
+from pathlib import Path
+
+import torch
+from torch import nn, Tensor
+
+N_HIDDEN_UNITS = 64
+
+class TauANNConfig:
+    tau_model: str
+    n_wavenumber_bins: int
+    n_coefficients: int
+    ann_path: Path
+    n_skip_steps: int
+
+    reward_weight_energy: float = 1.0
+    reward_spectral_exponent: float = 5.0 / 3.0
+
+    def __post_init__(self) -> None:
+        self.input_dimension = self.n_wavenumber_bins + self.n_coefficients
+
+
+class TauANN(nn.Module):
+    """MLP policy πθ : S → A for the Coefficient Controller.
+
+    Maps state sₙ = (Ê₁..Êₖ, c_...^{n-1}) ∈ ℝ^(K+4) to a coefficient vector.
+    """
+
+    def __init__(self, n_wavenumber_bins, n_coefficients):
+        super().__init__()
+
+        self.input_dim: int = n_wavenumber_bins + n_coefficients
+        self.n_wavenumber_bins = n_wavenumber_bins
+        self.n_coefficients = n_coefficients
+
+        self.network = nn.Sequential(
+            nn.Linear(self.input_dim, N_HIDDEN_UNITS),
+            nn.ReLU(),
+            nn.Linear(N_HIDDEN_UNITS, N_HIDDEN_UNITS),
+            nn.ReLU(),
+            nn.Linear(N_HIDDEN_UNITS, n_coefficients),
+        )
+
+    def forward(self, state_input: Tensor) -> Tensor:
+        """Forward pass of the ANN.."""
+        return self.network(state_input)
+
+
+def save_tau_ann(model: TauANN, save_path: Path) -> None:
+    """Save tau-ann to save_path."""
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "n_wavenumber_bins": model.n_wavenumber_bins,
+            "n_coefficients": model.n_coefficients,
+        },
+        save_path,
+    )
+
+
+def load_tau_ann(model_path: Path) -> TauANN:
+    """Load tau-ann from model_path."""
+    checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
+    model = TauANN(
+        n_wavenumber_bins=checkpoint["n_wavenumber_bins"],
+        n_coefficients=checkpoint["n_coefficients"],
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    return model

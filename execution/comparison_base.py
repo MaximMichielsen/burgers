@@ -7,7 +7,10 @@ from solvers.solver_base import SolverBase
 from utils.pipeline_utils import run_dns, resolve_pathing
 from utils.plotting.dissipation_evolution import plot_dissipation_comparison
 from utils.plotting.energy_evolution import plot_energy_comparison
-from utils.plotting.velocity_profiles import plot_solution_comparison, create_velocity_plot_configs
+from utils.plotting.velocity_profiles import (
+    plot_solution_comparison,
+    create_velocity_plot_configs,
+)
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 

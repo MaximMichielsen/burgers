@@ -38,7 +38,7 @@ from numpy.typing import NDArray
 from old.ml.ml_agents.corrector import AVController, load_corrector
 from old.problems_and_configurations.disc_config import DiscretizationConfig
 from old.problems_and_configurations.problems import Problem
-from old.ml.ml_agents.solver_configs import AVCConfig
+from old.ml.ml_agents.ann_configs import AVCConfig
 from old.solvers.explicit.base_solver_rk2 import BaseRK2
 
 logger = logging.getLogger(__name__)

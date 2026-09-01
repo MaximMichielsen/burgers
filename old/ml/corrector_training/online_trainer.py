@@ -56,7 +56,7 @@ from old.ml.corrector_training.projection_schedule import ProjectionReferenceSch
 from old.ml.ml_agents.corrector import AVController, save_corrector
 from old.problems_and_configurations.disc_config import DiscretizationConfig
 from old.problems_and_configurations.problems import Problem
-from old.ml.ml_agents.solver_configs import SGSPConfig, AVCConfig
+from old.ml.ml_agents.ann_configs import SGSPConfig, AVCConfig
 from old.utils.io_utils import compute_adjusted_dt
 from old.solvers.implicit.avc_augment_implicit_euler import AVCSolverImplicit
 
