@@ -104,19 +104,11 @@ def create_velocity_plot_configs(
     paths: RunPaths, disc_cfg: DiscretizationConfig
 ) -> list[VelocityPlotConfig]:
     """Create configs for the velocity profile comparison plot."""
-    reference_time = _infer_final_time_from_directory(paths.sgsp_data)
-
     if paths.dns_data is None:
         raise ValueError("No viable DNS path found! Cannot plot velocity profile.")
-    dns_solution = (
-        _read_snapshot_at_time(paths.dns_data, reference_time)
-        if reference_time is not None
-        else read_data(directory=paths.dns_data, final_only=True)[0]
-    )
+    dns_solution = read_data(directory=paths.dns_data, final_only=True)[0]
     projected_solution = (
-        _read_snapshot_at_time(paths.projection, reference_time)
-        if reference_time is not None and paths.projection is not None
-        else read_data(directory=paths.projection, final_only=True)[0]
+        read_data(directory=paths.projection, final_only=True)[0]
         if paths.projection is not None
         else None
     )
@@ -171,13 +163,6 @@ def create_velocity_plot_configs(
             data_path=paths.les_shakib_three_data,
             label="LES - Shakib 3",
             color="darkblue",
-            marker="d",
-            mesh=disc_cfg.mesh_les,
-        ),
-        VelocityPlotConfig(
-            data_path=paths.sgsp_data,
-            label="LES - SGSP",
-            color="crimson",
             marker="d",
             mesh=disc_cfg.mesh_les,
         ),

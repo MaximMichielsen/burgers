@@ -9,9 +9,9 @@ from problems_and_configurations.disc_config import DiscretizationConfig
 from problems_and_configurations.problems import Problems, Problem
 
 from solvers.explicit.base_solver_rk2 import BaseRK2
-from utils.plotting.dissipation_evolution import plot_dissipation_comparison
+from dissipation_evolution import plot_dissipation_comparison
 from utils.plotting.energy_evolution import plot_energy_comparison
-from new.utils.pipeline_utils import (
+from utils.pipeline_utils import (
     run_dns,
     resolve_pathing,
 )

@@ -8,7 +8,7 @@ import matplotlib
 from old.constants import RUNS_FOLDER
 from old.problems_and_configurations.disc_config import DiscretizationConfig
 from old.problems_and_configurations.problems import Problems
-from new.utils.pipeline_utils import (
+from utils.pipeline_utils import (
     run_dns,
     get_run_id,
     RunPaths,
