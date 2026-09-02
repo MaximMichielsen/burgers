@@ -3,7 +3,8 @@ from pathlib import Path
 import torch
 from torch import nn, Tensor
 
-N_HIDDEN_UNITS = 64
+from ml.constants import N_HIDDEN_UNITS
+
 
 class TauANNConfig:
     tau_model: str

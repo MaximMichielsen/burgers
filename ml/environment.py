@@ -47,7 +47,9 @@ class EnvironmentTauAnn:
         self.solver = SolverCoupled(
             training_mode=True,
             problem=self.problem,
-            disc_config=dataclasses.replace(self.disc_config, suppress_file_logging=True),
+            disc_config=dataclasses.replace(
+                self.disc_config, suppress_file_logging=True
+            ),
             simulation_mode="tau_model",
             master_path=self.master_path,
             tau_model=self.tau_ann_config.tau_model,
@@ -70,8 +72,7 @@ class EnvironmentTauAnn:
 
         reward_val = self.compute_reward()
         done_flag = self._total_les_steps >= self._max_les_steps
-        next_state_array = (self.solver.create_input_stencil()
-        )
+        next_state_array = self.solver.create_input_stencil()
 
         return next_state_array, reward_val, done_flag
 
