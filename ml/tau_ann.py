@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -6,6 +7,7 @@ from torch import nn, Tensor
 from ml.constants import N_HIDDEN_UNITS
 
 
+@dataclass
 class TauANNConfig:
     tau_model: str
     n_wavenumber_bins: int

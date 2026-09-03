@@ -1,4 +1,5 @@
 import copy
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -7,7 +8,12 @@ from torch import nn, Tensor
 import torch.nn.functional as functional
 
 from ml.constants import N_HIDDEN_UNITS
-from ml.tau_ann import TauANN
+from ml.environment import EnvironmentTauAnn
+from ml.projection_schedule import ProjectionReferenceSchedule
+from ml.tau_ann import TauANN, TauANNConfig, save_tau_ann
+from setup.config_discretization import DiscretizationConfig
+from setup.problems import Problem
+
 
 # =============================================================================
 # Network Architectures & Adapters
@@ -17,7 +23,7 @@ from ml.tau_ann import TauANN
 class TD3ActorWrapper(nn.Module):
     """Wraps existing TauANN model to enforce action bounds via tanh."""
 
-    def __init(self, tau_ann_model: TauANN, max_action: float = 1.0):
+    def __init__(self, tau_ann_model: TauANN, max_action: float = 1.0):
         super().__init__()
         self.tau_ann = tau_ann_model
         self.max_action = max_action
@@ -128,7 +134,7 @@ class TD3Agent:
         n_wavenumber_bins: int,
         max_action: float = 1.0,
         discount: float = 0.99,
-        tau: float = 0.005,
+        tau_polyak: float = 0.005,
         policy_noise: float = 0.2,
         noise_clip: float = 0.5,
         policy_freq: int = 2,
@@ -155,7 +161,7 @@ class TD3Agent:
 
         self.max_action = max_action
         self.discount = discount
-        self.tau_polyak = tau
+        self.tau_polyak = tau_polyak
         self.policy_noise = policy_noise
         self.noise_clip = noise_clip
         self.policy_freq = policy_freq
@@ -216,17 +222,110 @@ class TD3Agent:
                 self.critic.parameters(), self.critic_target.parameters()
             ):
                 target_param.data.copy_(
-                    self.tau_polyak * param.data + (1 - self.tau_polyak) * target_param.data
+                    self.tau_polyak * param.data
+                    + (1 - self.tau_polyak) * target_param.data
                 )
 
             for param, target_param in zip(
                 self.actor.parameters(), self.actor_target.parameters()
             ):
                 target_param.data.copy_(
-                    self.tau_polyak * param.data + (1 - self.tau_polyak) * target_param.data
+                    self.tau_polyak * param.data
+                    + (1 - self.tau_polyak) * target_param.data
                 )
+
 
 # =============================================================================
 # Main Training Pipeline
 # =============================================================================
 
+
+def run_td3_tau_ann_training(
+    problem: Problem,
+    disc_config: DiscretizationConfig,
+    tau_ann_config: TauANNConfig,
+    master_path: Path,
+    proj_ref_schedule: ProjectionReferenceSchedule,
+    total_episodes: int = 100,
+    max_action: float = 1.0,
+    start_timesteps: int = 1000,
+    batch_size: int = 64,
+    expl_noise: float = 0.1,
+) -> TauANN:
+    """Main training loop connecting EnvironmentTauANN and TD3 Agent."""
+
+    # 1. Initialize environment
+    env = EnvironmentTauAnn(
+        problem=problem,
+        disc_config=disc_config,
+        tau_ann_config=tau_ann_config,
+        master_path=master_path,
+        proj_ref_schedule=proj_ref_schedule,
+    )
+
+    state_dim = env.state_dim
+    action_dim = env.action_dim
+    n_wavenumber_bins = env.n_wavenumber_bins
+
+    # Instantiate agent & replay buffer
+    agent = TD3Agent(
+        state_dim=state_dim,
+        action_dim=action_dim,
+        n_wavenumber_bins=n_wavenumber_bins,
+        max_action=max_action,
+        discount=0.99,
+        tau_polyak=0.005,
+        policy_noise=0.2,
+        noise_clip=0.5,
+        policy_freq=2,
+        lr=3e-4,
+    )
+
+    replay_buffer = ReplayBuffer(
+        state_dim=state_dim, action_dim=action_dim, max_size=int(1e5)
+    )
+
+    total_steps = 0
+
+    # 3. Outer episode training loop
+    for episode in range(total_episodes):
+        state = env.reset()
+        episode_reward = 0.0
+        done = False
+        episode_steps = 0
+
+        while not done:
+            total_steps += 1
+            episode_steps += 1
+
+            # Select Action: Pure random uniforms at start, then policy + noise
+            if total_steps < start_timesteps:
+                action = np.array(
+                    np.random.uniform(-max_action, max_action, size=action_dim)
+                )
+            else:
+                action = agent.select_action(state, noise_std=expl_noise)
+
+            next_state, reward, done = env.step(action=action)
+            replay_buffer.add(state, action, next_state, reward, done)
+
+            state = next_state
+            episode_reward += reward
+
+            # Train TD3 agent once warmup phase is complete
+            if total_steps >= start_timesteps:
+                agent.train(replay_buffer, batch_size)
+
+        print(
+            f"Episode: {episode + 1}/{total_episodes} | "
+            f"Steps in Ep: {episode_steps} | "
+            f"Total Steps: {total_steps} | "
+            f"Reward: {episode_reward:.4f}"
+        )
+
+    # 4. Extract trained core TauANN and save to disk
+    trained_tau_ann = agent.actor.tau_ann
+    save_tau_ann(trained_tau_ann, tau_ann_config.ann_path)
+    print(f"Successfully saved trained TauANN to {tau_ann_config.ann_path}")
+
+    return trained_tau_ann
