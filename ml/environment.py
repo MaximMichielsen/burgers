@@ -53,6 +53,7 @@ class EnvironmentTauAnn:
             simulation_mode="tau_model",
             master_path=self.master_path,
             tau_model=self.tau_ann_config.tau_model,
+            ann_path=None,
         )
         self._total_les_steps = 0
         if self.solver is None:

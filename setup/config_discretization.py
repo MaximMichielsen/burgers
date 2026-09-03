@@ -37,3 +37,5 @@ class DiscretizationConfig:
 
         self.mesh_les = np.linspace(0, self.domain_length, self.n_nodes_les)
         self.mesh_dns = np.linspace(0, self.domain_length, self.n_nodes_dns)
+
+        self.n_wavenumber_bins: int = (self.n_nodes_les + 1) // 2

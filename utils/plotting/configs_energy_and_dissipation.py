@@ -11,5 +11,6 @@ def plotting_configs(paths) -> list[tuple[str, Path | None, str, str, float]]:
         ("LES - NM", paths.les_nm_data, "gold", "-.", 1.4),
         ("LES - AVCG", paths.avc_data / "global", "royalblue", "-", 1.8),
         ("LES - AVCL", paths.avc_data / "gl_hybrid", "blueviolet", "--", 1.8),
+        ("LES - ANN", paths.data_ann_path, "purple", "-", 1.8),
     ]
     return _all_configs

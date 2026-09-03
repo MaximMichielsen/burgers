@@ -20,6 +20,7 @@ class SolverCoupled(SolverBase):
         simulation_mode: str,
         master_path: Path,
         tau_model: str,
+        ann_path: Path | None = None,
         snapshot_factor: int = 1,
         t_start: float = 0.0,
         training_mode: bool = False,
@@ -47,7 +48,14 @@ class SolverCoupled(SolverBase):
         self.correction_coefficients: NDArray | None = None
         self.correction_coefficients_history: list = []
 
-        self.ann: TauANN = load_tau_ann(ann_path)
+        # Load ANN only during inference/solver mode
+        self.ann: TauANN | None = None
+        if not self.training_mode:
+            if ann_path is None:
+                raise ValueError(
+                    "ann_path must be provided when training_mode is False."
+                )
+            self.ann = load_tau_ann(ann_path)
 
         self._n_wavenumber_bins: int = (self.n_nodes + 1) // 2
 
@@ -56,7 +64,9 @@ class SolverCoupled(SolverBase):
 
         Previous solutions are stored for BDF2 time-marching."""
         self.resolve_current_forcing()
-        self.correction_coefficients = self.get_ann_coefficients()
+        # Only evaluate the ANN if we are in inference/eval mode (not training mode)
+        if not self.training_mode:
+            self.correction_coefficients = self.get_ann_coefficients()
 
         new_solution = self.nr_iteration(self.solution, self.solution_previous)
         self.solution_previous = self.solution

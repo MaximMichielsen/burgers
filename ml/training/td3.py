@@ -38,13 +38,15 @@ class TauANNCritic(nn.Module):
     """Twin Q-Networks sized to match the TauANN hidden layer dimension."""
 
     def __init__(
-        self, input_dim: int, action_dim: int, hidden_dim: int = N_HIDDEN_UNITS
+        self, state_dim: int, action_dim:int, hidden_dim: int = N_HIDDEN_UNITS
     ):
         super().__init__()
 
+        input_dim = state_dim + action_dim
+
         # Q1 architecture
         self.q1_net = nn.Sequential(
-            nn.Linear(input_dim + action_dim, hidden_dim),
+            nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -53,7 +55,7 @@ class TauANNCritic(nn.Module):
 
         # Q2 architecture
         self.q2_net = nn.Sequential(
-            nn.Linear(input_dim + action_dim, hidden_dim),
+            nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),

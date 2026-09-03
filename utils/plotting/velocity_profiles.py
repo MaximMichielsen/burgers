@@ -167,7 +167,7 @@ def create_velocity_plot_configs(
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(
-            data_path=paths.avc_data / "global",
+            data_path=paths.data_ann_path,
             label="LES - AVC (global)",
             color="crimson",
             linestyle="--",

@@ -162,8 +162,10 @@ class RunPaths:
 
     master: Path
     solver_data: Path
-    dns_data: Path | None
+    dns_data: Path
     les_a_data: Path
+    ann_path: Path
+    data_ann_path: Path
     les_tau_two_params_data: Path
     les_tau_three_params_data: Path
     les_tau_four_params_data: Path
@@ -171,8 +173,8 @@ class RunPaths:
     avc_data: Path
     avc_gg_data: Path
     avc_gl_data: Path
-    projection: Path | None
-    training: Path | None
+    projection: Path
+    training: Path
     agents: Path
     avc_gg_model: Path
     avc_gl_model: Path
@@ -208,6 +210,8 @@ class RunPaths:
             avc_gl_model=master_path / AGENT_FOLDER / "av_gl_hybrid.pt",
             apriori=master_path / A_PRIORI_FOLDER,
             avc_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH,
+            ann_path=master_path / AGENT_FOLDER / "trained_tau_ann.pt",
+            data_ann_path= master_path / SOLVER_DATA_FOLDER / "ann",
         )
 
     def create_master(self) -> None:

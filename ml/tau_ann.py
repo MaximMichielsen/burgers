@@ -50,6 +50,8 @@ class TauANN(nn.Module):
 
 def save_tau_ann(model: TauANN, save_path: Path) -> None:
     """Save tau-ann to save_path."""
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "model_state_dict": model.state_dict(),
