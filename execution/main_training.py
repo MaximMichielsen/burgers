@@ -19,8 +19,8 @@ from utils.plotting.velocity_profiles import (
 CURRENT_DIR = Path(__file__).parent.resolve()
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
-problem: Problem = Problems.raj_one
-problem = replace(problem, domain_timespan=1.0)
+problem: Problem = Problems.raj_two
+problem = replace(problem, domain_timespan=4.0)
 
 # general simulation parameters
 n_nodes_les: int = 9
@@ -65,7 +65,7 @@ trained_tau_ann = run_td3_tau_ann_training(
     master_path=paths.master,
     proj_ref_schedule=proj_ref_schedule,
     total_episodes=500,
-    max_action=1.0,
+    max_action=3.0,
     start_timesteps=10,
     batch_size=64,
     expl_noise=0.1,

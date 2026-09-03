@@ -108,4 +108,4 @@ class EnvironmentTauAnn:
             )
         )
 
-        return -np.log1p(spectral_penalty)
+        return -spectral_penalty

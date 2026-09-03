@@ -19,6 +19,8 @@ from utils.plotting.configs_energy_and_dissipation import plotting_configs
 # ---------------------------------------------------------------------------
 
 
+#TODO: check consistency helpers with solver helpers (or just use solver's version)
+
 def _compute_energy_series(
     solutions: list[NDArray], coords: list[NDArray]
 ) -> list[float]:

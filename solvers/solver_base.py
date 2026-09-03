@@ -23,6 +23,9 @@ TOLERANCE_UPDATE: float = 1e-6
 MAXIMUM_ITERATIONS_DNS: int = 20
 MAXIMUM_ITERATIONS_LES: int = 5
 
+#TODO: improve valid tau modes strings
+#TODO: revise configuration printing
+#TODO: top docstring
 
 class SolverBase:
     """Burgers FEM solver: M·U_t + A(U)·U + ν·K₀·U + C_fs(U) = f."""

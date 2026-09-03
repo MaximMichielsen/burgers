@@ -10,6 +10,8 @@ from setup.problems import Problem
 from solvers.solver_base import SolverBase
 
 
+#TODO: top docstring
+
 class SolverCoupled(SolverBase):
     """Base solver coupled with ANN to adjust SGS model coefficients."""
 

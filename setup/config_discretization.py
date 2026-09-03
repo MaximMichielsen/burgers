@@ -7,6 +7,8 @@ import numpy as np
 from old.constants import DNS_TO_LES_RATIO
 
 
+#TODO: find n_wavenumber_bins usage and update to use disc_config parameters.
+
 @dataclass
 class DiscretizationConfig:
     """Spatial and temporal discretization parameters for both DNS and LES grids.

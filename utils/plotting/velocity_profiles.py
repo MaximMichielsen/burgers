@@ -33,7 +33,7 @@ class VelocityPlotConfig:
 
 
 # utils/velocity_profiles.py
-
+#TODO: adjust build plot configs and only use one function for it!
 
 def build_plot_configs(
     paths: RunPaths,

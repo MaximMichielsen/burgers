@@ -15,23 +15,11 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 
 
+#TODO create TD3 hyperparameters class
+
 # =============================================================================
 # Network Architectures & Adapters
 # =============================================================================
-
-
-class TD3ActorWrapper(nn.Module):
-    """Wraps existing TauANN model to enforce action bounds via tanh."""
-
-    def __init__(self, tau_ann_model: TauANN, max_action: float = 1.0):
-        super().__init__()
-        self.tau_ann = tau_ann_model
-        self.max_action = max_action
-
-    def forward(self, state: Tensor) -> Tensor:
-        """Pass through TauANN, then bound output to [-max_action, max_action]."""
-        raw_output = self.tau_ann(state)
-        return self.max_action * torch.tanh(raw_output)
 
 
 class TauANNCritic(nn.Module):
@@ -145,10 +133,7 @@ class TD3Agent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Base TauANN wrapped into TD3 Policy
-        base_tau_ann = TauANN(
-            n_wavenumber_bins=n_wavenumber_bins, n_coefficients=action_dim
-        )
-        self.actor = TD3ActorWrapper(base_tau_ann, max_action=max_action).to(
+        self.actor = TauANN(n_wavenumber_bins=n_wavenumber_bins, n_coefficients=action_dim, max_action=max_action).to(
             self.device
         )
         self.actor_target = copy.deepcopy(self.actor)
@@ -326,7 +311,7 @@ def run_td3_tau_ann_training(
         )
 
     # 4. Extract trained core TauANN and save to disk
-    trained_tau_ann = agent.actor.tau_ann
+    trained_tau_ann = agent.actor
     save_tau_ann(trained_tau_ann, tau_ann_config.ann_path)
     print(f"Successfully saved trained TauANN to {tau_ann_config.ann_path}")
 

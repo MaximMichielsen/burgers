@@ -28,12 +28,13 @@ class TauANN(nn.Module):
     Maps state sₙ = (Ê₁..Êₖ, c_...^{n-1}) ∈ ℝ^(K+4) to a coefficient vector.
     """
 
-    def __init__(self, n_wavenumber_bins, n_coefficients):
+    def __init__(self, n_wavenumber_bins: int, n_coefficients: int, max_action: float = 1.0):
         super().__init__()
 
         self.input_dim: int = n_wavenumber_bins + n_coefficients
         self.n_wavenumber_bins = n_wavenumber_bins
         self.n_coefficients = n_coefficients
+        self.max_action = max_action
 
         self.network = nn.Sequential(
             nn.Linear(self.input_dim, N_HIDDEN_UNITS),
@@ -45,7 +46,8 @@ class TauANN(nn.Module):
 
     def forward(self, state_input: Tensor) -> Tensor:
         """Forward pass of the ANN.."""
-        return self.network(state_input)
+        raw_output= self.network(state_input)
+        return self.max_action * torch.tanh(raw_output)
 
 
 def save_tau_ann(model: TauANN, save_path: Path) -> None:
@@ -57,6 +59,7 @@ def save_tau_ann(model: TauANN, save_path: Path) -> None:
             "model_state_dict": model.state_dict(),
             "n_wavenumber_bins": model.n_wavenumber_bins,
             "n_coefficients": model.n_coefficients,
+            "max_action": model.max_action,
         },
         save_path,
     )
@@ -68,6 +71,7 @@ def load_tau_ann(model_path: Path) -> TauANN:
     model = TauANN(
         n_wavenumber_bins=checkpoint["n_wavenumber_bins"],
         n_coefficients=checkpoint["n_coefficients"],
+        max_action=checkpoint.get("max_action", 1.0),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
