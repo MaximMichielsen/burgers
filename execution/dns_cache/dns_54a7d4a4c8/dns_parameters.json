@@ -1,0 +1,12 @@
+{
+  "problem_name": "raj_three",
+  "domain_length": 1.0,
+  "viscosity": 0.01,
+  "forcing_name": "uniform_steady_forcing",
+  "bc_type": "dirichlet",
+  "bc_value": 1.0,
+  "n_nodes_dns": 544,
+  "temporal_refinement": 1,
+  "courant_les": 0.5,
+  "domain_timespan": 1.0
+}
