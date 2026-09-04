@@ -15,7 +15,6 @@ from ml.tau_ann import TauANN, TauANNConfig, save_tau_ann
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 
-
 # =============================================================================
 # Hyperparameters
 # =============================================================================
@@ -40,6 +39,7 @@ class TD3Hyperparameters:
     batch_size: int = 64
     expl_noise: float = 0.1
     replay_buffer_size: int = int(1e5)
+
 
 # =============================================================================
 # Network Architectures & Adapters
@@ -253,7 +253,7 @@ def run_td3_tau_ann_training(
     tau_ann_config: TauANNConfig,
     master_path: Path,
     proj_ref_schedule: ProjectionReferenceSchedule,
-    hp: TD3Hyperparameters | None = None
+    hp: TD3Hyperparameters | None = None,
 ) -> TauANN:
     """Main training loop connecting EnvironmentTauANN and TD3 Agent."""
     if hp is None:

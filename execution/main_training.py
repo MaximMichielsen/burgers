@@ -16,13 +16,13 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 CURRENT_DIR = Path(__file__).parent.resolve()
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
-problem: Problem = Problems.raj_one
+problem: Problem = Problems.raj_two
 problem = replace(problem, domain_timespan=1.0)
 
 # general simulation parameters
 n_nodes_les: int = 9
 temporal_refinement: int = 1
-courant_les: float = 1.0
+courant_les: float = 0.5
 
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.FOUR_PARAMS
@@ -66,6 +66,7 @@ trained_tau_ann = run_td3_tau_ann_training(
     tau_ann_config=tau_ann_config,
     master_path=paths.master,
     proj_ref_schedule=proj_ref_schedule,
+    hp=custom_hp,
 )
 
 # ----------------------------------------- LES solvers ------------------------------------------ #

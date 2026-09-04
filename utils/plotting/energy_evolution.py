@@ -23,6 +23,7 @@ from utils.plotting.configs import PlotConfig, plotting_configs
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _compute_energy_series(
     solutions: list[NDArray], domain_length: float
 ) -> list[float]:
