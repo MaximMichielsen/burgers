@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ml.projection_schedule import ProjectionReferenceSchedule
 from ml.tau_ann import TauANNConfig
-from ml.training.td3 import run_td3_tau_ann_training
+from ml.training.td3 import run_td3_tau_ann_training, TD3Hyperparameters
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem, Problems
 from solvers.solver_base import SimulationMode, SolverBase, TauModel
@@ -26,6 +26,8 @@ courant_les: float = 1.0
 
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.FOUR_PARAMS
+
+custom_hp = TD3Hyperparameters(total_episodes=500)
 
 # discretization config
 disc_cfg = DiscretizationConfig(
@@ -64,11 +66,6 @@ trained_tau_ann = run_td3_tau_ann_training(
     tau_ann_config=tau_ann_config,
     master_path=paths.master,
     proj_ref_schedule=proj_ref_schedule,
-    total_episodes=100,
-    max_action=3.0,
-    start_timesteps=10,
-    batch_size=64,
-    expl_noise=0.1,
 )
 
 # ----------------------------------------- LES solvers ------------------------------------------ #

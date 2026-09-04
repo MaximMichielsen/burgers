@@ -1,4 +1,5 @@
 import copy
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +16,30 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 
 
-# TODO create TD3 hyperparameters class
+# =============================================================================
+# Hyperparameters
+# =============================================================================
+
+
+@dataclass
+class TD3Hyperparameters:
+    """Hyperparameters for TD3 Agent training and environment interactions."""
+
+    # Agent / Optimization Params
+    lr: float = 3e-4
+    discount: float = 0.99
+    tau_polyak: float = 0.005
+    policy_noise: float = 0.2
+    noise_clip: float = 0.5
+    policy_freq: int = 2
+    max_action: float = 1.0
+
+    # Training / Environment Setup Params
+    total_episodes: int = 100
+    start_timesteps: int = 1000
+    batch_size: int = 64
+    expl_noise: float = 0.1
+    replay_buffer_size: int = int(1e5)
 
 # =============================================================================
 # Network Architectures & Adapters
@@ -122,13 +146,7 @@ class TD3Agent:
         state_dim: int,
         action_dim: int,
         n_wavenumber_bins: int,
-        max_action: float = 1.0,
-        discount: float = 0.99,
-        tau_polyak: float = 0.005,
-        policy_noise: float = 0.2,
-        noise_clip: float = 0.5,
-        policy_freq: int = 2,
-        lr: float = 3e-4,
+        hp: TD3Hyperparameters = TD3Hyperparameters(),
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -136,24 +154,24 @@ class TD3Agent:
         self.actor = TauANN(
             n_wavenumber_bins=n_wavenumber_bins,
             n_coefficients=action_dim,
-            max_action=max_action,
+            max_action=hp.max_action,
         ).to(self.device)
         self.actor_target = copy.deepcopy(self.actor)
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=hp.lr)
 
         # Twin Q Critic
         self.critic = TauANNCritic(
             state_dim=state_dim, action_dim=action_dim, hidden_dim=N_HIDDEN_UNITS
         ).to(self.device)
         self.critic_target = copy.deepcopy(self.critic)
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=lr)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=hp.lr)
 
-        self.max_action = max_action
-        self.discount = discount
-        self.tau_polyak = tau_polyak
-        self.policy_noise = policy_noise
-        self.noise_clip = noise_clip
-        self.policy_freq = policy_freq
+        self.max_action = hp.max_action
+        self.discount = hp.discount
+        self.tau_polyak = hp.tau_polyak
+        self.policy_noise = hp.policy_noise
+        self.noise_clip = hp.noise_clip
+        self.policy_freq = hp.policy_freq
 
         self.total_it = 0
 
@@ -235,13 +253,11 @@ def run_td3_tau_ann_training(
     tau_ann_config: TauANNConfig,
     master_path: Path,
     proj_ref_schedule: ProjectionReferenceSchedule,
-    total_episodes: int = 100,
-    max_action: float = 1.0,
-    start_timesteps: int = 1000,
-    batch_size: int = 64,
-    expl_noise: float = 0.1,
+    hp: TD3Hyperparameters | None = None
 ) -> TauANN:
     """Main training loop connecting EnvironmentTauANN and TD3 Agent."""
+    if hp is None:
+        hp = TD3Hyperparameters()
 
     # 1. Initialize environment
     env = EnvironmentTauAnn(
@@ -261,13 +277,7 @@ def run_td3_tau_ann_training(
         state_dim=state_dim,
         action_dim=action_dim,
         n_wavenumber_bins=n_wavenumber_bins,
-        max_action=max_action,
-        discount=0.99,
-        tau_polyak=0.005,
-        policy_noise=0.2,
-        noise_clip=0.5,
-        policy_freq=2,
-        lr=3e-4,
+        hp=hp,
     )
 
     replay_buffer = ReplayBuffer(
@@ -277,7 +287,7 @@ def run_td3_tau_ann_training(
     total_steps = 0
 
     # 3. Outer episode training loop
-    for episode in range(total_episodes):
+    for episode in range(hp.total_episodes):
         state = env.reset()
         episode_reward = 0.0
         done = False
@@ -288,12 +298,12 @@ def run_td3_tau_ann_training(
             episode_steps += 1
 
             # Select Action: Pure random uniforms at start, then policy + noise
-            if total_steps < start_timesteps:
+            if total_steps < hp.start_timesteps:
                 action = np.array(
-                    np.random.uniform(-max_action, max_action, size=action_dim)
+                    np.random.uniform(-hp.max_action, hp.max_action, size=action_dim)
                 )
             else:
-                action = agent.select_action(state, noise_std=expl_noise)
+                action = agent.select_action(state, noise_std=hp.expl_noise)
 
             next_state, reward, done = env.step(action=action)
             replay_buffer.add(state, action, next_state, reward, done)
@@ -302,11 +312,11 @@ def run_td3_tau_ann_training(
             episode_reward += reward
 
             # Train TD3 agent once warmup phase is complete
-            if total_steps >= start_timesteps:
-                agent.train(replay_buffer, batch_size)
+            if total_steps >= hp.start_timesteps:
+                agent.train(replay_buffer, hp.batch_size)
 
         print(
-            f"Episode: {episode + 1}/{total_episodes} | "
+            f"Episode: {episode + 1}/{hp.total_episodes} | "
             f"Steps in Ep: {episode_steps} | "
             f"Total Steps: {total_steps} | "
             f"Reward: {episode_reward:.4f}"
