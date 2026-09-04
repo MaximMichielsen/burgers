@@ -14,25 +14,8 @@ from utils.dns_caching import (
     extend_dns_run,
     write_dns_parameters,
 )
-from old.constants import (
-    DNS_FOLDER,
-    RUNS_FOLDER,
-    LES_SHAKIB_ONE_SAVE_PATH,
-    LES_SHAKIB_TWO_SAVE_PATH,
-    LES_SHAKIB_THREE_SAVE_PATH,
-)
 
 from dataclasses import dataclass
-
-from old.constants import (
-    SOLVER_DATA_FOLDER,
-    LES_ANALYTICAL_SAVE_PATH,
-    LES_NO_MODEL_SAVE_PATH,
-    AGENT_FOLDER,
-    A_PRIORI_FOLDER,
-    LES_AVC_SAVE_PATH,
-)
-
 
 if TYPE_CHECKING:
     from old.problems_and_configurations.disc_config import DiscretizationConfig
@@ -47,7 +30,7 @@ def get_run_id(problem_name: str) -> str:
 
 def resolve_pathing(problem_name: str, root_directory: Path) -> RunPaths:
     """Create pipeline paths and directories."""
-    master_path = root_directory / RUNS_FOLDER / get_run_id(problem_name)
+    master_path = root_directory / "runs" / get_run_id(problem_name)
     paths = RunPaths.from_master(master_path)
     paths.create_master()
     return paths
@@ -82,7 +65,7 @@ def run_dns(
 
     if cache_result.status == DNSCacheStatus.HIT:
         print(f"[DNS cache] HIT — reusing {cache_result.cache_dir}")
-        paths.dns_data = cache_result.cache_dir / DNS_FOLDER
+        paths.dns_data = cache_result.cache_dir / "dns"
         paths.projection = (
             cache_result.cache_dir / f"projection_{disc_cfg.n_nodes_les}nodes"
         )
@@ -109,14 +92,14 @@ def run_dns(
             training_dir=training_dir,
             run_data_generator_fn=run_data_generator,
         )
-        paths.dns_data = cache_result.cache_dir / DNS_FOLDER
+        paths.dns_data = cache_result.cache_dir / "dns"
         paths.projection = projection_dir
         paths.training = training_dir
 
     else:
         print("[DNS cache] MISS — running DNS")
         cache_dir = cache_root / dns_cache_key.dir_to_name()
-        paths.dns_data = cache_dir / DNS_FOLDER
+        paths.dns_data = cache_dir / "dns"
         paths.projection = cache_dir / f"projection_{disc_cfg.n_nodes_les}nodes"
         paths.training = cache_dir / f"training_{disc_cfg.n_nodes_les}nodes"
         paths.projection.mkdir(parents=True, exist_ok=True)
@@ -155,31 +138,28 @@ def run_data_generator(
     solver.run_simulation()
     solver.post_processing()
 
-#TODO: adjust pathing
+
+SOLVER_DATA_FOLDER: str = "solver_data"
+AGENT_FOLDER: str = "agents"
+
 
 @dataclass
 class RunPaths:
     """All output directories for a single pipeline run."""
 
     master: Path
+    dns_data: Path | None
+    projection: Path | None
     solver_data: Path
-    dns_data: Path
-    les_a_data: Path
-    ann_path: Path
-    data_ann_path: Path
-    les_tau_two_params_data: Path
-    les_tau_three_params_data: Path
-    les_tau_four_params_data: Path
-    les_nm_data: Path
-    avc_data: Path
-    avc_gg_data: Path
-    avc_gl_data: Path
-    projection: Path
-    training: Path
     agents: Path
-    avc_gg_model: Path
-    avc_gl_model: Path
-    apriori: Path
+
+    ann_model: Path
+    ann_data: Path
+
+    les_two: Path
+    les_three: Path
+    les_four: Path
+    les_nm: Path
 
     @classmethod
     def from_master(cls, master_path: Path) -> "RunPaths":
@@ -188,31 +168,14 @@ class RunPaths:
             master=master_path,
             solver_data=master_path / SOLVER_DATA_FOLDER,
             dns_data=None,
-            les_a_data=master_path / SOLVER_DATA_FOLDER / LES_ANALYTICAL_SAVE_PATH,
-            les_tau_two_params_data=master_path
-            / SOLVER_DATA_FOLDER
-            / LES_SHAKIB_ONE_SAVE_PATH,
-            les_tau_three_params_data=master_path
-            / SOLVER_DATA_FOLDER
-            / LES_SHAKIB_TWO_SAVE_PATH,
-            les_tau_four_params_data=master_path
-            / SOLVER_DATA_FOLDER
-            / LES_SHAKIB_THREE_SAVE_PATH,
-            les_nm_data=master_path / SOLVER_DATA_FOLDER / LES_NO_MODEL_SAVE_PATH,
-            avc_gg_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH / "global",
-            avc_gl_data=master_path
-            / SOLVER_DATA_FOLDER
-            / LES_AVC_SAVE_PATH
-            / "global_local",
+            les_nm=master_path / SOLVER_DATA_FOLDER / "no_model",
             projection=None,
-            training=None,
             agents=master_path / AGENT_FOLDER,
-            avc_gg_model=master_path / AGENT_FOLDER / "av_global_corrector.pt",
-            avc_gl_model=master_path / AGENT_FOLDER / "av_gl_hybrid.pt",
-            apriori=master_path / A_PRIORI_FOLDER,
-            avc_data=master_path / SOLVER_DATA_FOLDER / LES_AVC_SAVE_PATH,
-            ann_path=master_path / AGENT_FOLDER / "trained_tau_ann.pt",
-            data_ann_path= master_path / SOLVER_DATA_FOLDER / "ann",
+            ann_model=master_path / AGENT_FOLDER / "trained_tau_ann.pt",
+            les_two=master_path / SOLVER_DATA_FOLDER / "tau_two",
+            les_three=master_path / SOLVER_DATA_FOLDER / "tau_three",
+            les_four=master_path / SOLVER_DATA_FOLDER / "tau_four",
+            ann_data=master_path / SOLVER_DATA_FOLDER / "ann",
         )
 
     def create_master(self) -> None:

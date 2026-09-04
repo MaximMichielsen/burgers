@@ -80,23 +80,27 @@ class EnvironmentTauAnn:
     def compute_reward(self) -> float:
         assert self.solver is not None
 
-        wavenumbers_all, raw_spectrum_all = self.solver.compute_energy_spectrum(
+        wavenumbers_all, raw_spectrum_all = self.solver._compute_energy_spectrum(
             self.solver.solution
         )
         _, positive_spectrum = self.solver.get_positive_spectrum(
             wavenumbers_all, raw_spectrum_all
         )
-        spectrum_k = positive_spectrum.astype(np.float64)
 
-        w_energy = self.tau_ann_config.reward_weight_energy
-        gamma_exp = self.tau_ann_config.reward_spectral_exponent
+        spectrum_k = positive_spectrum.astype(np.float64)
 
         proj_spectrum_k = self.proj_ref_schedule.query(
             self.solver.simulation_time_elapsed
         )
 
-        spectrum_k = spectrum_k[1:]
-        proj_spectrum_k = proj_spectrum_k[1:]
+        if len(spectrum_k) != len(proj_spectrum_k):
+            raise ValueError(
+                f"Spectrum length mismatch between live LES ({len(spectrum_k)}) "
+                f"and reference schedule ({len(proj_spectrum_k)}). Check n_wavenumber_bins alignment."
+            )
+
+        w_energy = self.tau_ann_config.reward_weight_energy
+        gamma_exp = self.tau_ann_config.reward_spectral_exponent
         wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
 
         spectral_penalty = float(

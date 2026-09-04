@@ -7,7 +7,8 @@ import numpy as np
 from old.constants import DNS_TO_LES_RATIO
 
 
-#TODO: find n_wavenumber_bins usage and update to use disc_config parameters.
+# TODO: find n_wavenumber_bins usage and update to use disc_config parameters.
+
 
 @dataclass
 class DiscretizationConfig:
@@ -40,4 +41,4 @@ class DiscretizationConfig:
         self.mesh_les = np.linspace(0, self.domain_length, self.n_nodes_les)
         self.mesh_dns = np.linspace(0, self.domain_length, self.n_nodes_dns)
 
-        self.n_wavenumber_bins: int = (self.n_nodes_les + 1) // 2
+        self.n_wavenumber_bins: int = (self.n_nodes_les - 1) // 2

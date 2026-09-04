@@ -10,66 +10,54 @@ from matplotlib.gridspec import GridSpec
 from numpy.typing import NDArray
 
 from old.utils.io_utils import read_data
+from utils.diagnostics import (
+    compute_energy,
+    compute_dissipation,
+    compute_energy_spectrum,
+)
 from utils.pipeline_utils import RunPaths
-from utils.plotting.configs_energy_and_dissipation import plotting_configs
+from utils.plotting.configs import PlotConfig, plotting_configs
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-
-#TODO: check consistency helpers with solver helpers (or just use solver's version)
-
 def _compute_energy_series(
-    solutions: list[NDArray], coords: list[NDArray]
+    solutions: list[NDArray], domain_length: float
 ) -> list[float]:
-    """Compute ½∫u² dx per snapshot via trapezoidal integration."""
-    return [
-        float(np.trapezoid(0.5 * solution**2, coord))
-        for solution, coord in zip(solutions, coords)
-    ]
+    """Compute ½∫u² dx across all time snapshots."""
+    return [compute_energy(sol, domain_length) for sol in solutions]
 
 
 def _compute_dissipation_series(
-    solutions: list[NDArray],
-    coords: list[NDArray],
-    viscosity: float,
+    solutions: list[NDArray], domain_length: float, viscosity: float
 ) -> list[float]:
-    """Compute ν∫(∂u/∂x)² dx per snapshot via trapezoidal integration."""
-    result: list[float] = []
-    for solution, coord in zip(solutions, coords):
-        du_dx = np.gradient(solution, coord)
-        result.append(float(viscosity * np.trapezoid(du_dx**2, coord)))
-    return result
+    """Compute ν∫(∂u/∂x)² dx across all time snapshots."""
+    return [compute_dissipation(sol, domain_length, viscosity) for sol in solutions]
 
 
 def _compute_energy_spectrum(
     solution: NDArray, domain_length: float
 ) -> tuple[NDArray, NDArray]:
     """Return positive wavenumbers and spectral energy of a solution snapshot."""
-    n_points = len(solution)
-    u_hat = np.fft.fft(solution)
-    wavenumbers = np.fft.fftfreq(n_points, d=domain_length / n_points) * 2 * np.pi
-    spectrum = 0.5 * np.abs(u_hat) ** 2 / n_points
-    mask = wavenumbers > 0
-    return wavenumbers[mask], spectrum[mask]
+    return compute_energy_spectrum(solution, domain_length)
 
 
 def _plot_series(
     ax: plt.Axes,
-    data: dict,
-    x_key: str,
-    y_key: str,
+    data: dict[str, dict],
 ) -> None:
     """Plot a time series for all entries in data onto ax."""
     for label, entry in data.items():
+        cfg: PlotConfig = entry["config"]
         ax.plot(
-            entry[x_key],
-            entry[y_key],
-            color=entry["color"],
-            linestyle=entry["ls"],
-            linewidth=entry["lw"],
+            entry["times"],
+            entry["energy"],
+            color=cfg.color,
+            linestyle=cfg.linestyle,
+            linewidth=cfg.linewidth,
+            alpha=cfg.alpha,
             label=label,
         )
 
@@ -109,37 +97,29 @@ def plot_energy_comparison(
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    solver_configs: dict[str, tuple[Path, str, str, float]] = {}
+    configs: list[PlotConfig] = plotting_configs(paths)
 
-    _all_configs = plotting_configs(paths)
-
-    for label, path, color, linestyle, linewidth in _all_configs:
-        if path is not None:
-            solver_configs[label] = (path, color, linestyle, linewidth)
-
-    data: dict = {}
-    for label, (directory, color, ls, lw) in solver_configs.items():
-        if not directory.exists():
-            print(f"  Skipping {label}: directory not found at {directory}")
+    data: dict[str, dict] = {}
+    for cfg in configs:
+        if cfg.data_path is None or not cfg.data_path.exists():
+            print(f"  Skipping {cfg.label}: directory not found at {cfg.data_path}")
             continue
         try:
-            entry = _load_solver_data(directory)
-            entry["color"] = color
-            entry["ls"] = ls
-            entry["lw"] = lw
-            data[label] = entry
-            print(f"  Loaded {label}: {len(entry['times'])} snapshots")
+            entry = _load_solver_data(cfg.data_path)
+            entry["config"] = cfg
+            data[cfg.label] = entry
+            print(f"  Loaded {cfg.label}: {len(entry['times'])} snapshots")
         except FileNotFoundError as err:
-            print(f"  Skipping {label}: {err}")
+            print(f"  Skipping {cfg.label}: {err}")
 
     if len(data) < 2:
         print("Not enough data to produce comparison plot.")
         return
 
-    _trim_to_reference_length(data, "LES - SGSP", {"DNS", "Projection"})
+    _trim_to_reference_length(data, "LES - ANN", {"DNS", "Projection"})
 
     for label, entry in data.items():
-        entry["energy"] = _compute_energy_series(entry["solutions"], entry["coords"])
+        entry["energy"] = _compute_energy_series(entry["solutions"], domain_length)
         wavenumbers, spectrum = _compute_energy_spectrum(
             entry["solutions"][-1], domain_length
         )
@@ -158,7 +138,7 @@ def plot_energy_comparison(
     ax_spectrum = fig.add_subplot(gs[0, 2])
 
     # Panel 1: full energy evolution
-    _plot_series(ax_energy, data, "times", "energy")
+    _plot_series(ax_energy, data)
     ax_energy.set_xlabel("Time $t$")
     ax_energy.set_ylabel(r"$\frac{1}{2}\int u^2\,dx$")
     ax_energy.set_title("Total kinetic energy")
@@ -167,15 +147,17 @@ def plot_energy_comparison(
 
     # Panel 2: windowed energy evolution
     for label, entry in data.items():
+        cfg: PlotConfig = entry["config"]
         times_arr = np.array(entry["times"])
         energy_arr = np.array(entry["energy"])
         mask = times_arr >= t_window_start
         ax_zoom.plot(
             times_arr[mask],
             energy_arr[mask],
-            color=entry["color"],
-            linestyle=entry["ls"],
-            linewidth=entry["lw"],
+            color=cfg.color,
+            linestyle=cfg.linestyle,
+            linewidth=cfg.linewidth,
+            alpha=cfg.alpha,
             label=label,
         )
     ax_zoom.set_xlabel("Time $t$")
@@ -186,13 +168,15 @@ def plot_energy_comparison(
 
     # Panel 3: energy spectrum at t_final
     for label, entry in data.items():
+        cfg: PlotConfig = entry["config"]
         ax_spectrum.loglog(
             entry["wavenumbers"],
             entry["spectrum"],
-            color=entry["color"],
-            linewidth=entry["lw"],
+            color=cfg.color,
+            linestyle=cfg.linestyle,
+            linewidth=cfg.linewidth,
+            alpha=cfg.alpha,
             label=label,
-            linestyle="--" if label in ("LES - SGSP", "LES - AVCG") else "-",
         )
     first_entry = next(iter(data.values()))
     wn_ref = first_entry["wavenumbers"]

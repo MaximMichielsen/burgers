@@ -26,7 +26,7 @@ from utils.pipeline_utils import (
     resolve_pathing,
     load_manual_models,
 )
-from utils.plotting.velocity_profiles import (
+from utils.plotting.configs import (
     plot_solution_comparison,
     create_velocity_plot_configs,
 )
@@ -113,9 +113,7 @@ if __name__ == "__main__":
         les_run.run_simulation()
 
     if run_no_model_les:
-        no_model_run = BaseImplicitEuler(
-            problem, disc_cfg, "no_model", paths.les_nm_data
-        )
+        no_model_run = BaseImplicitEuler(problem, disc_cfg, "no_model", paths.les_nm)
         no_model_run.run_simulation()
 
     # --------------------------------------- GAVC training --------------------------------------- #

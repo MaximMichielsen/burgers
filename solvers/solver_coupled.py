@@ -1,3 +1,15 @@
+"""Machine-learning coupled finite element solver for Burgers' equation.
+
+Extends SolverBase to dynamically scale subgrid-scale (SGS) model coefficients
+using artificial neural networks (ANNs) trained via reinforcement learning (e.g., TD3):
+- Constructs feature input stencils based on normalized LES energy spectra and
+  historical coefficient values.
+- Evaluates neural network policies to dynamically output scale corrections
+  (c_1, c_2, ...) for active sub-grid tau models.
+- Supports dual execution modes: training-mode (external parameter override)
+  and inference-mode (direct PyTorch model evaluation).
+"""
+
 from pathlib import Path
 
 import numpy as np
@@ -7,10 +19,8 @@ from numpy.typing import NDArray
 from ml.tau_ann import load_tau_ann, TauANN
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
-from solvers.solver_base import SolverBase
+from solvers.solver_base import SolverBase, SimulationMode, TauModel
 
-
-#TODO: top docstring
 
 class SolverCoupled(SolverBase):
     """Base solver coupled with ANN to adjust SGS model coefficients."""
@@ -19,9 +29,9 @@ class SolverCoupled(SolverBase):
         self,
         problem: Problem,
         disc_config: DiscretizationConfig,
-        simulation_mode: str,
         master_path: Path,
-        tau_model: str,
+        tau_model: TauModel,
+        simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
         ann_path: Path | None = None,
         snapshot_factor: int = 1,
         t_start: float = 0.0,
@@ -74,8 +84,8 @@ class SolverCoupled(SolverBase):
         self.solution_previous = self.solution
         self.solution = new_solution
 
-        self.energy_history.append(self.compute_energy(self.solution))
-        self.dissipation_history.append(self.compute_dissipation(self.solution))
+        self.energy_history.append(self._compute_energy(self.solution))
+        self.dissipation_history.append(self._compute_dissipation(self.solution))
         self.correction_coefficients_history.append(self.correction_coefficients)
         self.simulation_time_elapsed += self.dt
 
@@ -92,7 +102,7 @@ class SolverCoupled(SolverBase):
         if not np.all(np.isfinite(self.solution)):
             raise ValueError(f"Error in the solution field.\n{self.solution}")
 
-        wavenumbers_all, raw_spectrum_all = self.compute_energy_spectrum(self.solution)
+        wavenumbers_all, raw_spectrum_all = self._compute_energy_spectrum(self.solution)
         _, positive_spectrum = self.get_positive_spectrum(
             wavenumbers_all, raw_spectrum_all
         )
@@ -129,71 +139,35 @@ class SolverCoupled(SolverBase):
         names = self._COEFFICIENT_NAMES[self.tau_model]
         return dict(zip(names, self.correction_coefficients))
 
-    def get_output_dimensions(self):
-        assert self.tau_model is not None, "SolverCoupled requires a tau_model."
-        try:
-            return len(self._COEFFICIENT_NAMES[self.tau_model])
-        except KeyError:
-            raise ValueError(f"Unknown tau_model {self.tau_model!r}")
+    def get_output_dimensions(self) -> int:
+        match self.tau_model:
+            case TauModel.TWO_PARAMS:
+                return 2
+            case TauModel.THREE_PARAMS:
+                return 3
+            case TauModel.FOUR_PARAMS:
+                return 4
+            case _:
+                raise ValueError(f"Unknown tau_model {self.tau_model!r}")
 
     # ------------------------------------------------------------------ #
     #  Tau models
     # ------------------------------------------------------------------ #
 
     def compute_tau(self, u_e: NDArray, u_x_e: NDArray | None = None) -> float:
-        """Wrapper to link to chosen tau_model."""
-        ann_coefficients = self._coefficients_as_kwargs()
-        if self.tau_model == "2":
-            return self.tau_model_two_params(u_e, **ann_coefficients)
-        elif self.tau_model == "3" and u_x_e is not None:
-            return self.tau_model_three_params(u_e, u_x_e, **ann_coefficients)
-        elif self.tau_model == "3_dt_augmented" and u_x_e is not None:
-            return self.tau_model_three_dt_aug(u_e, u_x_e, **ann_coefficients)
-        raise ValueError(f"Unknown tau_model {self.tau_model!r} or missing u_x_e")
+        # Default to ones (1.0 for each term) if correction_coefficients is None
+        c = (
+            self.correction_coefficients
+            if self.correction_coefficients is not None
+            else np.ones(self.get_output_dimensions())
+        )
 
-    def tau_model_two_params(
-        self, u_e: NDArray, c_1: float = 1.0, c_2: float = 1.0
-    ) -> float:
-        u_bar_e = 0.5 * (u_e[0] + u_e[1])
-        term_adv = (c_1 * 2.0 * u_bar_e / self.element_size) ** 2
-        term_diff = (c_2 * 4.0 * self.viscosity / self.element_size**2) ** 2
-        return (term_adv + term_diff) ** -0.5
-
-    def tau_model_three_params(
-        self,
-        u_e: NDArray,
-        u_x_e,
-        alpha: float = 0.099,
-        beta: float = 9.39,
-        gamma: float = 2.16,
-        c_1: float = 1.0,
-        c_2: float = 1.0,
-        c_3: float = 1.0,
-    ) -> float:
-        u_bar_e = 0.5 * (u_e[0] + u_e[1])
-        u_x_bar_e = u_x_e  # gradient of u is constant for linear elements (right?)
-        part_a = (c_1 * alpha * u_bar_e / self.element_size) ** 2
-        part_b = (c_2 * beta * self.viscosity / self.element_size**2) ** 2
-        part_c = (c_3 * gamma * u_x_bar_e) ** 2
-        return (part_a + part_b + part_c) ** -0.5
-
-    def tau_model_three_dt_aug(
-        self,
-        u_e: NDArray,
-        u_x_e,
-        alpha: float = 0.099,
-        beta: float = 9.39,
-        gamma: float = 2.16,
-        delta: float = 1.0,
-        c_1: float = 1.0,
-        c_2: float = 1.0,
-        c_3: float = 1.0,
-        c_4: float = 1.0,
-    ) -> float:
-        u_bar_e = 0.5 * (u_e[0] + u_e[1])
-        u_x_bar_e = u_x_e  # gradient of u is constant for linear elements (right?)
-        part_a = (c_1 * alpha * u_bar_e / self.element_size) ** 2
-        part_b = (c_2 * beta * self.viscosity / self.element_size**2) ** 2
-        part_c = (c_3 * gamma * u_x_bar_e) ** 2
-        part_dt = (c_4 * delta * 2 / self.dt) ** 2
-        return (part_a + part_b + part_c + part_dt) ** -0.5
+        if self.tau_model == TauModel.TWO_PARAMS:
+            return self.tau_model_two_params(u_e, c)
+        elif self.tau_model == TauModel.THREE_PARAMS and u_x_e is not None:
+            return self.tau_model_three_params(u_e, u_x_e, c)
+        elif self.tau_model == TauModel.FOUR_PARAMS and u_x_e is not None:
+            return self.tau_model_three_dt_aug(u_e, u_x_e, c)
+        raise ValueError(
+            f"Invalid tau model selection or missing gradient: {self.tau_model}"
+        )

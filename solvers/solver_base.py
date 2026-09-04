@@ -1,4 +1,17 @@
+"""Base finite element solver for the 1D viscous Burgers' equation.
+
+Provides core functionality for numerical discretization, time-stepping,
+and subgrid-scale (SGS) stabilization models:
+- Discretization via 1D linear Finite Element Method (FEM).
+- BDF2 / 2nd-order implicit Euler time integration with Newton–Raphson iteration.
+- Variational Multiscale (VMS) stabilization using parameterized subgrid-scale
+  tau models (2-parameter, 3-parameter, and 3-parameter time-augmented).
+- Simulation execution, diagnostic output writing (CSV/JSON), logging,
+  and basic post-processing diagnostics (energy, dissipation, spectra).
+"""
+
 import csv
+
 import json
 import logging
 import sys
@@ -12,8 +25,14 @@ import numpy as np
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
+from enum import Enum
 
 from setup.config_discretization import DiscretizationConfig
+from utils.diagnostics import (
+    compute_energy,
+    compute_dissipation,
+    compute_energy_spectrum,
+)
 from utils.io_utils import compute_adjusted_dt
 from setup.problems import Problem
 
@@ -23,18 +42,21 @@ TOLERANCE_UPDATE: float = 1e-6
 MAXIMUM_ITERATIONS_DNS: int = 20
 MAXIMUM_ITERATIONS_LES: int = 5
 
-#TODO: improve valid tau modes strings
-#TODO: revise configuration printing
-#TODO: top docstring
+
+class TauModel(str, Enum):
+    TWO_PARAMS = "2"
+    THREE_PARAMS = "3"
+    FOUR_PARAMS = "3_dt_augmented"
+
+
+class SimulationMode(str, Enum):
+    DNS = "dns"
+    NO_MODEL = "no_model"
+    TAU_BASED = "tau_model"
+
 
 class SolverBase:
     """Burgers FEM solver: M·U_t + A(U)·U + ν·K₀·U + C_fs(U) = f."""
-
-    _VALID_SIMULATION_MODES: frozenset[str] = frozenset(
-        {"dns", "no_model", "tau_model"}
-    )
-
-    _VALID_TAU_MODES: frozenset[str] = frozenset({"2", "3", "3_dt_augmented"})
 
     _VALID_BC_TYPES: frozenset[str] = frozenset({"dirichlet", "fixed"})
 
@@ -42,24 +64,32 @@ class SolverBase:
         self,
         problem: Problem,
         disc_config: DiscretizationConfig,
-        simulation_mode: str,
+        simulation_mode: SimulationMode,
         master_path: Path,
-        tau_model: str | None = None,
+        tau_model: TauModel | None = None,
         snapshot_factor: int = 1,
         t_start: float = 0.0,
     ) -> None:
 
-        if simulation_mode not in self._VALID_SIMULATION_MODES:
+        try:
+            self.simulation_mode = SimulationMode(simulation_mode)
+        except ValueError:
             raise ValueError(
-                f"Unknown simulation_mode {simulation_mode!r}. "
-                f"Expected one of {self._VALID_SIMULATION_MODES}."
-            )
+                f"Invalid simulation_mode {simulation_mode!r}. "
+                f"Must be one of {[e.value for e in SimulationMode]}"
+            ) from None
 
-        if simulation_mode == "tau_model" and tau_model is None:
-            raise ValueError(
-                f'Choose tau model if simulation mode is "tau_model". '
-                f"Expected one of {self._VALID_TAU_MODES}"
-            )
+            # Cast/validate optional tau_model
+        if tau_model is not None:
+            try:
+                self.tau_model = TauModel(tau_model)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid tau_model {tau_model!r}. "
+                    f"Must be one of {[e.value for e in TauModel]}"
+                ) from None
+        else:
+            self.tau_model = None
 
         if problem.boundary_condition_type not in self._VALID_BC_TYPES:
             raise ValueError(
@@ -70,8 +100,8 @@ class SolverBase:
         self.problem_name = problem.name
 
         # simulation settings
-        self.simulation_mode: str = simulation_mode
-        self.tau_model: str | None = tau_model
+        self.simulation_mode = SimulationMode(simulation_mode)
+        self.tau_model = TauModel(tau_model) if tau_model else None
         self.domain_timespan: float = problem.domain_timespan
         self.simulation_time_elapsed: float = t_start
         self.domain_length: float = problem.domain_length
@@ -201,8 +231,8 @@ class SolverBase:
         self.solution_previous = self.solution
         self.solution = new_solution
 
-        self.energy_history.append(self.compute_energy(self.solution))
-        self.dissipation_history.append(self.compute_dissipation(self.solution))
+        self.energy_history.append(self._compute_energy(self.solution))
+        self.dissipation_history.append(self._compute_dissipation(self.solution))
         self.simulation_time_elapsed += self.dt
 
     def nr_iteration(self, solution: NDArray, solution_prev: NDArray) -> NDArray:
@@ -434,44 +464,62 @@ class SolverBase:
             return self.tau_model_three_dt_aug(u_e, u_x_e)
         raise ValueError(f"Unknown tau_model {self.tau_model!r}")
 
-    def tau_model_two_params(self, u_e: NDArray) -> float:
+    def tau_model_two_params(self, u_e: NDArray, c: NDArray | None = None) -> float:
         """τ = [ (2⟨ū⟩_e/h)² + (4ν/h²)² ]^(-1/2), ⟨ū⟩_e = element-averaged u."""
+        c = c if c is not None else np.ones(2)
         u_bar_e = 0.5 * (u_e[0] + u_e[1])
-        term_adv = (2.0 * u_bar_e / self.element_size) ** 2
-        term_diff = (4.0 * self.viscosity / self.element_size**2) ** 2
-        return (term_adv + term_diff) ** -0.5
+
+        base_terms = np.array(
+            [
+                2.0 * u_bar_e / self.element_size,
+                4.0 * self.viscosity / (self.element_size**2),
+            ]
+        )
+        return float(np.sum((c * base_terms) ** 2) ** -0.5)
 
     def tau_model_three_params(
         self,
         u_e: NDArray,
         u_x_e,
+        c: NDArray | None = None,
         alpha: float = 0.099,
         beta: float = 9.39,
         gamma: float = 2.16,
     ) -> float:
+        c = c if c is not None else np.ones(3)
         u_bar_e = 0.5 * (u_e[0] + u_e[1])
-        u_x_bar_e = u_x_e  # gradient of u is constant for linear elements (right?)
-        part_a = (alpha * u_bar_e / self.element_size) ** 2
-        part_b = (beta * self.viscosity / self.element_size**2) ** 2
-        part_c = (gamma * u_x_bar_e) ** 2
-        return (part_a + part_b + part_c) ** -0.5
+
+        base_terms = np.array(
+            [
+                alpha * u_bar_e / self.element_size,
+                beta * self.viscosity / (self.element_size**2),
+                gamma * u_x_e,
+            ]
+        )
+        return float(np.sum((c * base_terms) ** 2) ** -0.5)
 
     def tau_model_three_dt_aug(
         self,
         u_e: NDArray,
         u_x_e,
+        c: NDArray | None = None,
         alpha: float = 0.099,
         beta: float = 9.39,
         gamma: float = 2.16,
         delta: float = 1.0,
     ) -> float:
+        c = c if c is not None else np.ones(4)
         u_bar_e = 0.5 * (u_e[0] + u_e[1])
-        u_x_bar_e = u_x_e  # gradient of u is constant for linear elements (right?)
-        part_a = (alpha * u_bar_e / self.element_size) ** 2
-        part_b = (beta * self.viscosity / self.element_size**2) ** 2
-        part_c = (gamma * u_x_bar_e) ** 2
-        part_dt = (delta * 2 / self.dt) ** 2
-        return (part_a + part_b + part_c + part_dt) ** -0.5
+
+        base_terms = np.array(
+            [
+                alpha * u_bar_e / self.element_size,
+                beta * self.viscosity / (self.element_size**2),
+                gamma * u_x_e,
+                delta * 2.0 / self.dt,
+            ]
+        )
+        return float(np.sum((c * base_terms) ** 2) ** -0.5)
 
     # ------------------------------------------------------------------ #
     #  FEM primitives
@@ -833,42 +881,21 @@ class SolverBase:
     #  Energy and spectral analysis
     # ------------------------------------------------------------------ #
 
-    def compute_energy(self, solution: NDArray) -> float:
-        """Integrate ½u² over the domain via Gaussian quadrature."""
-        energy = 0.0
-        jacobian = self.element_size / 2
-        points, weights = self.gauss_legendre(2)
-        for element in self.elements:
-            u_e = solution[element]
-            for g_p, g_w in zip(points, weights):
-                energy += (
-                    0.5 * g_w * abs(jacobian) * (self.basis_functions(g_p) @ u_e) ** 2
-                )
-        return energy
+    def _compute_energy(self, solution: NDArray) -> float:
+        """Compute total kinetic energy of the given solution snapshot."""
+        return compute_energy(solution, self.domain_length)
 
-    def compute_dissipation(self, solution: NDArray) -> float:
-        """Integrate ν(∂u/∂x)² over the domain."""
-        dissipation = 0.0
-        dn_dx = self.basis_functions_gradient()
-        for element in self.elements:
-            u_e = solution[element]
-            dissipation += self.viscosity * self.element_size * (dn_dx @ u_e) ** 2
-        return dissipation
+    def _compute_dissipation(self, solution: NDArray) -> float:
+        """Compute total viscous dissipation of the given solution snapshot."""
+        return compute_dissipation(solution, self.domain_length, self.viscosity)
 
-    def compute_energy_spectrum(self, solution: NDArray) -> tuple[NDArray, NDArray]:
-        """Return wavenumbers and spectral energy of the solution."""
-        u_hat = np.fft.fft(solution)
-        wavenumbers = (
-            np.fft.fftfreq(len(solution), d=self.domain_length / len(solution))
-            * 2
-            * np.pi
-        )
-        spectrum = 0.5 * np.abs(u_hat) ** 2 / len(solution)
-        return wavenumbers, spectrum
+    def _compute_energy_spectrum(self, solution: NDArray) -> tuple[NDArray, NDArray]:
+        """Compute energy spectrum of the given solution snapshot."""
+        return compute_energy_spectrum(solution, self.domain_length)
 
-        # ------------------------------------------------------------------ #
-        #  Post-plotting
-        # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------ #
+    #  Post-plotting
+    # ------------------------------------------------------------------ #
 
     @staticmethod
     def get_positive_spectrum(
@@ -933,7 +960,7 @@ class SolverBase:
 
         ax2 = fig.add_subplot(gs[1, 1])
         wn, sp = self.get_positive_spectrum(
-            *self.compute_energy_spectrum(self.solution)
+            *self._compute_energy_spectrum(self.solution)
         )
         ax2.loglog(wn[1:], sp[1:], marker=".", color="orangered")
         ax2.set_xlabel("Wavenumber k")

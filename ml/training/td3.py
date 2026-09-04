@@ -15,7 +15,7 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 
 
-#TODO create TD3 hyperparameters class
+# TODO create TD3 hyperparameters class
 
 # =============================================================================
 # Network Architectures & Adapters
@@ -26,7 +26,7 @@ class TauANNCritic(nn.Module):
     """Twin Q-Networks sized to match the TauANN hidden layer dimension."""
 
     def __init__(
-        self, state_dim: int, action_dim:int, hidden_dim: int = N_HIDDEN_UNITS
+        self, state_dim: int, action_dim: int, hidden_dim: int = N_HIDDEN_UNITS
     ):
         super().__init__()
 
@@ -133,9 +133,11 @@ class TD3Agent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Base TauANN wrapped into TD3 Policy
-        self.actor = TauANN(n_wavenumber_bins=n_wavenumber_bins, n_coefficients=action_dim, max_action=max_action).to(
-            self.device
-        )
+        self.actor = TauANN(
+            n_wavenumber_bins=n_wavenumber_bins,
+            n_coefficients=action_dim,
+            max_action=max_action,
+        ).to(self.device)
         self.actor_target = copy.deepcopy(self.actor)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
 

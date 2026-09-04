@@ -15,7 +15,7 @@ from utils.pipeline_utils import (
     run_dns,
     resolve_pathing,
 )
-from utils.plotting.velocity_profiles import (
+from utils.plotting.configs import (
     plot_solution_comparison,
     create_velocity_plot_configs,
 )
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         disc_cfg,
         simulation_mode="tau_model",
         tau_model="shakib_one",
-        master_path=paths.les_tau_two_params_data,
+        master_path=paths.les_two,
     )
     solver_shakib_one.run_simulation()
     solver_shakib_one.post_processing()
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         disc_cfg,
         simulation_mode="tau_model",
         tau_model="shakib_two",
-        master_path=paths.les_tau_two_params_data,
+        master_path=paths.les_two,
     )
     solver_shakib_two.run_simulation()
     solver_shakib_two.post_processing()
@@ -88,12 +88,12 @@ if __name__ == "__main__":
         disc_cfg,
         simulation_mode="tau_model",
         tau_model="shakib_three",
-        master_path=paths.les_tau_two_params_data,
+        master_path=paths.les_two,
     )
     solver_shakib_three.run_simulation()
     solver_shakib_three.post_processing()
 
-    solver_no_model = BaseRK2(problem, disc_cfg, "no_model", paths.les_nm_data)
+    solver_no_model = BaseRK2(problem, disc_cfg, "no_model", paths.les_nm)
     solver_no_model.run_simulation()
     solver_no_model.post_processing()
 

@@ -32,7 +32,7 @@ class VelocityPlotConfig:
     solution: Optional[NDArray] = field(default=None, repr=False)
 
 
-# utils/velocity_profiles.py
+# utils/configs.py
 
 
 def build_plot_configs(
@@ -76,14 +76,14 @@ def build_plot_configs(
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(
-            data_path=paths.les_tau_two_params_data,
+            data_path=paths.les_two,
             label="LES - Shakib 1",
             color="royalblue",
             marker="d",
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(
-            data_path=paths.les_nm_data,
+            data_path=paths.les_nm,
             label="LES - no model",
             color="gold",
             marker=".",
@@ -140,7 +140,7 @@ def create_velocity_plot_configs(
             solution=projected_solution,
         ),
         VelocityPlotConfig(
-            data_path=paths.les_nm_data,
+            data_path=paths.les_nm,
             label="LES - No SGS Model",
             color="tab:orange",
             marker="x",
@@ -154,21 +154,21 @@ def create_velocity_plot_configs(
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(
-            data_path=paths.les_tau_two_params_data,
+            data_path=paths.les_two,
             label="LES - Shakib 1",
             color="dodgerblue",
             marker="d",
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(
-            data_path=paths.les_tau_three_params_data,
+            data_path=paths.les_three,
             label="LES - Shakib 2",
             color="royalblue",
             marker="d",
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(
-            data_path=paths.les_tau_four_params_data,
+            data_path=paths.les_four,
             label="LES - Shakib 3",
             color="darkblue",
             marker="d",

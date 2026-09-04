@@ -7,7 +7,7 @@ from solvers.solver_base import SolverBase
 from utils.pipeline_utils import run_dns, resolve_pathing
 from utils.plotting.dissipation_evolution import plot_dissipation_comparison
 from utils.plotting.energy_evolution import plot_energy_comparison
-from utils.plotting.velocity_profiles import (
+from utils.plotting.configs import (
     plot_solution_comparison,
     create_velocity_plot_configs,
 )
@@ -42,7 +42,7 @@ solver_shakib_one = SolverBase(
     problem,
     disc_cfg,
     simulation_mode="no_model",
-    master_path=paths.les_nm_data,
+    master_path=paths.les_nm,
 )
 solver_shakib_one.run_simulation()
 solver_shakib_one.post_processing()
@@ -52,7 +52,7 @@ solver_shakib_one = SolverBase(
     disc_cfg,
     simulation_mode="tau_model",
     tau_model="2",
-    master_path=paths.les_tau_two_params_data,
+    master_path=paths.les_two,
 )
 solver_shakib_one.run_simulation()
 solver_shakib_one.post_processing()
@@ -62,7 +62,7 @@ solver_shakib_one = SolverBase(
     disc_cfg,
     simulation_mode="tau_model",
     tau_model="3",
-    master_path=paths.les_tau_three_params_data,
+    master_path=paths.les_three,
 )
 solver_shakib_one.run_simulation()
 solver_shakib_one.post_processing()
@@ -72,7 +72,7 @@ solver_shakib_one = SolverBase(
     disc_cfg,
     simulation_mode="tau_model",
     tau_model="3_dt_augmented",
-    master_path=paths.les_tau_four_params_data,
+    master_path=paths.les_four,
 )
 solver_shakib_one.run_simulation()
 solver_shakib_one.post_processing()

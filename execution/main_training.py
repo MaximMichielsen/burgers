@@ -6,26 +6,26 @@ from ml.tau_ann import TauANNConfig
 from ml.training.td3 import run_td3_tau_ann_training
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem, Problems
-from solvers.solver_base import SolverBase
+from solvers.solver_base import SimulationMode, SolverBase, TauModel
 from solvers.solver_coupled import SolverCoupled
-from utils.pipeline_utils import run_dns, resolve_pathing
-from utils.plotting.dissipation_evolution import plot_dissipation_comparison
+from utils.pipeline_utils import resolve_pathing, run_dns
+from utils.plotting.configs import create_velocity_plot_configs
 from utils.plotting.energy_evolution import plot_energy_comparison
-from utils.plotting.velocity_profiles import (
-    plot_solution_comparison,
-    create_velocity_plot_configs,
-)
+from utils.plotting.velocity_comparison import plot_solution_comparison
 
 CURRENT_DIR = Path(__file__).parent.resolve()
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
-problem: Problem = Problems.raj_two
-problem = replace(problem, domain_timespan=4.0)
+problem: Problem = Problems.raj_one
+problem = replace(problem, domain_timespan=1.0)
 
 # general simulation parameters
 n_nodes_les: int = 9
 temporal_refinement: int = 1
 courant_les: float = 1.0
+
+simulation_mode = SimulationMode.TAU_BASED
+tau_model = TauModel.FOUR_PARAMS
 
 # discretization config
 disc_cfg = DiscretizationConfig(
@@ -49,10 +49,10 @@ proj_ref_schedule = ProjectionReferenceSchedule.from_projection_directory(
 )
 
 tau_ann_config = TauANNConfig(
-    tau_model="3_dt_augmented",  # Set to a supported tau model architecture string
+    tau_model=tau_model,
     n_wavenumber_bins=disc_cfg.n_wavenumber_bins,
     n_coefficients=4,
-    ann_path=paths.ann_path,
+    ann_path=paths.ann_model,
     n_skip_steps=1,
     reward_weight_energy=1.0,
     reward_spectral_exponent=5.0 / 3.0,
@@ -64,7 +64,7 @@ trained_tau_ann = run_td3_tau_ann_training(
     tau_ann_config=tau_ann_config,
     master_path=paths.master,
     proj_ref_schedule=proj_ref_schedule,
-    total_episodes=500,
+    total_episodes=100,
     max_action=3.0,
     start_timesteps=10,
     batch_size=64,
@@ -72,24 +72,23 @@ trained_tau_ann = run_td3_tau_ann_training(
 )
 
 # ----------------------------------------- LES solvers ------------------------------------------ #
-solver_tau_four = SolverBase(
+solver_tau_base = SolverBase(
     problem,
     disc_cfg,
-    simulation_mode="tau_model",
-    tau_model="3_dt_augmented",
-    master_path=paths.les_tau_four_params_data,
+    simulation_mode=simulation_mode,
+    tau_model=tau_model,
+    master_path=paths.les_four,
 )
-solver_tau_four.run_simulation()
-solver_tau_four.post_processing()
+solver_tau_base.run_simulation()
+solver_tau_base.post_processing()
 
 # Run LES using trained RL model
 solver_tau_ann = SolverCoupled(
     problem,
     disc_cfg,
-    simulation_mode="tau_model",
-    tau_model="3_dt_augmented",
-    master_path=paths.data_ann_path,
-    ann_path=paths.ann_path,
+    tau_model=tau_model,
+    master_path=paths.ann_data,
+    ann_path=paths.ann_model,
 )
 solver_tau_ann.run_simulation()
 solver_tau_ann.post_processing()
@@ -105,8 +104,4 @@ plot_energy_comparison(
     paths=paths,
     output_path=paths.master,
     domain_length=problem.domain_length,
-)
-
-plot_dissipation_comparison(
-    paths, paths.master, problem.viscosity, problem.domain_length
 )
