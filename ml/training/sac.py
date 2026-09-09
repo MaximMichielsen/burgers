@@ -9,7 +9,7 @@ from torch import nn, Tensor
 from torch.distributions import Normal
 
 from ml.constants import N_HIDDEN_UNITS
-from ml.training.shared_assets import TwinQCritic
+from ml.training.shared_assets import TwinQCritic, ReplayBuffer
 
 
 # =============================================================================
@@ -131,7 +131,7 @@ class SACActor(nn.Module):
         return action, log_prob, mean_action
 
 
-class SACAgent(nn.Module):
+class SACAgent:
     """Soft Actor-Critic Agent."""
 
     def __init__(
@@ -190,10 +190,20 @@ class SACAgent(nn.Module):
         """Returns the current temperature value alpha = exp(log_alpha)."""
         return self.log_alpha.exp()
 
-    def select_action(self, state: NDArray, is_deterministic: bool = False):
-        pass
+    def select_action(self, state: NDArray, is_deterministic: bool = False) -> NDArray:
+        """Select action with optional deterministic setting."""
+        state_tensor = torch.as_tensor(
+            state.reshape(1, -1), dtype=torch.float32, device=self.device
+        )
+        with torch.no_grad():
+            action, _, mean_action = self.actor.sample(state=state_tensor)
 
-    def train(self):
+        selected_action = mean_action if is_deterministic else action
+        return selected_action.cpu().data.numpy().flatten()
+
+    def train(self, replay_buffer: ReplayBuffer, batch_size: Optional[int] = None) -> None:
+        if batch_size is None:
+            batch_size = self.hp.batch_size
         pass
 
 

@@ -1,6 +1,7 @@
 import copy
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
@@ -56,6 +57,7 @@ class TD3Agent:
         n_wavenumber_bins: int,
         hp: TD3Hyperparameters = TD3Hyperparameters(),
     ):
+        self.hp = hp
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Base TauANN wrapped into TD3 Policy
@@ -96,7 +98,9 @@ class TD3Agent:
 
         return action
 
-    def train(self, replay_buffer: ReplayBuffer, batch_size: int = 256) -> None:
+    def train(self, replay_buffer: ReplayBuffer, batch_size: Optional[int] = None) -> None:
+        if batch_size is None:
+            batch_size = self.hp.batch_size
         self.total_it += 1
 
         state, action, next_state, reward, done = replay_buffer.sample(batch_size)
