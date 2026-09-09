@@ -8,6 +8,7 @@ from ml.projection_schedule import ProjectionReferenceSchedule
 from ml.tau_ann import TauANNConfig
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
+from solvers.solver_base import SimulationMode
 from solvers.solver_coupled import SolverCoupled
 from utils.io_utils import compute_adjusted_dt
 
@@ -50,8 +51,8 @@ class EnvironmentTauAnn:
             disc_config=dataclasses.replace(
                 self.disc_config, suppress_file_logging=True
             ),
-            simulation_mode="tau_model",
             master_path=self.master_path,
+            simulation_mode=SimulationMode.TAU_BASED,
             tau_model=self.tau_ann_config.tau_model,
             ann_path=None,
         )

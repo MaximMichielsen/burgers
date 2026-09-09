@@ -5,11 +5,12 @@ import torch
 from torch import nn, Tensor
 
 from ml.constants import N_HIDDEN_UNITS
+from solvers.solver_base import TauModel
 
 
 @dataclass
 class TauANNConfig:
-    tau_model: str
+    tau_model: TauModel
     n_wavenumber_bins: int
     n_coefficients: int
     ann_path: Path

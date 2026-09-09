@@ -13,9 +13,8 @@ from utils.plotting.configs import create_velocity_plot_configs
 from utils.plotting.energy_evolution import plot_energy_comparison
 from utils.plotting.velocity_comparison import plot_solution_comparison
 
-CURRENT_DIR = Path(__file__).parent.resolve()
-
 # -------------------- Problem and pipeline configuration ------------------------------ #
+CURRENT_DIR = Path(__file__).parent.resolve()
 problem: Problem = Problems.raj_one
 problem = replace(problem, domain_timespan=1.0, reynolds=600)
 
@@ -95,7 +94,6 @@ solver_tau_ann.post_processing()
 plot_solution_comparison(
     configs=create_velocity_plot_configs(paths, disc_cfg),
     output_path=paths.master,
-    filename="comparison_dns_sgsp.png",
 )
 
 plot_energy_comparison(

@@ -5,3 +5,5 @@
 /dns_raw_data/
 /execution/dns_cache/
 /execution/runs/
+
+__pycache__/

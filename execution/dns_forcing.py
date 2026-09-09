@@ -1,28 +1,32 @@
-from pathlib import Path
 import shutil
+from pathlib import Path
+
 import numpy as np
 
-from setup.problems import Problem
 from setup.config_discretization import DiscretizationConfig
-from solvers.solver_base import SolverBase, SimulationMode, TauModel
+from setup.problems import Problem
 from solvers.dns_wrapper import DNSDataForcing
+from solvers.solver_base import SolverBase, TauModel, SimulationMode
 from utils.dns_file_adapter import DNSDataReader
 from utils.pipeline_utils import resolve_pathing, run_dns
 from utils.plotting.configs import create_velocity_plot_configs
 from utils.plotting.velocity_comparison import plot_solution_comparison
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CURRENT_DIR = Path(__file__).parent.resolve()
+
+CRD_PATH = PROJECT_ROOT / "dns_raw_data" / "burgers_1D.crd"
+DAT_PATH = PROJECT_ROOT / "dns_raw_data" / "burgers_1D.dat"
+
+N_NODES_LES: int = 128
+COURANT_LES: float = 0.5
 
 def main():
     # -------------------------------------------------------------------------
     # 1. Setup paths and directories
     # -------------------------------------------------------------------------
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent
-    CURRENT_DIR = Path(__file__).parent.resolve()
 
-    CRD_PATH = PROJECT_ROOT / "dns_raw_data" / "burgers_1D.crd"
-    DAT_PATH = PROJECT_ROOT / "dns_raw_data" / "burgers_1D.dat"
-
-    dns_csv_folder = PROJECT_ROOT / "runs" / "dns_reference_csvs"
+    dns_csv_folder = CURRENT_DIR / "dns_cache" / "dns_reference_csvs"
 
     # Wipe directory to prevent mixing old files with new run
     if dns_csv_folder.exists():
@@ -76,9 +80,9 @@ def main():
     # 5. Configure Discretization and Run Simulations
     # -------------------------------------------------------------------------
     disc_cfg = DiscretizationConfig(
-        n_nodes_les=128,
+        n_nodes_les=N_NODES_LES,
         temporal_refinement=1,
-        courant_les=0.5,
+        courant_les=COURANT_LES,
         domain_length=problem.domain_length,
     )
 
@@ -91,7 +95,7 @@ def main():
     solver = SolverBase(
         problem=problem,
         disc_config=disc_cfg,
-        simulation_mode="dns",
+        simulation_mode=SimulationMode.DNS,
         tau_model=TauModel.TWO_PARAMS,
         master_path=paths.dns_forcing,
     )
@@ -124,7 +128,6 @@ def main():
     plot_solution_comparison(
         configs=create_velocity_plot_configs(paths, disc_cfg),
         output_path=paths.master,
-        filename="comparison_dns_sgsp.png",
     )
 
 

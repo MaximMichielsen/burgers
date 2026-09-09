@@ -6,6 +6,7 @@ import numpy as np
 
 DNS_TO_LES_RATIO = 3
 
+
 @dataclass
 class DiscretizationConfig:
     """Spatial and temporal discretization parameters for both DNS and LES grids.
