@@ -2,3 +2,6 @@
 /data/
 /test_suite/
 /dns_cache/
+/dns_raw_data/
+/execution/dns_cache/
+/execution/runs/
