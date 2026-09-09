@@ -5,13 +5,13 @@ from pathlib import Path
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from torch import nn, Tensor
 import torch.nn.functional as functional
 
 from ml.constants import N_HIDDEN_UNITS
 from ml.environment import EnvironmentTauAnn
 from ml.projection_schedule import ProjectionReferenceSchedule
 from ml.tau_ann import TauANN, TauANNConfig, save_tau_ann
+from ml.training.shared_assets import TwinQCritic, ReplayBuffer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 
@@ -27,7 +27,7 @@ class TD3Hyperparameters:
     # Agent / Optimization Params
     lr: float = 3e-4
     discount: float = 0.99
-    tau_polyak: float = 0.005
+    polyak_tau: float = 0.005
     policy_noise: float = 0.2
     noise_clip: float = 0.5
     policy_freq: int = 2
@@ -42,99 +42,7 @@ class TD3Hyperparameters:
 
 
 # =============================================================================
-# Network Architectures & Adapters
-# =============================================================================
-
-
-class TauANNCritic(nn.Module):
-    """Twin Q-Networks sized to match the TauANN hidden layer dimension."""
-
-    def __init__(
-        self, state_dim: int, action_dim: int, hidden_dim: int = N_HIDDEN_UNITS
-    ):
-        super().__init__()
-
-        input_dim = state_dim + action_dim
-
-        # Q1 architecture
-        self.q1_net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-        # Q2 architecture
-        self.q2_net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, state: Tensor, action: Tensor):
-        sa = torch.cat([state, action], dim=-1)
-        return self.q1_net(sa), self.q2_net(sa)
-
-    def q1(self, state: Tensor, action: Tensor) -> Tensor:
-        sa = torch.cat([state, action], dim=-1)
-        return self.q1_net(sa)
-
-
-# =============================================================================
-# Replay Buffer
-# =============================================================================
-
-
-class ReplayBuffer:
-    """Experience replay memory storing transitions and returning Tensors."""
-
-    def __init__(self, state_dim: int, action_dim: int, max_size: int = int(1e5)):
-        self.max_size = max_size
-        self.ptr = 0
-        self.size = 0
-
-        self.state = np.zeros((max_size, state_dim), dtype=np.float32)
-        self.action = np.zeros((max_size, action_dim), dtype=np.float32)
-        self.next_state = np.zeros((max_size, state_dim), dtype=np.float32)
-        self.reward = np.zeros((max_size, 1), dtype=np.float32)
-        self.done = np.zeros((max_size, 1), dtype=np.float32)
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    def add(
-        self,
-        state: NDArray,
-        action: NDArray,
-        next_state: NDArray,
-        reward: float,
-        done: bool,
-    ) -> None:
-        self.state[self.ptr] = state
-        self.action[self.ptr] = action
-        self.next_state[self.ptr] = next_state
-        self.reward[self.ptr] = reward
-        self.done[self.ptr] = float(done)
-
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
-
-    def sample(self, batch_size: int) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
-        ind = np.random.randint(0, self.size, size=batch_size)
-
-        return (
-            torch.as_tensor(self.state[ind], device=self.device),
-            torch.as_tensor(self.action[ind], device=self.device),
-            torch.as_tensor(self.next_state[ind], device=self.device),
-            torch.as_tensor(self.reward[ind], device=self.device),
-            torch.as_tensor(self.done[ind], device=self.device),
-        )
-
-
-# =============================================================================
-# 3. TD3 Agent
+# TD3 Agent
 # =============================================================================
 
 
@@ -160,7 +68,7 @@ class TD3Agent:
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=hp.lr)
 
         # Twin Q Critic
-        self.critic = TauANNCritic(
+        self.critic = TwinQCritic(
             state_dim=state_dim, action_dim=action_dim, hidden_dim=N_HIDDEN_UNITS
         ).to(self.device)
         self.critic_target = copy.deepcopy(self.critic)
@@ -168,7 +76,7 @@ class TD3Agent:
 
         self.max_action = hp.max_action
         self.discount = hp.discount
-        self.tau_polyak = hp.tau_polyak
+        self.tau_polyak = hp.polyak_tau
         self.policy_noise = hp.policy_noise
         self.noise_clip = hp.noise_clip
         self.policy_freq = hp.policy_freq

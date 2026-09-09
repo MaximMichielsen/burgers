@@ -23,6 +23,9 @@ class TauANNConfig:
         self.input_dimension = self.n_wavenumber_bins + self.n_coefficients
 
 
+# TODO: what does n_wavenumber_bins get used for? redundant?
+
+
 class TauANN(nn.Module):
     """MLP policy πθ : S → A for the Coefficient Controller.
 

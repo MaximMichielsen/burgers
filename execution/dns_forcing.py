@@ -21,6 +21,7 @@ DAT_PATH = PROJECT_ROOT / "dns_raw_data" / "burgers_1D.dat"
 N_NODES_LES: int = 128
 COURANT_LES: float = 0.5
 
+
 def main():
     # -------------------------------------------------------------------------
     # 1. Setup paths and directories
