@@ -16,7 +16,7 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 # -------------------- Problem and pipeline configuration ------------------------------ #
 CURRENT_DIR = Path(__file__).parent.resolve()
 problem: Problem = Problems.raj_one
-problem = replace(problem, domain_timespan=1.0, reynolds=600)
+problem = replace(problem, domain_timespan=1.0, reynolds=100)
 
 # general simulation parameters
 n_nodes_les: int = 9
@@ -26,7 +26,8 @@ courant_les: float = 1.0
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS
 
-custom_hp = TD3Hyperparameters(total_episodes=500)
+TOTAL_EPISODES: int = 300
+hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES)
 
 # discretization config
 disc_cfg = DiscretizationConfig(
@@ -49,23 +50,26 @@ proj_ref_schedule = ProjectionReferenceSchedule.from_projection_directory(
     n_wavenumber_bins=disc_cfg.n_wavenumber_bins,
 )
 
-tau_ann_config = TauANNConfig(
+ann_config = TauANNConfig(
     tau_model=tau_model,
     n_wavenumber_bins=disc_cfg.n_wavenumber_bins,
     n_coefficients=tau_model.output_dimensions,
-    ann_path=paths.ann_model,
+    ann_path=None,
     n_skip_steps=1,
     reward_weight_energy=1.0,
     reward_spectral_exponent=5.0 / 3.0,
 )
 
-trained_tau_ann = run_td3_tau_ann_training(
+
+td3_config = replace(ann_config, ann_path=paths.td3_model)
+
+td3_model = run_td3_tau_ann_training(
     problem=problem,
     disc_config=disc_cfg,
-    tau_ann_config=tau_ann_config,
+    tau_ann_config=td3_config,
     master_path=paths.master,
     proj_ref_schedule=proj_ref_schedule,
-    hp=custom_hp,
+    hp=hp_td3,
 )
 
 # ----------------------------------------- LES solvers ------------------------------------------ #
@@ -74,7 +78,7 @@ solver_tau_base = SolverBase(
     disc_cfg,
     simulation_mode=simulation_mode,
     tau_model=tau_model,
-    master_path=tau_model.pathing,
+    master_path=tau_model.get_path(paths),
 )
 solver_tau_base.run_simulation()
 solver_tau_base.post_processing()
@@ -84,8 +88,8 @@ solver_tau_ann = SolverCoupled(
     problem,
     disc_cfg,
     tau_model=tau_model,
-    master_path=paths.ann_data,
-    ann_path=paths.ann_model,
+    master_path=paths.td3_data,
+    ann_path=paths.td3_model,
 )
 solver_tau_ann.run_simulation()
 solver_tau_ann.post_processing()

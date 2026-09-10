@@ -4,8 +4,9 @@ from pathlib import Path
 import torch
 from torch import nn, Tensor
 
-from ml.constants import N_HIDDEN_UNITS
 from solvers.solver_base import TauModel
+
+N_HIDDEN_UNITS = 64
 
 
 @dataclass
@@ -23,13 +24,10 @@ class TauANNConfig:
         self.input_dimension = self.n_wavenumber_bins + self.n_coefficients
 
 
-# TODO: what does n_wavenumber_bins get used for? redundant?
-
-
 class TauANN(nn.Module):
     """MLP policy πθ : S → A for the Coefficient Controller.
 
-    Maps state sₙ = (Ê₁..Êₖ, c_...^{n-1}) ∈ ℝ^(K+4) to a coefficient vector.
+    Maps state sₙ = (Ê₁...Êₖ, c_...^{n-1}) ∈ ℝ^(K+4) to a coefficient vector.
     """
 
     def __init__(
@@ -51,7 +49,7 @@ class TauANN(nn.Module):
         )
 
     def forward(self, state_input: Tensor) -> Tensor:
-        """Forward pass of the ANN.."""
+        """Forward pass of the ANN."""
         raw_output = self.network(state_input)
         return self.max_action * torch.tanh(raw_output)
 

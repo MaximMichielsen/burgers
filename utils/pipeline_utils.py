@@ -36,15 +36,6 @@ def resolve_pathing(problem_name: str, root_directory: Path) -> RunPaths:
     return paths
 
 
-def load_manual_models(
-    paths: RunPaths, sgsp_path: str = "", training_path: str = "", avcg_path: str = ""
-) -> None:
-    """Manually set paths to the SGSP and/or AVC models."""
-    paths.sgsp_model = Path(sgsp_path) if sgsp_path != "" else paths.sgsp_model
-    paths.training = Path(training_path) if training_path != "" else paths.training
-    paths.avc_gg_model = Path(avcg_path) if avcg_path != "" else paths.avc_gg_model
-
-
 def run_dns(
     cache_root: Path, problem: Problem, disc_cfg: DiscretizationConfig, paths
 ) -> None:
@@ -89,7 +80,6 @@ def run_dns(
             disc_cfg=disc_cfg,
             requested_timespan=problem.domain_timespan,
             projection_dir=projection_dir,
-            training_dir=training_dir,
             run_data_generator_fn=run_data_generator,
         )
         paths.dns_data = cache_result.cache_dir / "dns"

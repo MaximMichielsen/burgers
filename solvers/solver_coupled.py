@@ -84,8 +84,8 @@ class SolverCoupled(SolverBase):
         self.solution_previous = self.solution
         self.solution = new_solution
 
-        self.energy_history.append(self._compute_energy(self.solution))
-        self.dissipation_history.append(self._compute_dissipation(self.solution))
+        self.energy_history.append(self.compute_energy_(self.solution))
+        self.dissipation_history.append(self.compute_dissipation_(self.solution))
         self.correction_coefficients_history.append(self.correction_coefficients)
         self.simulation_time_elapsed += self.dt
 
@@ -102,7 +102,7 @@ class SolverCoupled(SolverBase):
         if not np.all(np.isfinite(self.solution)):
             raise ValueError(f"Error in the solution field.\n{self.solution}")
 
-        wavenumbers_all, raw_spectrum_all = self._compute_energy_spectrum(self.solution)
+        wavenumbers_all, raw_spectrum_all = self.compute_energy_spectrum_(self.solution)
         _, positive_spectrum = self.get_positive_spectrum(
             wavenumbers_all, raw_spectrum_all
         )

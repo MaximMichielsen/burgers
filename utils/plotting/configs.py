@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Optional
 
 from numpy.typing import NDArray
-from sympy.printing.pretty.pretty_symbology import line_width
 
 from setup.config_discretization import DiscretizationConfig
 from utils.io_utils import read_data
@@ -56,7 +55,9 @@ def plotting_configs(paths: RunPaths) -> list[PlotConfig]:
             linewidth=1.4,
         ),
         PlotConfig(
-            "LES - ANN (TD3)", paths.td3_data, "purple",
+            "LES - ANN (TD3)",
+            paths.td3_data,
+            "purple",
         ),
         PlotConfig(
             "LES - ANN (SAC)",

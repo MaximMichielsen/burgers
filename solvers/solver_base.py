@@ -251,8 +251,8 @@ class SolverBase:
         self.solution_previous = self.solution
         self.solution = new_solution
 
-        self.energy_history.append(self._compute_energy(self.solution))
-        self.dissipation_history.append(self._compute_dissipation(self.solution))
+        self.energy_history.append(self.compute_energy_(self.solution))
+        self.dissipation_history.append(self.compute_dissipation_(self.solution))
         self.simulation_time_elapsed += self.dt
 
     def nr_iteration(self, solution: NDArray, solution_prev: NDArray) -> NDArray:
@@ -832,14 +832,14 @@ class SolverBase:
 
     def print_configuration(self) -> None:
         """Print run configuration in a clean tabular format."""
-        W = 72
-        COL = 30
+        width = 72
+        column = 30
 
         def _row(label: str, value: str) -> None:
-            print(f"  {label:<{COL}} {value}")
+            print(f"  {label:<{column}} {value}")
 
         def _sep(char: str = "─") -> None:
-            print(char * W)
+            print(char * width)
 
         def _section(title: str) -> None:
             print()
@@ -903,15 +903,15 @@ class SolverBase:
     #  Energy and spectral analysis
     # ------------------------------------------------------------------ #
 
-    def _compute_energy(self, solution: NDArray) -> float:
+    def compute_energy_(self, solution: NDArray) -> float:
         """Compute total kinetic energy of the given solution snapshot."""
         return compute_energy(solution, self.domain_length)
 
-    def _compute_dissipation(self, solution: NDArray) -> float:
+    def compute_dissipation_(self, solution: NDArray) -> float:
         """Compute total viscous dissipation of the given solution snapshot."""
         return compute_dissipation(solution, self.domain_length, self.viscosity)
 
-    def _compute_energy_spectrum(self, solution: NDArray) -> tuple[NDArray, NDArray]:
+    def compute_energy_spectrum_(self, solution: NDArray) -> tuple[NDArray, NDArray]:
         """Compute energy spectrum of the given solution snapshot."""
         return compute_energy_spectrum(solution, self.domain_length)
 
@@ -982,7 +982,7 @@ class SolverBase:
 
         ax2 = fig.add_subplot(gs[1, 1])
         wn, sp = self.get_positive_spectrum(
-            *self._compute_energy_spectrum(self.solution)
+            *self.compute_energy_spectrum_(self.solution)
         )
         ax2.loglog(wn[1:], sp[1:], marker=".", color="orangered")
         ax2.set_xlabel("Wavenumber k")

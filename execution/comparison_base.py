@@ -14,7 +14,7 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 # -------------------- Problem and pipeline configuration ------------------------------ #
 CURRENT_DIR = Path(__file__).parent.resolve()
 problem: Problem = Problems.raj_one
-problem = replace(problem, domain_timespan=1.0, reynolds=600)
+problem = replace(problem, domain_timespan=1.0, reynolds=100)
 
 # simulation parameters
 n_nodes_les: int = 9
@@ -70,7 +70,7 @@ solver_tau_4 = SolverBase(
     problem,
     disc_cfg,
     simulation_mode=SimulationMode.TAU_BASED,
-    tau_model=TauModel.THREE_PARAMS,
+    tau_model=TauModel.FOUR_PARAMS,
     master_path=paths.les_four,
 )
 solver_tau_4.run_simulation()

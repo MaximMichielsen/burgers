@@ -40,7 +40,7 @@ solver_tau_base = SolverBase(
     disc_cfg,
     simulation_mode=simulation_mode,
     tau_model=tau_model,
-    master_path=paths.les_four,
+    master_path=tau_model.get_path(paths),
 )
 solver_tau_base.print_configuration()
 solver_tau_base.run_simulation()

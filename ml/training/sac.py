@@ -10,10 +10,9 @@ from torch import nn, Tensor
 from torch.distributions import Normal
 import torch.nn.functional as functional
 
-from ml.constants import N_HIDDEN_UNITS
 from ml.environment import EnvironmentTauAnn
 from ml.projection_schedule import ProjectionReferenceSchedule
-from ml.tau_ann import TauANN, TauANNConfig, save_tau_ann
+from ml.tau_ann import TauANN, TauANNConfig, save_tau_ann, N_HIDDEN_UNITS
 from ml.training.shared_assets import TwinQCritic, ReplayBuffer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
@@ -47,7 +46,7 @@ class SACHyperparameters:
     n_hidden_layers: int = 2
     max_action: float = 1.0
     log_std_min: float = -20.0
-    log_std_max: float = 2.0
+    log_std_max: float = -1.0
 
     # RL & Target Updates
     discount: float = 0.99
@@ -57,11 +56,11 @@ class SACHyperparameters:
     # Replay Memory & Sampling
     total_episodes: int = 100
     start_timesteps: int = 1000
-    batch_size: int = 256
-    replay_buffer_max_size: int = int(1e6)
+    batch_size: int = 64
+    replay_buffer_max_size: int = int(1e5)
 
     def __post_init__(self):
-        self.target_entropy = -float(self.action_dim)
+        self.target_entropy = -2.0 * float(self.action_dim)
 
 
 # =============================================================================
@@ -362,6 +361,7 @@ def run_sac_tau_ann_training(
             f"Reward: {episode_reward:.4f}"
         )
 
+    assert tau_ann_config.ann_path is not None
     save_tau_ann(agent.actor.tau_ann, tau_ann_config.ann_path)
     print(f"Successfully saved trained TauANN to {tau_ann_config.ann_path}")
 

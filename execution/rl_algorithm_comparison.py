@@ -24,9 +24,9 @@ temporal_refinement: int = 1
 courant_les: float = 1.0
 
 simulation_mode = SimulationMode.TAU_BASED
-tau_model = TauModel.FOUR_PARAMS
+tau_model = TauModel.TWO_PARAMS
 
-TOTAL_EPISODES: int = 200
+TOTAL_EPISODES: int = 300
 
 hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES)
 hp_sac = SACHyperparameters(

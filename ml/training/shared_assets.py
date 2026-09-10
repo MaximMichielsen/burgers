@@ -3,7 +3,7 @@ import torch
 from numpy.typing import NDArray
 from torch import nn, Tensor
 
-from ml.constants import N_HIDDEN_UNITS
+from ml.tau_ann import N_HIDDEN_UNITS
 
 
 class TwinQCritic(nn.Module):

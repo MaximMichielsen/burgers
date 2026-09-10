@@ -8,10 +8,9 @@ import torch
 from numpy.typing import NDArray
 import torch.nn.functional as functional
 
-from ml.constants import N_HIDDEN_UNITS
 from ml.environment import EnvironmentTauAnn
 from ml.projection_schedule import ProjectionReferenceSchedule
-from ml.tau_ann import TauANN, TauANNConfig, save_tau_ann
+from ml.tau_ann import TauANN, TauANNConfig, save_tau_ann, N_HIDDEN_UNITS
 from ml.training.shared_assets import TwinQCritic, ReplayBuffer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem

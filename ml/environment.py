@@ -81,7 +81,7 @@ class EnvironmentTauAnn:
     def compute_reward(self) -> float:
         assert self.solver is not None
 
-        wavenumbers_all, raw_spectrum_all = self.solver._compute_energy_spectrum(
+        wavenumbers_all, raw_spectrum_all = self.solver.compute_energy_spectrum_(
             self.solver.solution
         )
         _, positive_spectrum = self.solver.get_positive_spectrum(

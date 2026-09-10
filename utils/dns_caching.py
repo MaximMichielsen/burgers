@@ -89,19 +89,18 @@ def resolve_dns_cache(
 def extend_dns_run(
     cache_dir: Path,
     projection_dir: Path,
-    training_dir: Path,
     cache_result: DNSCacheResult,
     problem: Problem,
     disc_cfg: DiscretizationConfig,
     requested_timespan: float,
     run_data_generator_fn: Callable,
-    DNS_FOLDER="dns",
+    dns_folder="dns",
 ) -> None:
     """Extend an existing DNS run to cover the requested timespan."""
     cached_timespan = cache_result.cached_timespan
     extension_duration = requested_timespan - cached_timespan
 
-    last_snapshot, _ = read_data(cache_dir / DNS_FOLDER, final_only=True)
+    last_snapshot, _ = read_data(cache_dir / dns_folder, final_only=True)
 
     extension_problem = dataclasses.replace(
         problem,
@@ -113,9 +112,8 @@ def extend_dns_run(
         problem=extension_problem,
         disc_cfg=disc_cfg,
         master_path=cache_dir,
-        dns_save_path=cache_dir / DNS_FOLDER,
+        dns_save_path=cache_dir / dns_folder,
         projection_data_path=projection_dir,
-        sgsp_data_training_path=training_dir,
         t_start=cached_timespan,
         append_mode=True,
     )
@@ -127,10 +125,10 @@ def extend_dns_run(
         disc_cfg=disc_cfg,
         simulation_mode="dns",
         master_path=cache_dir,
-        dns_save_path=cache_dir / "DNS",
+        dns_save_path=cache_dir / dns_folder,
         projection_save_path=projection_dir,
-        sgsp_training_data_path=training_dir,
     )
+
     projector.run_projection_only()
 
     write_dns_parameters(

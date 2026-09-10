@@ -60,7 +60,6 @@ class ProjectionReferenceSchedule:
     def from_projection_directory(
         cls,
         projection_dir: Path,
-        domain_length: float,
         n_wavenumber_bins: int,
     ) -> "ProjectionReferenceSchedule":
         """Build a schedule from projected LES-grid snapshots stored as CSV files."""
@@ -82,7 +81,6 @@ class ProjectionReferenceSchedule:
             spectra_list.append(
                 _compute_spectrum_bins(
                     velocity_array=velocity_array,
-                    domain_length=domain_length,
                     n_wavenumber_bins=n_wavenumber_bins,
                 )
             )
@@ -126,7 +124,7 @@ class ProjectionReferenceSchedule:
 
         Returns
         -------
-        dns_spectrum_k : float64 array, shape (K,)
+        dns_spectrum_k : float64 array, shape (K)
             Interpolated DNS energy spectrum E_DNS(k, t).
         dns_dissipation : float
             Interpolated DNS dissipation rate ε_DNS(t).
@@ -209,7 +207,6 @@ def _load_snapshot_csv(csv_path: Path) -> tuple[NDArray, float]:
 
 def _compute_spectrum_bins(
     velocity_array: NDArray,
-    domain_length: float,
     n_wavenumber_bins: int,
 ) -> NDArray:
     """Positive non-DC wavenumber spectral energies E(k >= 1)."""
