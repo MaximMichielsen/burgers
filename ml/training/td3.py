@@ -39,7 +39,7 @@ class TD3Hyperparameters:
     start_timesteps: int = 1000
     batch_size: int = 64
     expl_noise: float = 0.1
-    replay_buffer_size: int = int(1e5)
+    replay_buffer_max_size: int = int(1e5)
 
 
 # =============================================================================
@@ -98,7 +98,9 @@ class TD3Agent:
 
         return action
 
-    def train(self, replay_buffer: ReplayBuffer, batch_size: Optional[int] = None) -> None:
+    def train(
+        self, replay_buffer: ReplayBuffer, batch_size: Optional[int] = None
+    ) -> None:
         if batch_size is None:
             batch_size = self.hp.batch_size
         self.total_it += 1
@@ -193,7 +195,7 @@ def run_td3_tau_ann_training(
     )
 
     replay_buffer = ReplayBuffer(
-        state_dim=state_dim, action_dim=action_dim, max_size=int(1e5)
+        state_dim=state_dim, action_dim=action_dim, max_size=hp.replay_buffer_max_size
     )
 
     total_steps = 0
