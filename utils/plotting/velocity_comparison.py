@@ -6,11 +6,9 @@ from matplotlib import animation, pyplot as plt
 from matplotlib.animation import FuncAnimation
 from numpy.typing import NDArray
 
-
-from old.utils.io_utils import read_data
-
 import re
 
+from utils.io_utils import read_data
 from utils.plotting.configs import VelocityPlotConfig
 
 

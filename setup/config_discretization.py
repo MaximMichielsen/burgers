@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-DNS_TO_LES_RATIO = 3
+DNS_TO_LES_RATIO = 6
 
 
 @dataclass
@@ -24,7 +24,7 @@ class DiscretizationConfig:
     suppress_file_logging: bool = False
 
     def __post_init__(self) -> None:
-        self.n_nodes_dns: int = self.n_nodes_les * DNS_TO_LES_RATIO
+        self.n_nodes_dns: int = self.n_nodes_les * 2**DNS_TO_LES_RATIO
 
         self.n_elements_les: int = self.n_nodes_les - 1
         self.n_elements_dns: int = self.n_nodes_dns - 1

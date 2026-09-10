@@ -35,7 +35,7 @@ from utils.diagnostics import (
 )
 from utils.io_utils import compute_adjusted_dt
 from setup.problems import Problem
-
+from utils.pipeline_utils import RunPaths
 
 TOLERANCE_RESIDUAL: float = 1e-6
 TOLERANCE_UPDATE: float = 1e-6
@@ -47,6 +47,26 @@ class TauModel(str, Enum):
     TWO_PARAMS = "2"
     THREE_PARAMS = "3"
     FOUR_PARAMS = "3_dt_augmented"
+
+    @property
+    def output_dimensions(self) -> int:
+        match self:
+            case TauModel.TWO_PARAMS:
+                return 2
+            case TauModel.THREE_PARAMS:
+                return 3
+            case TauModel.FOUR_PARAMS:
+                return 4
+
+    def get_path(self, paths: RunPaths) -> Path:
+        """Resolve output path given an initialized RunPaths instance."""
+        match self:
+            case TauModel.TWO_PARAMS:
+                return paths.les_two
+            case TauModel.THREE_PARAMS:
+                return paths.les_three
+            case TauModel.FOUR_PARAMS:
+                return paths.les_four
 
 
 class SimulationMode(str, Enum):

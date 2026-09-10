@@ -6,7 +6,7 @@ import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from solvers.solver_projection import BurgersDataGenerator
+
 from utils.dns_caching import (
     DNSCacheKey,
     resolve_dns_cache,
@@ -18,8 +18,8 @@ from utils.dns_caching import (
 from dataclasses import dataclass
 
 if TYPE_CHECKING:
-    from old.problems_and_configurations.disc_config import DiscretizationConfig
-    from old.problems_and_configurations.problems import Problem
+    from setup.config_discretization import DiscretizationConfig
+    from setup.problems import Problem
 
 
 def get_run_id(problem_name: str) -> str:
@@ -124,6 +124,8 @@ def run_data_generator(
     append_mode: bool = False,
 ) -> None:
     """Run DNS and assemble SGSP training data."""
+    from solvers.solver_projection import BurgersDataGenerator
+
     solver = BurgersDataGenerator(
         problem=problem,
         disc_cfg=disc_cfg,
@@ -153,8 +155,11 @@ class RunPaths:
     solver_data: Path
     agents: Path
 
-    ann_model: Path
-    ann_data: Path
+    td3_model: Path
+    td3_data: Path
+
+    sac_model: Path
+    sac_data: Path
 
     les_two: Path
     les_three: Path
@@ -173,11 +178,13 @@ class RunPaths:
             les_nm=master_path / SOLVER_DATA_FOLDER / "no_model",
             projection=None,
             agents=master_path / AGENT_FOLDER,
-            ann_model=master_path / AGENT_FOLDER / "trained_tau_ann.pt",
+            td3_model=master_path / AGENT_FOLDER / "td3_model.pt",
+            sac_model=master_path / AGENT_FOLDER / "sac_model.pt",
             les_two=master_path / SOLVER_DATA_FOLDER / "tau_two",
             les_three=master_path / SOLVER_DATA_FOLDER / "tau_three",
             les_four=master_path / SOLVER_DATA_FOLDER / "tau_four",
-            ann_data=master_path / SOLVER_DATA_FOLDER / "ann",
+            td3_data=master_path / SOLVER_DATA_FOLDER / "td3",
+            sac_data=master_path / SOLVER_DATA_FOLDER / "sac",
             dns_forcing=master_path / "dns_forcing_run",
         )
 

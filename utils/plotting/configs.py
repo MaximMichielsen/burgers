@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from numpy.typing import NDArray
+from sympy.printing.pretty.pretty_symbology import line_width
 
 from setup.config_discretization import DiscretizationConfig
 from utils.io_utils import read_data
@@ -54,7 +55,14 @@ def plotting_configs(paths: RunPaths) -> list[PlotConfig]:
             linestyle="--",
             linewidth=1.4,
         ),
-        PlotConfig("LES - ANN", paths.ann_data, "purple", linestyle="-", linewidth=1.8),
+        PlotConfig(
+            "LES - ANN (TD3)", paths.td3_data, "purple",
+        ),
+        PlotConfig(
+            "LES - ANN (SAC)",
+            paths.sac_data,
+            "royalblue",
+        ),
     ]
 
     # Only return configurations where the path is defined and exists on disk
@@ -148,11 +156,19 @@ def create_velocity_plot_configs(
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(
-            data_path=paths.ann_data,
-            label="LES - ANN Coupled",
+            data_path=paths.td3_data,
+            label="LES - ANN Coupled (TD3)",
             color="crimson",
             linestyle="--",
             marker="s",
+            mesh=disc_cfg.mesh_les,
+        ),
+        VelocityPlotConfig(
+            data_path=paths.sac_data,
+            label="LES - ANN Coupled (SAC)",
+            color="salmon",
+            linestyle="--",
+            marker="d",
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(

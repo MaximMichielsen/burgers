@@ -6,11 +6,10 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Callable
 
-from old.constants import DNS_FOLDER
-from old.problems_and_configurations.disc_config import DiscretizationConfig
-from old.problems_and_configurations.problems import Problem
-from old.solvers.implicit.sgsp_training_data_generator import BurgersDataGenerator
-from old.utils.io_utils import read_data
+from setup.config_discretization import DiscretizationConfig
+from setup.problems import Problem
+
+from utils.io_utils import read_data
 
 
 @dataclass(frozen=True)
@@ -96,6 +95,7 @@ def extend_dns_run(
     disc_cfg: DiscretizationConfig,
     requested_timespan: float,
     run_data_generator_fn: Callable,
+    DNS_FOLDER="dns",
 ) -> None:
     """Extend an existing DNS run to cover the requested timespan."""
     cached_timespan = cache_result.cached_timespan
@@ -119,6 +119,8 @@ def extend_dns_run(
         t_start=cached_timespan,
         append_mode=True,
     )
+
+    from solvers.solver_projection import BurgersDataGenerator
 
     projector = BurgersDataGenerator(
         problem=dataclasses.replace(problem, domain_timespan=requested_timespan),

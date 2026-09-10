@@ -13,7 +13,7 @@ class TauANNConfig:
     tau_model: TauModel
     n_wavenumber_bins: int
     n_coefficients: int
-    ann_path: Path
+    ann_path: Path | None
     n_skip_steps: int
 
     reward_weight_energy: float = 1.0

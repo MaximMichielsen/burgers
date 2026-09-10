@@ -56,7 +56,7 @@ class SolverCoupled(SolverBase):
         self.tau_model = tau_model
         self.training_mode = training_mode
 
-        self.n_correction_coefficients = self.get_output_dimensions(self.tau_model)
+        self.n_correction_coefficients = tau_model.output_dimensions
         self.correction_coefficients: NDArray | None = None
         self.correction_coefficients_history: list = []
 
@@ -139,18 +139,6 @@ class SolverCoupled(SolverBase):
         names = self._COEFFICIENT_NAMES[self.tau_model]
         return dict(zip(names, self.correction_coefficients))
 
-    @staticmethod
-    def get_output_dimensions(tau_model: TauModel) -> int:
-        match tau_model:
-            case TauModel.TWO_PARAMS:
-                return 2
-            case TauModel.THREE_PARAMS:
-                return 3
-            case TauModel.FOUR_PARAMS:
-                return 4
-            case _:
-                raise ValueError(f"Unknown tau_model {tau_model!r}")
-
     # ------------------------------------------------------------------ #
     #  Tau models
     # ------------------------------------------------------------------ #
@@ -160,7 +148,7 @@ class SolverCoupled(SolverBase):
         c = (
             self.correction_coefficients
             if self.correction_coefficients is not None
-            else np.ones(self.get_output_dimensions())
+            else np.ones(self.tau_model.output_dimensions)
         )
 
         if self.tau_model == TauModel.TWO_PARAMS:
