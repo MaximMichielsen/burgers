@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
 from ml.tau_ann import load_tau_ann, TauANN, TauANNConfig, OutputScope
@@ -174,3 +175,40 @@ class SolverCoupled(SolverBase):
         raise ValueError(
             f"Invalid tau model selection or missing gradient: {self.tau_model}"
         )
+
+    # ------------------------------------------------------------------ #
+    #  Diagnostics
+    # ------------------------------------------------------------------ #
+
+    def plot_correction_coefficients(self):
+        if self.ann_config.output_scope == OutputScope.GLOBAL:
+            coefficients = [self.correction_coefficients]
+        else:
+            coefficients = self.correction_coefficients.reshape(self.ann_config.n_local_groups, self.ann_config.n_coefficients)
+
+        x = [1, 2, 3, 4][:self.n_correction_coefficients]
+        param_names = ['Advection', 'Viscosity', 'Diffusion', "Time"][:self.n_correction_coefficients]
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+        for coefficients_ in coefficients:
+            ax.plot(x, coefficients_, 'x', markersize=8, markeredgewidth=1.5)
+
+        ax.axhline(self.ann_config.max_action / 2, color='gray', linestyle='--', linewidth=0.8)
+
+        ax.set_ylim(-0.1, self.ann_config.max_action)
+
+        for x_pos, name in zip(x, param_names):
+            ax.text(x_pos, 1.03, name, ha='center', va='bottom', fontweight='bold', clip_on=False)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels([])
+        ax.tick_params(axis='x', which='both', length=0)
+        ax.spines['bottom'].set_visible(False)
+        ax.set_xlim(0.5, x[-1] +0.5)
+
+        ax.grid(True, which='both', axis="both", linestyle=':', linewidth=0.7, alpha=0.6, color='gray')
+
+        plt.suptitle('Correction Coefficients', fontsize=13, fontweight='bold', y=0.98)
+        plt.tight_layout()
+        plt.show()
+

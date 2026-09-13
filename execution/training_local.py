@@ -26,7 +26,7 @@ courant_les: float = 1.0
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.FOUR_PARAMS
 
-TOTAL_EPISODES: int = 1000
+TOTAL_EPISODES: int = 200
 hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES)
 
 # discretization config
@@ -58,7 +58,7 @@ td3_config = TauANNConfig(
     reward_weight_energy=1.0,
     reward_spectral_exponent=5.0 / 3.0,
     n_nodes_les=disc_cfg.n_nodes_les,
-    output_scope=OutputScope.GLOBAL,
+    output_scope=OutputScope.LOCAL,
 )
 
 td3_model = run_td3_tau_ann_training(
@@ -92,6 +92,7 @@ solver_tau_ann = SolverCoupled(
 )
 solver_tau_ann.run_simulation()
 solver_tau_ann.post_processing()
+solver_tau_ann.plot_correction_coefficients()
 
 # -------------------------------------- Plotting --------------------------------------- #
 plot_solution_comparison(

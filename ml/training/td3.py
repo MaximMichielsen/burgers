@@ -199,7 +199,7 @@ def run_td3_tau_ann_training(
             if total_steps < hp.start_timesteps:
                 action = np.array(
                     np.random.uniform(
-                        -hp.max_action, hp.max_action, size=ann_config.action_dimension
+                        0, hp.max_action, size=ann_config.action_dimension
                     )
                 )
             else:
