@@ -16,7 +16,7 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 # -------------------- Problem and pipeline configuration ------------------------------ #
 CURRENT_DIR = Path(__file__).parent.resolve()
 problem: Problem = Problems.raj_one
-problem = replace(problem, domain_timespan=1.0, reynolds=100)
+problem = replace(problem, domain_timespan=2.0, reynolds=100)
 
 # general simulation parameters
 n_nodes_les: int = 9
@@ -24,9 +24,9 @@ temporal_refinement: int = 1
 courant_les: float = 1.0
 
 simulation_mode = SimulationMode.TAU_BASED
-tau_model = TauModel.TWO_PARAMS
+tau_model = TauModel.FOUR_PARAMS
 
-TOTAL_EPISODES: int = 300
+TOTAL_EPISODES: int = 500
 hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES)
 
 # discretization config
@@ -46,7 +46,6 @@ run_dns(DNS_CACHE_ROOT, problem, disc_cfg, paths)
 # ------------------------------------- TD3 Training ------------------------------------ #
 proj_ref_schedule = ProjectionReferenceSchedule.from_projection_directory(
     projection_dir=paths.projection,
-    domain_length=problem.domain_length,
     n_wavenumber_bins=disc_cfg.n_wavenumber_bins,
 )
 
@@ -58,6 +57,7 @@ ann_config = TauANNConfig(
     n_skip_steps=1,
     reward_weight_energy=1.0,
     reward_spectral_exponent=5.0 / 3.0,
+    n_nodes_les=disc_cfg.n_nodes_les,
 )
 
 

@@ -70,7 +70,13 @@ class EnvironmentTauAnn:
 
         reward_val = self.compute_reward()
         done_flag = self._total_les_steps >= self._max_les_steps
-        next_state_array = self.solver.create_input_stencil()
+        try:
+            next_state_array = self.solver.create_input_stencil()
+        except ValueError:
+            next_state = np.zeros_like(self.ann_config.state_dimension)
+            reward = self.ann_config.penalty_clip  # finite, large penalty
+            done = True
+            return next_state, reward, done
 
         return next_state_array, reward_val, done_flag
 

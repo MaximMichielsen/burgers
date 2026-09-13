@@ -8,7 +8,7 @@ from torch import nn, Tensor
 from solvers.solver_base import TauModel
 
 N_HIDDEN_UNITS = 64
-
+PENALTY_CLIP = -10e6
 
 class OutputScope(str, Enum):
     GLOBAL = "global"
@@ -24,6 +24,8 @@ class TauANNConfig:
     n_skip_steps: int
     n_nodes_les: int
     max_action: float = 1.0
+
+    penalty_clip: float = PENALTY_CLIP
 
     output_scope: OutputScope = OutputScope.GLOBAL
 
@@ -88,7 +90,7 @@ def save_tau_ann(model: TauANN, save_path: Path) -> None:
 
 def load_tau_ann(model_path: Path) -> TauANN:
     """Load tau-ann from model_path."""
-    checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
+    checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
     model = TauANN(
         config=checkpoint["config"],
     )
