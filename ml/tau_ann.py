@@ -23,6 +23,7 @@ class TauANNConfig:
     ann_path: Path | None
     n_skip_steps: int
     n_nodes_les: int
+    max_action: float = 1.0
 
     output_scope: OutputScope = OutputScope.GLOBAL
 
@@ -30,11 +31,15 @@ class TauANNConfig:
     reward_spectral_exponent: float = 5.0 / 3.0
 
     def __post_init__(self) -> None:
-        self.input_dimension = self.n_wavenumber_bins + self.n_coefficients
-        self.local_dimension = self.n_nodes_les # for now equal to node amount but in future developments can be less
-
-
-# TODO: adjust TauANN input to use TauANNConfig values
+        self.state_dimension = self.n_wavenumber_bins + self.n_coefficients
+        self.n_local_groups: int = (
+            self.n_nodes_les
+        )  # for now equal to node amount but in future developments can be less
+        self.action_dimension = (
+            self.n_coefficients
+            if self.output_scope == OutputScope.GLOBAL
+            else self.n_coefficients * self.n_local_groups
+        )
 
 
 class TauANN(nn.Module):
@@ -46,39 +51,21 @@ class TauANN(nn.Module):
     def __init__(
         self,
         config: TauANNConfig,
-        n_wavenumber_bins: int,
-        n_coefficients: int,
-        max_action: float = 1.0,
     ):
         super().__init__()
 
         self.config = config
-        self.output_scope = config.output_scope
-        self.input_dim: int = n_wavenumber_bins + n_coefficients
-        self.n_wavenumber_bins = n_wavenumber_bins
-        self.n_coefficients = n_coefficients
-        self.max_action = max_action
+        self.max_action = config.max_action
+        self.state_dim = config.state_dimension
+        self.action_dim = config.action_dimension
 
-        if self.output_scope is OutputScope.GLOBAL:
-            self.network = nn.Sequential(
-                nn.Linear(self.input_dim, N_HIDDEN_UNITS),
-                nn.ReLU(),
-                nn.Linear(N_HIDDEN_UNITS, N_HIDDEN_UNITS),
-                nn.ReLU(),
-                nn.Linear(N_HIDDEN_UNITS, n_coefficients),
-            )
-        elif self.output_scope is OutputScope.LOCAL:
-            self.network = nn.Sequential(
-                nn.Linear(self.input_dim, N_HIDDEN_UNITS),
-                nn.ReLU(),
-                nn.Linear(N_HIDDEN_UNITS, N_HIDDEN_UNITS),
-                nn.ReLU(),
-                nn.Linear(N_HIDDEN_UNITS, n_coefficients * self.config.local_dimension),
-            )
-        else:
-            raise ValueError(
-                f"Received {self.output_scope} as output scope. Valid scopes are: ({OutputScope.GLOBAL, OutputScope.LOCAL})"
-            )
+        self.network = nn.Sequential(
+            nn.Linear(self.state_dim, N_HIDDEN_UNITS),
+            nn.ReLU(),
+            nn.Linear(N_HIDDEN_UNITS, N_HIDDEN_UNITS),
+            nn.ReLU(),
+            nn.Linear(N_HIDDEN_UNITS, self.action_dim),
+        )
 
     def forward(self, state_input: Tensor) -> Tensor:
         """Forward pass of the ANN."""
@@ -93,9 +80,6 @@ def save_tau_ann(model: TauANN, save_path: Path) -> None:
     torch.save(
         {
             "model_state_dict": model.state_dict(),
-            "n_wavenumber_bins": model.n_wavenumber_bins,
-            "n_coefficients": model.n_coefficients,
-            "max_action": model.max_action,
             "config": model.config,
         },
         save_path,
@@ -106,10 +90,7 @@ def load_tau_ann(model_path: Path) -> TauANN:
     """Load tau-ann from model_path."""
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
     model = TauANN(
-        n_wavenumber_bins=checkpoint["n_wavenumber_bins"],
-        n_coefficients=checkpoint["n_coefficients"],
         config=checkpoint["config"],
-        max_action=checkpoint.get("max_action", 1.0),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()

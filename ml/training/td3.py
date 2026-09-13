@@ -27,7 +27,7 @@ class TD3Hyperparameters:
     # Agent / Optimization Params
     lr: float = 3e-4
     discount: float = 0.99
-    polyak_tau: float = 0.005
+    tau_polyak: float = 0.005
     policy_noise: float = 0.2
     noise_clip: float = 0.5
     policy_freq: int = 2
@@ -51,36 +51,25 @@ class TD3Agent:
 
     def __init__(
         self,
-        state_dim: int,
-        action_dim: int,
-        n_wavenumber_bins: int,
+        ann_config: TauANNConfig,
         hp: TD3Hyperparameters = TD3Hyperparameters(),
     ):
         self.hp = hp
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Base TauANN wrapped into TD3 Policy
-        self.actor = TauANN(
-            n_wavenumber_bins=n_wavenumber_bins,
-            n_coefficients=action_dim,
-            max_action=hp.max_action,
-        ).to(self.device)
+        self.actor = TauANN(config=ann_config).to(self.device)
         self.actor_target = copy.deepcopy(self.actor)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=hp.lr)
 
         # Twin Q Critic
         self.critic = TwinQCritic(
-            state_dim=state_dim, action_dim=action_dim, hidden_dim=N_HIDDEN_UNITS
+            state_dim=ann_config.state_dimension,
+            action_dim=ann_config.action_dimension,
+            hidden_dim=N_HIDDEN_UNITS,
         ).to(self.device)
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=hp.lr)
-
-        self.max_action = hp.max_action
-        self.discount = hp.discount
-        self.tau_polyak = hp.polyak_tau
-        self.policy_noise = hp.policy_noise
-        self.noise_clip = hp.noise_clip
-        self.policy_freq = hp.policy_freq
 
         self.total_it = 0
 
@@ -93,7 +82,7 @@ class TD3Agent:
 
         if noise_std > 0.0:
             noise = np.random.normal(0, noise_std, size=action.shape)
-            action = (action + noise).clip(-self.max_action, self.max_action)
+            action = (action + noise).clip(-self.hp.max_action, self.hp.max_action)
 
         return action
 
@@ -108,17 +97,17 @@ class TD3Agent:
 
         with torch.no_grad():
             # Target policy smoothing
-            noise = (torch.randn_like(action) * self.policy_noise).clamp(
-                -self.noise_clip, self.noise_clip
+            noise = (torch.randn_like(action) * self.hp.policy_noise).clamp(
+                -self.hp.noise_clip, self.hp.noise_clip
             )
             next_action = (self.actor_target(next_state) + noise).clamp(
-                -self.max_action, self.max_action
+                -self.hp.max_action, self.hp.max_action
             )
 
             # Clipped double Q-learning
             target_q1, target_q2 = self.critic_target(next_state, next_action)
             target_q = torch.min(target_q1, target_q2)
-            target_q = reward + (1.0 - done) * self.discount * target_q
+            target_q = reward + (1.0 - done) * self.hp.discount * target_q
 
         current_q1, current_q2 = self.critic(state, action)
         critic_loss = functional.mse_loss(current_q1, target_q) + functional.mse_loss(
@@ -130,7 +119,7 @@ class TD3Agent:
         self.critic_optimizer.step()
 
         # Delayed Policy Updates
-        if self.total_it % self.policy_freq == 0:
+        if self.total_it % self.hp.policy_freq == 0:
             actor_loss = -self.critic.q1(state, self.actor(state)).mean()
 
             self.actor_optimizer.zero_grad()
@@ -142,16 +131,16 @@ class TD3Agent:
                 self.critic.parameters(), self.critic_target.parameters()
             ):
                 target_param.data.copy_(
-                    self.tau_polyak * param.data
-                    + (1 - self.tau_polyak) * target_param.data
+                    self.hp.tau_polyak * param.data
+                    + (1 - self.hp.tau_polyak) * target_param.data
                 )
 
             for param, target_param in zip(
                 self.actor.parameters(), self.actor_target.parameters()
             ):
                 target_param.data.copy_(
-                    self.tau_polyak * param.data
-                    + (1 - self.tau_polyak) * target_param.data
+                    self.hp.tau_polyak * param.data
+                    + (1 - self.hp.tau_polyak) * target_param.data
                 )
 
 
@@ -163,7 +152,7 @@ class TD3Agent:
 def run_td3_tau_ann_training(
     problem: Problem,
     disc_config: DiscretizationConfig,
-    tau_ann_config: TauANNConfig,
+    ann_config: TauANNConfig,
     master_path: Path,
     proj_ref_schedule: ProjectionReferenceSchedule,
     hp: TD3Hyperparameters | None = None,
@@ -176,25 +165,21 @@ def run_td3_tau_ann_training(
     env = EnvironmentTauAnn(
         problem=problem,
         disc_config=disc_config,
-        tau_ann_config=tau_ann_config,
+        ann_config=ann_config,
         master_path=master_path,
         proj_ref_schedule=proj_ref_schedule,
     )
 
-    state_dim = env.state_dim
-    action_dim = env.action_dim
-    n_wavenumber_bins = env.n_wavenumber_bins
-
     # Instantiate agent & replay buffer
     agent = TD3Agent(
-        state_dim=state_dim,
-        action_dim=action_dim,
-        n_wavenumber_bins=n_wavenumber_bins,
+        ann_config=ann_config,
         hp=hp,
     )
 
     replay_buffer = ReplayBuffer(
-        state_dim=state_dim, action_dim=action_dim, max_size=hp.replay_buffer_max_size
+        state_dim=ann_config.state_dimension,
+        action_dim=ann_config.action_dimension,
+        max_size=hp.replay_buffer_max_size,
     )
 
     total_steps = 0
@@ -213,7 +198,9 @@ def run_td3_tau_ann_training(
             # Select Action: Pure random uniforms at start, then policy + noise
             if total_steps < hp.start_timesteps:
                 action = np.array(
-                    np.random.uniform(-hp.max_action, hp.max_action, size=action_dim)
+                    np.random.uniform(
+                        -hp.max_action, hp.max_action, size=ann_config.action_dimension
+                    )
                 )
             else:
                 action = agent.select_action(state, noise_std=hp.expl_noise)
@@ -236,8 +223,8 @@ def run_td3_tau_ann_training(
         )
 
     # 4. Extract trained core TauANN and save to disk
-    trained_tau_ann = agent.actor
-    save_tau_ann(trained_tau_ann, tau_ann_config.ann_path)
-    print(f"Successfully saved trained TauANN to {tau_ann_config.ann_path}")
+    assert ann_config.ann_path is not None
+    save_tau_ann(model=agent.actor, save_path=ann_config.ann_path)
+    print(f"Successfully saved trained TauANN to {ann_config.ann_path}")
 
-    return trained_tau_ann
+    return agent.actor

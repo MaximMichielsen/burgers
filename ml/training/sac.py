@@ -73,32 +73,25 @@ class SACActor(nn.Module):
 
     def __init__(
         self,
-        n_wavenumber_bins: int,
-        n_coefficients: int,
+        ann_config: TauANNConfig,
         hp: Optional[SACHyperparameters] = None,
     ):
         super().__init__()
 
         if hp is None:
-            hp = SACHyperparameters(action_dim=n_coefficients)
+            hp = SACHyperparameters(ann_config.action_dimension)
         self.hp = hp
-
-        self.n_wavenumber_bins = n_wavenumber_bins
-        self.action_dim = n_coefficients
-        self.max_action = hp.max_action
 
         # base deployment policy
         self.tau_ann = TauANN(
-            n_wavenumber_bins=n_wavenumber_bins,
-            n_coefficients=n_coefficients,
-            max_action=hp.max_action,
+            config=ann_config,
         )
         # feature extractor is all layers except final output projection
         self.backbone = self.tau_ann.network[:-1]
 
         # Output heads for Mean and Log Standard Deviation
         self.mean_head = self.tau_ann.network[-1]
-        self.log_std_head = nn.Linear(N_HIDDEN_UNITS, n_coefficients)
+        self.log_std_head = nn.Linear(N_HIDDEN_UNITS, ann_config.n_coefficients)
 
     def forward(self, state: Tensor) -> tuple[Tensor, Tensor]:
         """Returns gaussian distribution parameters (mean, log_std)."""
@@ -148,24 +141,21 @@ class SACAgent:
 
     def __init__(
         self,
-        n_wavenumber_bins: int,
-        n_coefficients: int,
+        ann_config: TauANNConfig,
         hp: Optional[SACHyperparameters] = None,
         device: str | torch.device = "cpu",
     ):
         super().__init__()
 
         if hp is None:
-            hp = SACHyperparameters(action_dim=n_coefficients)
+            hp = SACHyperparameters(action_dim=ann_config.action_dimension)
         self.hp = hp
 
         self.device = device
-        self.state_dim = n_coefficients + n_wavenumber_bins
 
         # actor
         self.actor: SACActor = SACActor(
-            n_wavenumber_bins=n_wavenumber_bins,
-            n_coefficients=n_coefficients,
+            ann_config=ann_config,
             hp=hp,
         ).to(self.device)
         self.actor_optimizer = torch.optim.Adam(
@@ -174,8 +164,8 @@ class SACAgent:
 
         # critic
         self.critic: TwinQCritic = TwinQCritic(
-            state_dim=self.state_dim,
-            action_dim=n_coefficients,
+            state_dim=ann_config.state_dimension,
+            action_dim=ann_config.action_dimension,
             hidden_dim=N_HIDDEN_UNITS,
         ).to(self.device)
         self.critic_target: TwinQCritic = copy.deepcopy(self.critic)
@@ -200,12 +190,6 @@ class SACAgent:
             )
         else:
             self.alpha_optimizer = None
-
-        # direct access to hyperparameters
-        self.polyak_tau = self.hp.polyak_tau
-        self.discount = self.hp.discount
-        self.target_entropy = self.hp.target_entropy
-        self.max_action = self.hp.max_action
 
         self.total_it = 0
 
@@ -241,7 +225,7 @@ class SACAgent:
             target_q1, target_q2 = self.critic_target(next_state, next_action)
             min_target_q = torch.min(target_q1, target_q2)
 
-            target_q = reward + (1.0 - done) * self.discount * (
+            target_q = reward + (1.0 - done) * self.hp.discount * (
                 min_target_q - self.alpha.detach() * next_log_prob
             )
 
@@ -270,7 +254,7 @@ class SACAgent:
         # temperature optimization
         if self.hp.auto_temperature_tuning and self.alpha_optimizer is not None:
             alpha_loss = -(
-                self.log_alpha * (log_prob.detach() + self.target_entropy)
+                self.log_alpha * (log_prob.detach() + self.hp.target_entropy)
             ).mean()
 
             self.alpha_optimizer.zero_grad()
@@ -282,8 +266,8 @@ class SACAgent:
             for param, target_param in zip(
                 self.critic.parameters(), self.critic_target.parameters()
             ):
-                target_param.data.mul_(1.0 - self.polyak_tau)
-                target_param.data.add_(self.polyak_tau * param.data)
+                target_param.data.mul_(1.0 - self.hp.polyak_tau)
+                target_param.data.add_(self.hp.polyak_tau * param.data)
 
 
 # =============================================================================
@@ -294,35 +278,33 @@ class SACAgent:
 def run_sac_tau_ann_training(
     problem: Problem,
     disc_config: DiscretizationConfig,
-    tau_ann_config: TauANNConfig,
+    ann_config: TauANNConfig,
     master_path: Path,
     proj_ref_schedule: ProjectionReferenceSchedule,
     hp: SACHyperparameters | None = None,
 ) -> TauANN:
     """Main training loop connecting EnvironmentTauANN and SAC agent."""
     if hp is None:
-        hp = SACHyperparameters(action_dim=tau_ann_config.n_coefficients)
+        hp = SACHyperparameters(action_dim=ann_config.action_dimension)
 
     env = EnvironmentTauAnn(
         problem=problem,
         disc_config=disc_config,
-        tau_ann_config=tau_ann_config,
+        ann_config=ann_config,
         master_path=master_path,
         proj_ref_schedule=proj_ref_schedule,
     )
 
-    state_dim = env.state_dim
-    action_dim = env.action_dim
-
     agent = SACAgent(
-        n_wavenumber_bins=tau_ann_config.n_wavenumber_bins,
-        n_coefficients=tau_ann_config.n_coefficients,
+        ann_config=ann_config,
         hp=hp,
         device="cuda" if torch.cuda.is_available() else "cpu",
     )
 
     replay_buffer = ReplayBuffer(
-        state_dim=state_dim, action_dim=action_dim, max_size=hp.replay_buffer_max_size
+        state_dim=ann_config.state_dimension,
+        action_dim=ann_config.action_dimension,
+        max_size=hp.replay_buffer_max_size,
     )
     total_steps = 0
 
@@ -338,7 +320,7 @@ def run_sac_tau_ann_training(
 
             if total_steps < hp.start_timesteps:
                 action = np.random.uniform(
-                    -hp.max_action, hp.max_action, size=action_dim
+                    -hp.max_action, hp.max_action, size=ann_config.action_dimension
                 )
             else:
                 action = agent.select_action(state, is_deterministic=False)
@@ -361,8 +343,8 @@ def run_sac_tau_ann_training(
             f"Reward: {episode_reward:.4f}"
         )
 
-    assert tau_ann_config.ann_path is not None
-    save_tau_ann(agent.actor.tau_ann, tau_ann_config.ann_path)
-    print(f"Successfully saved trained TauANN to {tau_ann_config.ann_path}")
+    assert ann_config.ann_path is not None
+    save_tau_ann(agent.actor.tau_ann, ann_config.ann_path)
+    print(f"Successfully saved trained TauANN to {ann_config.ann_path}")
 
     return agent.actor.tau_ann

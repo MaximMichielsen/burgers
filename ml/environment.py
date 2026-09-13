@@ -20,14 +20,14 @@ class EnvironmentTauAnn:
         self,
         problem: Problem,
         disc_config: DiscretizationConfig,
-        tau_ann_config: TauANNConfig,
+        ann_config: TauANNConfig,
         master_path: Path,
         proj_ref_schedule: ProjectionReferenceSchedule,
     ) -> None:
 
         self.problem = problem
         self.disc_config = disc_config
-        self.tau_ann_config = tau_ann_config
+        self.ann_config = ann_config
         self.master_path = master_path
         self.proj_ref_schedule = proj_ref_schedule
 
@@ -36,10 +36,6 @@ class EnvironmentTauAnn:
         )
         self._max_les_steps: int = self._n_time_steps
         self._total_les_steps: int = 0
-
-        self.n_wavenumber_bins: int = tau_ann_config.n_wavenumber_bins
-        self.state_dim: int = tau_ann_config.input_dimension
-        self.action_dim: int = tau_ann_config.n_coefficients
 
         self.solver: SolverCoupled | None = None
 
@@ -53,7 +49,7 @@ class EnvironmentTauAnn:
             ),
             master_path=self.master_path,
             simulation_mode=SimulationMode.TAU_BASED,
-            tau_model=self.tau_ann_config.tau_model,
+            tau_model=self.ann_config.tau_model,
             ann_path=None,
         )
         self._total_les_steps = 0
@@ -68,7 +64,7 @@ class EnvironmentTauAnn:
 
         self.solver.correction_coefficients = action
 
-        for _ in range(self.tau_ann_config.n_skip_steps):
+        for _ in range(self.ann_config.n_skip_steps):
             self.solver.advance_time_step()
             self._total_les_steps += 1
 
@@ -100,8 +96,8 @@ class EnvironmentTauAnn:
                 f"and reference schedule ({len(proj_spectrum_k)}). Check n_wavenumber_bins alignment."
             )
 
-        w_energy = self.tau_ann_config.reward_weight_energy
-        gamma_exp = self.tau_ann_config.reward_spectral_exponent
+        w_energy = self.ann_config.reward_weight_energy
+        gamma_exp = self.ann_config.reward_spectral_exponent
         wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
 
         spectral_penalty = float(

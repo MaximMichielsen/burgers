@@ -71,7 +71,7 @@ td3_config = replace(ann_config, ann_path=paths.td3_model)
 td3_model = run_td3_tau_ann_training(
     problem=problem,
     disc_config=disc_cfg,
-    tau_ann_config=td3_config,
+    ann_config=td3_config,
     master_path=paths.master,
     proj_ref_schedule=proj_ref_schedule,
     hp=hp_td3,
@@ -83,7 +83,7 @@ sac_config = replace(ann_config, ann_path=paths.sac_model)
 sac_model = run_sac_tau_ann_training(
     problem=problem,
     disc_config=disc_cfg,
-    tau_ann_config=sac_config,
+    ann_config=sac_config,
     master_path=paths.master,
     proj_ref_schedule=proj_ref_schedule,
     hp=hp_sac,
