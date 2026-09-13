@@ -5,7 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ml.projection_schedule import ProjectionReferenceSchedule
-from ml.tau_ann import TauANNConfig
+from ml.tau_ann import TauANNConfig, PENALTY_CLIP
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode
@@ -47,6 +47,7 @@ class EnvironmentTauAnn:
             disc_config=dataclasses.replace(
                 self.disc_config, suppress_file_logging=True
             ),
+            ann_config=self.ann_config,
             master_path=self.master_path,
             simulation_mode=SimulationMode.TAU_BASED,
             tau_model=self.ann_config.tau_model,
@@ -73,8 +74,8 @@ class EnvironmentTauAnn:
         try:
             next_state_array = self.solver.create_input_stencil()
         except ValueError:
-            next_state = np.zeros_like(self.ann_config.state_dimension)
-            reward = self.ann_config.penalty_clip  # finite, large penalty
+            next_state = np.zeros(self.ann_config.state_dimension)
+            reward = PENALTY_CLIP
             done = True
             return next_state, reward, done
 

@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ml.tau_ann import load_tau_ann, TauANN
+from ml.tau_ann import load_tau_ann, TauANN, TauANNConfig, OutputScope
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
@@ -31,6 +31,7 @@ class SolverCoupled(SolverBase):
         disc_config: DiscretizationConfig,
         master_path: Path,
         tau_model: TauModel,
+        ann_config: TauANNConfig,
         simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
         ann_path: Path | None = None,
         snapshot_factor: int = 1,
@@ -55,6 +56,7 @@ class SolverCoupled(SolverBase):
 
         self.tau_model = tau_model
         self.training_mode = training_mode
+        self.ann_config: TauANNConfig = ann_config
 
         self.n_correction_coefficients = tau_model.output_dimensions
         self.correction_coefficients: NDArray | None = None
@@ -89,6 +91,16 @@ class SolverCoupled(SolverBase):
         self.correction_coefficients_history.append(self.correction_coefficients)
         self.simulation_time_elapsed += self.dt
 
+    def retrieve_local_corrections(self, element: int | None) -> NDArray:
+        if self.ann_config.output_scope == OutputScope.LOCAL and element is not None:
+            reshaped = self.correction_coefficients.reshape(
+                self.ann_config.n_local_groups, self.ann_config.n_coefficients
+            )
+            return reshaped[element]
+
+        assert self.correction_coefficients is not None
+        return self.correction_coefficients
+
     # ------------------------------------------------------------------ #
     #  ANN
     # ------------------------------------------------------------------ #
@@ -113,7 +125,7 @@ class SolverCoupled(SolverBase):
         previous_coefficients = (
             self.correction_coefficients
             if self.correction_coefficients is not None
-            else np.ones(self.n_correction_coefficients)
+            else np.ones(self.ann_config.action_dimension)
         )
 
         return np.concatenate([normalised_spectrum, previous_coefficients])
@@ -143,10 +155,12 @@ class SolverCoupled(SolverBase):
     #  Tau models
     # ------------------------------------------------------------------ #
 
-    def compute_tau(self, u_e: NDArray, u_x_e: NDArray | None = None) -> float:
+    def compute_tau(
+        self, u_e: NDArray, u_x_e: NDArray | None = None, element: int | None = None
+    ) -> float:
         # Default to ones (1.0 for each term) if correction_coefficients is None
         c = (
-            self.correction_coefficients
+            self.retrieve_local_corrections(element=element)
             if self.correction_coefficients is not None
             else np.ones(self.tau_model.output_dimensions)
         )

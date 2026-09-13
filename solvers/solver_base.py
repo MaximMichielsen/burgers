@@ -319,8 +319,12 @@ class SolverBase:
         points, weights = self.gauss_legendre(3)
         gradient_basis = self.basis_functions_gradient()
 
+        element_idx = np.where((element == self.elements).all(axis=1))[0]
+
         tau_e = (
-            self.compute_tau(u_k, self.basis_functions_gradient() @ u_k)
+            self.compute_tau(
+                u_k, self.basis_functions_gradient() @ u_k, element=element_idx
+            )
             if self._use_vms
             else None
         )
@@ -474,7 +478,9 @@ class SolverBase:
     #  Tau models
     # ------------------------------------------------------------------ #
 
-    def compute_tau(self, u_e: NDArray, u_x_e: NDArray | None = None) -> float:
+    def compute_tau(
+        self, u_e: NDArray, u_x_e: NDArray | None = None, element: int | None = None
+    ) -> float:
         """Dispatch to the configured tau model. u_e: nodal values for the element (length 2)."""
         if self.tau_model == "2":
             return self.tau_model_two_params(u_e)

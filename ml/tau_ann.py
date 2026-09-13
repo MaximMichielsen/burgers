@@ -10,6 +10,7 @@ from solvers.solver_base import TauModel
 N_HIDDEN_UNITS = 64
 PENALTY_CLIP = -10e6
 
+
 class OutputScope(str, Enum):
     GLOBAL = "global"
     LOCAL = "local"
@@ -33,15 +34,17 @@ class TauANNConfig:
     reward_spectral_exponent: float = 5.0 / 3.0
 
     def __post_init__(self) -> None:
-        self.state_dimension = self.n_wavenumber_bins + self.n_coefficients
         self.n_local_groups: int = (
-            self.n_nodes_les
-        )  # for now equal to node amount but in future developments can be less
+            self.n_nodes_les * 1 if self.output_scope == OutputScope.LOCAL else 1
+        )  # for now equal to element amount but in future developments can be less
+
         self.action_dimension = (
             self.n_coefficients
             if self.output_scope == OutputScope.GLOBAL
             else self.n_coefficients * self.n_local_groups
         )
+
+        self.state_dimension = self.n_wavenumber_bins + self.action_dimension
 
 
 class TauANN(nn.Module):

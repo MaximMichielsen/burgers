@@ -219,7 +219,9 @@ def run_td3_tau_ann_training(
             f"Episode: {episode + 1}/{hp.total_episodes} | "
             f"Steps in Ep: {episode_steps} | "
             f"Total Steps: {total_steps} | "
+            f"Scope: {ann_config.output_scope.value} ({ann_config.n_local_groups}) | "
             f"Reward: {episode_reward:.4f}"
+
         )
 
     # 4. Extract trained core TauANN and save to disk

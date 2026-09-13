@@ -2,7 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ml.projection_schedule import ProjectionReferenceSchedule
-from ml.tau_ann import TauANNConfig
+from ml.tau_ann import TauANNConfig, OutputScope
 from ml.training.td3 import run_td3_tau_ann_training, TD3Hyperparameters
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem, Problems
@@ -26,7 +26,7 @@ courant_les: float = 1.0
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.FOUR_PARAMS
 
-TOTAL_EPISODES: int = 500
+TOTAL_EPISODES: int = 1000
 hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES)
 
 # discretization config
@@ -49,19 +49,17 @@ proj_ref_schedule = ProjectionReferenceSchedule.from_projection_directory(
     n_wavenumber_bins=disc_cfg.n_wavenumber_bins,
 )
 
-ann_config = TauANNConfig(
+td3_config = TauANNConfig(
     tau_model=tau_model,
     n_wavenumber_bins=disc_cfg.n_wavenumber_bins,
     n_coefficients=tau_model.output_dimensions,
-    ann_path=None,
+    ann_path=paths.td3_model,
     n_skip_steps=1,
     reward_weight_energy=1.0,
     reward_spectral_exponent=5.0 / 3.0,
     n_nodes_les=disc_cfg.n_nodes_les,
+    output_scope=OutputScope.GLOBAL,
 )
-
-
-td3_config = replace(ann_config, ann_path=paths.td3_model)
 
 td3_model = run_td3_tau_ann_training(
     problem=problem,
@@ -90,6 +88,7 @@ solver_tau_ann = SolverCoupled(
     tau_model=tau_model,
     master_path=paths.td3_data,
     ann_path=paths.td3_model,
+    ann_config=td3_config,
 )
 solver_tau_ann.run_simulation()
 solver_tau_ann.post_processing()
