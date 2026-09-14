@@ -3,7 +3,7 @@ import torch
 from numpy.typing import NDArray
 from torch import nn, Tensor
 
-from ml.tau_ann import N_HIDDEN_UNITS, PENALTY_CLIP
+from ml.tau_ann import N_HIDDEN_UNITS
 
 
 class TwinQCritic(nn.Module):
@@ -72,11 +72,10 @@ class ReplayBuffer:
         reward: float,
         done: bool,
     ) -> None:
-        reward_ = float(np.clip(reward, PENALTY_CLIP, -PENALTY_CLIP))
         self.state[self.ptr] = state
         self.action[self.ptr] = action
         self.next_state[self.ptr] = next_state
-        self.reward[self.ptr] = reward_
+        self.reward[self.ptr] = reward
         self.done[self.ptr] = float(done)
 
         self.ptr = (self.ptr + 1) % self.max_size

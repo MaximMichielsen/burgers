@@ -8,7 +8,7 @@ from torch import nn, Tensor
 from solvers.solver_base import TauModel
 
 N_HIDDEN_UNITS = 64
-PENALTY_CLIP = -10e6
+EPISODE_REWARD_CLIP = -1e2
 
 
 class OutputScope(str, Enum):
@@ -25,8 +25,6 @@ class TauANNConfig:
     n_skip_steps: int
     n_nodes_les: int
     max_action: float = 1.0
-
-    penalty_clip: float = PENALTY_CLIP
 
     output_scope: OutputScope = OutputScope.GLOBAL
 
