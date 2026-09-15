@@ -190,6 +190,11 @@ class TD3Trainer:
     ) -> tuple[TauANN, list]:
         """Main training loop connecting EnvironmentTauANN and TD3 Agent."""
 
+        print("Starting training")
+        print(
+            f"Architecture: {self.ann_config.state_dimension} -> {N_HIDDEN_UNITS} x 3 -> {self.ann_config.action_dimension}"
+        )
+
         # 1. Initialize environment
         env = EnvironmentTauAnn(
             problem=self.problem,

@@ -11,7 +11,7 @@ N_HIDDEN_UNITS = 64
 EPISODE_REWARD_CLIP = -1e3
 
 
-class OutputScope(str, Enum):
+class Scope(str, Enum):
     GLOBAL = "global"
     LOCAL = "local"
 
@@ -26,23 +26,33 @@ class TauANNConfig:
     n_nodes_les: int
     max_action: float = 1.0
 
-    output_scope: OutputScope = OutputScope.GLOBAL
+    n_local_stencil_points: int = 8
+
+    output_scope: Scope = Scope.GLOBAL
+    input_scope: Scope = Scope.GLOBAL
 
     reward_weight_energy: float = 1.0
     reward_spectral_exponent: float = 5.0 / 3.0
 
     def __post_init__(self) -> None:
         self.n_local_groups: int = (
-            self.n_nodes_les * 1 if self.output_scope == OutputScope.LOCAL else 1
+            self.n_nodes_les * 1 if self.output_scope == Scope.LOCAL else 1
         )  # for now equal to element amount but in future developments can be less
 
         self.action_dimension = (
             self.n_coefficients
-            if self.output_scope == OutputScope.GLOBAL
+            if self.output_scope == Scope.GLOBAL
             else self.n_coefficients * self.n_local_groups
         )
 
-        self.state_dimension = self.n_wavenumber_bins + self.action_dimension
+        self.n_local_wavenumber_bins: int = (self.n_local_stencil_points - 1) // 2
+        local_state_dimension = 0
+        if self.input_scope == Scope.LOCAL:
+            local_state_dimension = self.n_nodes_les * self.n_local_wavenumber_bins
+
+        self.state_dimension = (
+            self.n_wavenumber_bins + self.action_dimension + local_state_dimension
+        )
 
 
 class TauANN(nn.Module):

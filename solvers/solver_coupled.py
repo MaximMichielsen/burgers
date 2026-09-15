@@ -17,7 +17,7 @@ import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-from ml.tau_ann import load_tau_ann, TauANN, TauANNConfig, OutputScope
+from ml.tau_ann import load_tau_ann, TauANN, TauANNConfig, Scope
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
@@ -38,7 +38,7 @@ class SolverCoupled(SolverBase):
         snapshot_factor: int = 1,
         t_start: float = 0.0,
         training_mode: bool = False,
-        prescribed_action_trajectory: list | None = None
+        prescribed_action_trajectory: list | None = None,
     ):
         super().__init__(
             problem,
@@ -59,6 +59,8 @@ class SolverCoupled(SolverBase):
         self.tau_model = tau_model
         self.training_mode = training_mode
         self.ann_config: TauANNConfig = ann_config
+
+        self.n_local_stencil_points = ann_config.n_local_stencil_points
 
         self.n_correction_coefficients = tau_model.output_dimensions
         self.correction_coefficients: NDArray | None = None
@@ -101,7 +103,7 @@ class SolverCoupled(SolverBase):
 
     def retrieve_local_corrections(self, element: int | None = None) -> NDArray:
         """Retrieve local or global coefficients for element evaluation."""
-        if self.ann_config.output_scope == OutputScope.LOCAL and element is not None:
+        if self.ann_config.output_scope == Scope.LOCAL and element is not None:
             reshaped = self.correction_coefficients.reshape(
                 self.ann_config.n_local_groups, self.ann_config.n_coefficients
             )
@@ -137,7 +139,55 @@ class SolverCoupled(SolverBase):
             else np.ones(self.ann_config.action_dimension)
         )
 
+        if self.ann_config.input_scope == Scope.LOCAL:
+            local_stencils = []
+            for node in self.nodes:
+                _, local_spectrum = self.compute_local_energy_spectrum(node)
+                local_spectrum_32 = local_spectrum.astype(np.float32)
+                local_total_energy = float(local_spectrum_32.sum())
+                norm_local_spectrum = local_spectrum_32 / max(local_total_energy, 1e-12)
+
+                local_stencils.append(norm_local_spectrum)
+
+            flattened_local_features = np.concatenate(local_stencils)
+            return np.concatenate(
+                [normalised_spectrum, previous_coefficients, flattened_local_features]
+            )
+
         return np.concatenate([normalised_spectrum, previous_coefficients])
+
+    def compute_local_energy_spectrum(
+        self, node: int, positive_only: bool = True
+    ) -> tuple[NDArray, NDArray]:
+        """Compute local energy spectrum across a 4-node stencil around a target node."""
+        n_points = self.n_local_stencil_points
+        half_stencil = (n_points - 1) // 2
+        start_idx = node - half_stencil
+        target_indices = np.arange(start_idx, start_idx + n_points, dtype=int)
+        total_nodes = len(self.solution)
+        valid_mask = (target_indices >= 0) & (target_indices < total_nodes)
+
+        if not np.any(valid_mask):
+            return np.array([]), np.array([])
+
+        # Zero-pad out-of-bounds nodes outside domain boundaries
+        u_local = np.zeros(n_points, dtype=np.float64)
+        u_local[valid_mask] = self.solution[target_indices[valid_mask]]
+
+        # Compute 1D FFT
+        u_hat_local = np.fft.fft(u_local)
+
+        # Wavenumbers using exact grid spacing d = element_size (dx)
+        wavenumbers = np.fft.fftfreq(n_points, d=self.element_size) * 2.0 * np.pi
+
+        # Spectrum matching global energy normalization (0.5 * |u_hat|^2 / N)
+        spectrum = 0.5 * (np.abs(u_hat_local) ** 2) / n_points
+
+        if positive_only:
+            mask = wavenumbers > 0
+            return wavenumbers[mask], spectrum[mask]
+
+        return wavenumbers, spectrum
 
     def get_ann_coefficients(self) -> NDArray:
         """Call ANN and receive correction coefficients."""
@@ -189,7 +239,7 @@ class SolverCoupled(SolverBase):
     # ------------------------------------------------------------------ #
 
     def plot_correction_coefficients(self, show_plot: bool = False):
-        if self.ann_config.output_scope == OutputScope.GLOBAL:
+        if self.ann_config.output_scope == Scope.GLOBAL:
             coefficients = [self.correction_coefficients]
         else:
             coefficients = self.correction_coefficients.reshape(
