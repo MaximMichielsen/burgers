@@ -134,6 +134,7 @@ class SolverBase:
         self.time_steps: NDArray = np.linspace(
             t_start, t_start + self.domain_timespan, self._n_time_steps + 1
         )
+        self.current_time_step: int = 0
         self.viscosity: float = problem.viscosity
         self.max_iterations: int = (
             MAXIMUM_ITERATIONS_DNS
@@ -254,6 +255,7 @@ class SolverBase:
         self.energy_history.append(self.compute_energy_(self.solution))
         self.dissipation_history.append(self.compute_dissipation_(self.solution))
         self.simulation_time_elapsed += self.dt
+        self.current_time_step += 1
 
     def nr_iteration(self, solution: NDArray, solution_prev: NDArray) -> NDArray:
         """Newton–Raphson iteration; returns U^{n+1}."""

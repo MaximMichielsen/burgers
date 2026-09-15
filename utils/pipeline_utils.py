@@ -156,6 +156,8 @@ class RunPaths:
     les_four: Path
     les_nm: Path
 
+    prescribed_action: Path
+
     dns_forcing: Path
 
     @classmethod
@@ -173,6 +175,7 @@ class RunPaths:
             les_two=master_path / SOLVER_DATA_FOLDER / "tau_two",
             les_three=master_path / SOLVER_DATA_FOLDER / "tau_three",
             les_four=master_path / SOLVER_DATA_FOLDER / "tau_four",
+            prescribed_action=master_path / SOLVER_DATA_FOLDER / "prescribed",
             td3_data=master_path / SOLVER_DATA_FOLDER / "td3",
             sac_data=master_path / SOLVER_DATA_FOLDER / "sac",
             dns_forcing=master_path / "dns_forcing_run",

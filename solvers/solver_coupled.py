@@ -38,6 +38,7 @@ class SolverCoupled(SolverBase):
         snapshot_factor: int = 1,
         t_start: float = 0.0,
         training_mode: bool = False,
+        prescribed_action_trajectory: list | None = None
     ):
         super().__init__(
             problem,
@@ -63,6 +64,8 @@ class SolverCoupled(SolverBase):
         self.correction_coefficients: NDArray | None = None
         self.correction_coefficients_history: list = []
 
+        self.prescribed_action_trajectory = prescribed_action_trajectory
+
         # Load ANN only during inference/solver mode
         self.ann: TauANN | None = None
         if not self.training_mode:
@@ -79,8 +82,12 @@ class SolverCoupled(SolverBase):
 
         Previous solutions are stored for BDF2 time-marching."""
         self.resolve_current_forcing()
-        # Only evaluate the ANN if we are in inference/eval mode (not training mode)
-        if not self.training_mode:
+
+        if self.prescribed_action_trajectory is not None:
+            action = self.prescribed_action_trajectory[self.current_time_step]
+            self.correction_coefficients = np.asarray(action, dtype=np.float64)
+
+        elif not self.training_mode:
             self.correction_coefficients = self.get_ann_coefficients()
 
         new_solution = self.nr_iteration(self.solution, self.solution_previous)
@@ -92,7 +99,8 @@ class SolverCoupled(SolverBase):
         self.correction_coefficients_history.append(self.correction_coefficients)
         self.simulation_time_elapsed += self.dt
 
-    def retrieve_local_corrections(self, element: int | None) -> NDArray:
+    def retrieve_local_corrections(self, element: int | None = None) -> NDArray:
+        """Retrieve local or global coefficients for element evaluation."""
         if self.ann_config.output_scope == OutputScope.LOCAL and element is not None:
             reshaped = self.correction_coefficients.reshape(
                 self.ann_config.n_local_groups, self.ann_config.n_coefficients

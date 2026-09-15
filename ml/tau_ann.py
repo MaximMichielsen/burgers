@@ -8,7 +8,7 @@ from torch import nn, Tensor
 from solvers.solver_base import TauModel
 
 N_HIDDEN_UNITS = 64
-EPISODE_REWARD_CLIP = -1e2
+EPISODE_REWARD_CLIP = -1e3
 
 
 class OutputScope(str, Enum):

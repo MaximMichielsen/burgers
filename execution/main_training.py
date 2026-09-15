@@ -15,8 +15,8 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 CURRENT_DIR = Path(__file__).parent.resolve()
-problem: Problem = Problems.raj_one
-problem = replace(problem, domain_timespan=2.0, reynolds=100)
+problem: Problem = Problems.raj_two
+problem = replace(problem, domain_timespan=4.0, reynolds=100)
 
 # general simulation parameters
 n_nodes_les: int = 9
@@ -24,10 +24,12 @@ temporal_refinement: int = 1
 courant_les: float = 1.0
 
 simulation_mode = SimulationMode.TAU_BASED
-tau_model = TauModel.FOUR_PARAMS
+tau_model = TauModel.TWO_PARAMS
 
-TOTAL_EPISODES: int = 500
-hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES)
+TOTAL_EPISODES: int = 300
+max_action = 2.0
+output_scope = OutputScope.LOCAL
+hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES, max_action=max_action)
 
 # discretization config
 disc_cfg = DiscretizationConfig(
@@ -58,7 +60,8 @@ td3_config = TauANNConfig(
     reward_weight_energy=1.0,
     reward_spectral_exponent=5.0 / 3.0,
     n_nodes_les=disc_cfg.n_nodes_les,
-    output_scope=OutputScope.LOCAL,
+    output_scope=output_scope,
+    max_action=max_action,
 )
 
 td3_trainer = TD3Trainer(
@@ -70,7 +73,7 @@ td3_trainer = TD3Trainer(
     hp=hp_td3,
 )
 
-td3_model = td3_trainer.run_td3_tau_ann_training()
+td3_model, best_action_sequence = td3_trainer.run_td3_tau_ann_training()
 td3_trainer.plot_reward_evolution()
 
 
@@ -97,6 +100,20 @@ solver_tau_ann = SolverCoupled(
 solver_tau_ann.run_simulation()
 solver_tau_ann.post_processing()
 solver_tau_ann.plot_correction_coefficients()
+
+# Run LES using best action sequence
+solver_prescribed = SolverCoupled(
+    problem,
+    disc_cfg,
+    tau_model=tau_model,
+    master_path=paths.prescribed_action,
+    ann_path=paths.td3_model,
+    ann_config=td3_config,
+    prescribed_action_trajectory=best_action_sequence,
+)
+solver_prescribed.run_simulation()
+solver_prescribed.post_processing()
+solver_prescribed.plot_correction_coefficients()
 
 # -------------------------------------- Plotting --------------------------------------- #
 plot_solution_comparison(

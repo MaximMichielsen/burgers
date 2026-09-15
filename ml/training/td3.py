@@ -28,13 +28,6 @@ from setup.problems import Problem
 # =============================================================================
 
 
-# TODO: Compare early peak checkpoint (e.g., Ep #88) vs. final model (Ep #500) deterministically:
-# 1. Save best model checkpoints during training using a noise-free evaluation callback.
-# 2. Run clean, noise-free evaluations for both checkpoints under identical solver conditions.
-# 3. Analyze the two potential scenarios:
-#    - Scenario A (Noise Fluke): Ep #88 reward drops to ~ -12.0 in eval -> Action noise was driving the high score; final model is superior.
-#    - Scenario B (Policy Decay): Ep #88 maintains ~ -3.89 in eval -> Policy regressed late in training; use best-model checkpoint saving.
-
 @dataclass
 class TD3Hyperparameters:
     """Hyperparameters for TD3 Agent training and environment interactions."""
@@ -189,9 +182,12 @@ class TD3Trainer:
         self.end_of_random_episode: int | None = None
         self.reward_history: list = []
 
+        self.best_historical_reward = -np.inf
+        self.best_action_sequence: list = []
+
     def run_td3_tau_ann_training(
         self,
-    ) -> TauANN:
+    ) -> tuple[TauANN, list]:
         """Main training loop connecting EnvironmentTauANN and TD3 Agent."""
 
         # 1. Initialize environment
@@ -237,6 +233,7 @@ class TD3Trainer:
             episode_reward = 0.0
             done = False
             episode_steps = 0
+            actions = []
 
             while not done:
                 total_steps += 1
@@ -254,6 +251,7 @@ class TD3Trainer:
                         self.end_of_random_episode = episode
                     action = agent.select_action(state, noise_std=self.hp.expl_noise)
 
+                actions.append(action)
                 next_state, reward, done = env.step(action=action)
                 replay_buffer.add(state, action, next_state, reward, done)
 
@@ -266,6 +264,9 @@ class TD3Trainer:
 
             episode_reward = np.clip(episode_reward, EPISODE_REWARD_CLIP, 0.0)
             self.reward_history.append(episode_reward)
+
+            if episode_reward > self.best_historical_reward:
+                self.best_action_sequence = actions
 
             print(
                 f"Episode: {episode + 1}/{self.hp.total_episodes} | "
@@ -281,7 +282,7 @@ class TD3Trainer:
         save_tau_ann(model=agent.actor, save_path=self.ann_config.ann_path)
         print(f"Successfully saved trained TauANN to {self.ann_config.ann_path}")
 
-        return agent.actor
+        return agent.actor, self.best_action_sequence
 
     def plot_reward_evolution(self, show_plot: bool = False):
         """Visualize the evolution of episode rewards over training with a clean inset zoom."""

@@ -64,6 +64,11 @@ def plotting_configs(paths: RunPaths) -> list[PlotConfig]:
             paths.sac_data,
             "royalblue",
         ),
+        PlotConfig(
+            "LES - Prescribed",
+            paths.prescribed_action,
+            "tab:orange",
+        ),
     ]
 
     # Only return configurations where the path is defined and exists on disk
@@ -170,6 +175,14 @@ def create_velocity_plot_configs(
             color="salmon",
             linestyle="--",
             marker="d",
+            mesh=disc_cfg.mesh_les,
+        ),
+        VelocityPlotConfig(
+            data_path=paths.prescribed_action,
+            label="LES - Prescribed",
+            color="tab:orange",
+            linestyle="--",
+            marker=".",
             mesh=disc_cfg.mesh_les,
         ),
         VelocityPlotConfig(
