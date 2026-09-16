@@ -1,8 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+import numpy as np
 import torch
+from numpy.typing import NDArray
 from torch import nn, Tensor
 
 from solvers.solver_base import TauModel
@@ -14,6 +16,7 @@ EPISODE_REWARD_CLIP = -1e3
 class Scope(str, Enum):
     GLOBAL = "global"
     LOCAL = "local"
+    FULL_LOCAL = "full_local"
 
 
 @dataclass
@@ -24,8 +27,10 @@ class TauANNConfig:
     ann_path: Path | None
     n_skip_steps: int
     n_nodes_les: int
-    max_action: float = 1.0
 
+    n_local_groups: int
+
+    max_action: float = 1.0
     n_local_stencil_points: int = 8
 
     output_scope: Scope = Scope.GLOBAL
@@ -34,10 +39,28 @@ class TauANNConfig:
     reward_weight_energy: float = 1.0
     reward_spectral_exponent: float = 5.0 / 3.0
 
+    group_map: NDArray = field(init=False, repr=False)
+
+    @property
+    def n_elements(self) -> int:
+        return self.n_nodes_les - 1
+
     def __post_init__(self) -> None:
-        self.n_local_groups: int = (
-            self.n_nodes_les * 1 if self.output_scope == Scope.LOCAL else 1
-        )  # for now equal to element amount but in future developments can be less
+        if self.output_scope == Scope.GLOBAL:
+            self.n_local_groups: int = 1
+        elif self.output_scope == Scope.FULL_LOCAL:
+            self.n_local_groups: int = int(self.n_elements)
+        elif self.output_scope == Scope.LOCAL:
+            self.n_local_groups = max(1, min(self.n_local_groups, self.n_elements))
+        else:
+            raise ValueError(
+                f"Invalid output scope received: {self.output_scope.value} | "
+                f"choose from: {', '.join(scope.name for scope in Scope)}"
+            )
+
+        self.group_map = self._create_group_map(
+            n_elements=self.n_elements, n_groups=self.n_local_groups
+        )
 
         self.action_dimension = (
             self.n_coefficients
@@ -53,6 +76,24 @@ class TauANNConfig:
         self.state_dimension = (
             self.n_wavenumber_bins + self.action_dimension + local_state_dimension
         )
+
+        self.hidden_dimension = max(64, self.action_dimension * 2)
+
+    @staticmethod
+    def _create_group_map(n_elements: int, n_groups: int) -> NDArray:
+        """Builds a 1D mapping array mapping each element index to a group ID."""
+        base_size = n_elements // n_groups
+        remainder = n_elements % n_groups
+
+        group_map = np.zeros(n_elements, dtype=int)
+        current_element = 0
+
+        for g in range(n_groups):
+            group_size = base_size + (1 if g < remainder else 0)
+            group_map[current_element : current_element + group_size] = g
+            current_element += group_size
+
+        return group_map
 
 
 class TauANN(nn.Module):
@@ -71,19 +112,20 @@ class TauANN(nn.Module):
         self.max_action = config.max_action
         self.state_dim = config.state_dimension
         self.action_dim = config.action_dimension
+        self.hidden_dim = config.hidden_dimension
 
         self.network = nn.Sequential(
-            nn.Linear(self.state_dim, N_HIDDEN_UNITS),
+            nn.Linear(self.state_dim, self.hidden_dim),
             nn.ReLU(),
-            nn.Linear(N_HIDDEN_UNITS, N_HIDDEN_UNITS),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(),
-            nn.Linear(N_HIDDEN_UNITS, self.action_dim),
+            nn.Linear(self.hidden_dim, self.action_dim),
         )
 
     def forward(self, state_input: Tensor) -> Tensor:
-        """Forward pass of the ANN."""
         raw_output = self.network(state_input)
-        return self.max_action * torch.tanh(raw_output)
+        min_act = 0.01  # Minimum stabilization floor
+        return min_act + (self.max_action - min_act) * torch.sigmoid(raw_output)
 
 
 def save_tau_ann(model: TauANN, save_path: Path) -> None:

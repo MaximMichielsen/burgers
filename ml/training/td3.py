@@ -90,7 +90,7 @@ class TD3Agent:
 
         if noise_std > 0.0:
             noise = np.random.normal(0, noise_std, size=action.shape)
-            action = (action + noise).clip(-self.hp.max_action, self.hp.max_action)
+            action = (action + noise).clip(0.0, self.hp.max_action)
 
         return action
 
@@ -109,7 +109,7 @@ class TD3Agent:
                 -self.hp.noise_clip, self.hp.noise_clip
             )
             next_action = (self.actor_target(next_state) + noise).clamp(
-                -self.hp.max_action, self.hp.max_action
+                0.0, self.hp.max_action
             )
 
             # Clipped double Q-learning
@@ -190,9 +190,8 @@ class TD3Trainer:
     ) -> tuple[TauANN, list]:
         """Main training loop connecting EnvironmentTauANN and TD3 Agent."""
 
-        print("Starting training")
         print(
-            f"Architecture: {self.ann_config.state_dimension} -> {N_HIDDEN_UNITS} x 3 -> {self.ann_config.action_dimension}"
+            f"Architecture: {self.ann_config.state_dimension} -> {self.ann_config.hidden_dimension} x 3 -> {self.ann_config.action_dimension}"
         )
 
         # 1. Initialize environment
@@ -246,10 +245,8 @@ class TD3Trainer:
 
                 # Select Action: Pure random uniforms at start, then policy + noise
                 if total_steps < self.hp.start_timesteps:
-                    action = np.array(
-                        np.random.uniform(
-                            0, self.hp.max_action, size=self.ann_config.action_dimension
-                        )
+                    action = np.random.uniform(
+                        0.0, self.hp.max_action, size=self.ann_config.action_dimension
                     )
                 else:
                     if self.end_of_random_episode is None:

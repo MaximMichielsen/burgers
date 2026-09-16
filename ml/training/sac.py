@@ -112,21 +112,18 @@ class SACActor(nn.Module):
         normal = Normal(mean, std)
         x_t = normal.rsample()
 
-        # Apply Tanh squashing
-        y_t = torch.tanh(x_t)
-        action = self.max_action * y_t
+        # Apply Sigmoid squashing -> [0, 1]
+        sigmoid_x = torch.sigmoid(x_t)
+        action = self.max_action * sigmoid_x
 
         # Corrected log-probability (dimension-wise)
-        log_prob = normal.log_prob(x_t) - torch.log((1.0 - y_t.pow(2)).clamp(min=1e-6))
+        log_prob = normal.log_prob(x_t) - torch.log(
+            self.max_action * sigmoid_x * (1.0 - sigmoid_x) + 1e-6
+        )
 
-        # Optional: Add constant action scaling factor if exact likelihood value is needed
-        if self.max_action != 1.0:
-            log_prob -= torch.log(torch.tensor(self.max_action, device=state.device))
-
-        # Sum across action dimensions -> shape (batch_size, 1)
         log_prob = log_prob.sum(dim=-1, keepdim=True)
 
-        mean_action = self.max_action * torch.tanh(mean)
+        mean_action = self.max_action * torch.sigmoid(mean)
 
         return action, log_prob, mean_action
 
@@ -320,7 +317,7 @@ def run_sac_tau_ann_training(
 
             if total_steps < hp.start_timesteps:
                 action = np.random.uniform(
-                    -hp.max_action, hp.max_action, size=ann_config.action_dimension
+                    0.0, hp.max_action, size=ann_config.action_dimension
                 )
             else:
                 action = agent.select_action(state, is_deterministic=False)

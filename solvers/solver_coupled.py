@@ -103,11 +103,12 @@ class SolverCoupled(SolverBase):
 
     def retrieve_local_corrections(self, element: int | None = None) -> NDArray:
         """Retrieve local or global coefficients for element evaluation."""
-        if self.ann_config.output_scope == Scope.LOCAL and element is not None:
+        if self.ann_config.output_scope != Scope.GLOBAL and element is not None:
             reshaped = self.correction_coefficients.reshape(
                 self.ann_config.n_local_groups, self.ann_config.n_coefficients
             )
-            return reshaped[element]
+            group_id = self.ann_config.group_map[element]
+            return reshaped[group_id]
 
         assert self.correction_coefficients is not None
         return self.correction_coefficients
@@ -238,69 +239,228 @@ class SolverCoupled(SolverBase):
     #  Diagnostics
     # ------------------------------------------------------------------ #
 
-    def plot_correction_coefficients(self, show_plot: bool = False):
+    def post_processing(self) -> None:
+        """Run post-plotting and post-logging."""
+        self.post_plotting()
+        self.post_logging()
+
+        if not self.correction_coefficients_history:
+            self.logger.warning("No correction coefficients recorded to plot.")
+            return
+
+        raw_history = np.array(self.correction_coefficients_history)
+
+        n_steps = len(raw_history)
+        n_groups = (
+            1
+            if self.ann_config.output_scope == Scope.GLOBAL
+            else self.ann_config.n_local_groups
+        )
+        n_coeffs = self.n_correction_coefficients
+
+        history_coeffs = raw_history.reshape(n_steps, n_groups, n_coeffs)
+        history_time = self.time_steps[:n_steps]
+
+        self.plot_correction_coefficients_snapshot(
+            show_plot=False, save_suffix="final_step"
+        )
+
+        self.plot_correction_coefficients_evolution(
+            history_time=history_time,
+            history_coefficients=history_coeffs,
+            style="both",
+            show_plot=False,
+        )
+
+    def plot_correction_coefficients_snapshot(
+        self, show_plot: bool = False, save_suffix: str = "snapshot"
+    ) -> None:
         if self.ann_config.output_scope == Scope.GLOBAL:
-            coefficients = [self.correction_coefficients]
+            coefficients = np.atleast_2d(self.correction_coefficients)
         else:
             coefficients = self.correction_coefficients.reshape(
                 self.ann_config.n_local_groups, self.ann_config.n_coefficients
             )
 
-        x = [1, 2, 3, 4][: self.n_correction_coefficients]
-        param_names = ["Advection", "Viscosity", "Diffusion", "Time"][
-            : self.n_correction_coefficients
-        ]
+        n_groups, n_coeffs = coefficients.shape
+        param_names = ["Advection", "Viscosity", "Diffusion", "Time"][:n_coeffs]
+        x_base = np.arange(1, n_coeffs + 1)
 
-        fig, ax = plt.subplots(figsize=(7, 5))
-        for coefficients_ in coefficients:
-            ax.plot(x, coefficients_, "x", markersize=8, markeredgewidth=1.5)
+        fig, ax = plt.subplots(figsize=(8, 5.5))
+
+        for g in range(n_groups):
+            offset = (g - (n_groups - 1) / 2) * 0.12 if n_groups > 1 else 0.0
+            ax.plot(
+                x_base + offset,
+                coefficients[g],
+                "x",
+                markersize=9,
+                markeredgewidth=2.0,
+                alpha=0.85,  # Prevents hidden overlap
+                label=f"Group {g}",
+            )
 
         ax.axhline(
             self.ann_config.max_action / 2, color="gray", linestyle="--", linewidth=0.8
         )
 
-        ax.set_ylim(-0.1, self.ann_config.max_action)
+        # FIX 1: Set y-upper limit higher (e.g. 1.25) so markers at 1.0 are not clipped
+        max_act = self.ann_config.max_action
+        ax.set_ylim(-0.1, max_act * 1.25)
 
-        for x_pos, name in zip(x, param_names):
+        # FIX 2: Raise label text positions above the highest possible marker
+        for x_pos, name in zip(x_base, param_names):
             ax.text(
                 x_pos,
-                1.03,
+                max_act * 1.12,
                 name,
                 ha="center",
                 va="bottom",
                 fontweight="bold",
+                fontsize=11,
                 clip_on=False,
             )
 
-        ax.set_xticks(x)
+        ax.set_xticks(x_base)
         ax.set_xticklabels([])
         ax.tick_params(axis="x", which="both", length=0)
         ax.spines["bottom"].set_visible(False)
-        ax.set_xlim(0.5, x[-1] + 0.5)
+        ax.set_xlim(0.5, n_coeffs + 0.5)
+
+        if n_groups > 1:
+            ax.legend(title="Spatial Groups", loc="lower left", frameon=True)
 
         ax.grid(
-            True,
-            which="both",
-            axis="both",
-            linestyle=":",
-            linewidth=0.7,
-            alpha=0.6,
-            color="gray",
+            True, which="both", linestyle=":", linewidth=0.7, alpha=0.6, color="gray"
         )
 
         plt.suptitle("Correction Coefficients", fontsize=13, fontweight="bold", y=0.98)
         plt.tight_layout()
-        plt.savefig(
+
+        save_path = (
             self.master_path
-            / f"post_plotting_{self.ann_config.output_scope.value}_corrections.png",
-            dpi=300,
-            bbox_inches="tight",
+            / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{save_suffix}.png"
         )
-        print(
-            f"Corrections plot saved to: {self.master_path / f'post_plotting_{self.ann_config.output_scope.value}_corrections.png'}"
-        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
         if show_plot:
             plt.show()
         else:
             plt.close(fig)
+
+    def plot_correction_coefficients_evolution(
+        self,
+        history_time: NDArray,
+        history_coefficients: NDArray,
+        style: str = "lines",  # Choose "lines", "heatmap", or "both"
+        show_plot: bool = False,
+    ) -> None:
+        """Plots the temporal evolution of local correction coefficients over time."""
+        if style not in ("lines", "heatmap", "both"):
+            raise ValueError(
+                f"Invalid style: {style!r}. Choose 'lines', 'heatmap', or 'both'."
+            )
+
+        n_steps, n_groups, n_coeffs = history_coefficients.shape
+        param_names = ["Advection", "Viscosity", "Diffusion", "Time"][:n_coeffs]
+
+        styles_to_render = ["lines", "heatmap"] if style == "both" else [style]
+
+        for current_style in styles_to_render:
+            if current_style == "lines":
+                n_rows = 1 if n_coeffs <= 2 else 2
+                n_cols = min(n_coeffs, 2)
+                fig, axes = plt.subplots(
+                    n_rows,
+                    n_cols,
+                    figsize=(5 * n_cols, 3.5 * n_rows),
+                    sharex=True,
+                    sharey=True,
+                )
+                axes_list = np.atleast_1d(axes).flatten()
+
+                for c_idx, name in enumerate(param_names):
+                    ax = axes_list[c_idx]
+                    for g in range(n_groups):
+                        ax.plot(
+                            history_time,
+                            history_coefficients[:, g, c_idx],
+                            label=f"Group {g}",
+                            linewidth=1.8,
+                        )
+                    ax.set_title(name, fontsize=11, fontweight="bold")
+                    ax.set_ylabel("Coefficient Value")
+                    ax.grid(True, linestyle=":", alpha=0.6)
+                    if c_idx == 0 and n_groups > 1:
+                        ax.legend(loc="best", frameon=True)
+
+                for ax in axes_list[-n_cols:]:
+                    ax.set_xlabel("Time (t)")
+
+                fig.suptitle(
+                    "Temporal Evolution of Local Corrections",
+                    fontsize=13,
+                    fontweight="bold",
+                )
+                # rect prevents suptitle from overlapping subplot titles
+                fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+            elif current_style == "heatmap":
+                # layout="constrained" handles colorbar layout without UserWarning
+                fig, axes = plt.subplots(
+                    1,
+                    n_coeffs,
+                    figsize=(3.8 * n_coeffs, 4),
+                    sharey=True,
+                    layout="constrained",
+                )
+                axes_list = np.atleast_1d(axes).flatten()
+
+                for c_idx, name in enumerate(param_names):
+                    ax = axes_list[c_idx]
+                    data = history_coefficients[:, :, c_idx].T
+
+                    im = ax.imshow(
+                        data,
+                        aspect="auto",
+                        origin="lower",
+                        extent=[
+                            history_time[0],
+                            history_time[-1],
+                            -0.5,
+                            n_groups - 0.5,
+                        ],
+                        cmap="viridis",
+                        vmin=0.0,
+                        vmax=self.ann_config.max_action,
+                    )
+                    ax.set_title(name, fontsize=11, fontweight="bold")
+                    ax.set_xlabel("Time (t)")
+                    ax.set_yticks(range(n_groups))
+                    ax.set_yticklabels([f"Group {g}" for g in range(n_groups)])
+
+                fig.colorbar(
+                    im,
+                    ax=axes_list.tolist(),
+                    orientation="vertical",
+                    label="Correction Value",
+                    shrink=0.8,
+                )
+                fig.suptitle(
+                    "Spatio-Temporal Maps of Local Corrections",
+                    fontsize=13,
+                    fontweight="bold",
+                )
+
+            # Save each plot individually
+            save_path = (
+                self.master_path
+                / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{current_style}.png"
+            )
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            print(f"Evolution plot ({current_style}) saved to: {save_path}")
+
+            if show_plot:
+                plt.show()
+            else:
+                plt.close(fig)

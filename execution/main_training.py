@@ -15,12 +15,12 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 
 # TODO: Advanced Hybrid Grouped-Local Closure & Reward Pipeline
 # -----------------------------------------------------------------------------
-# 1. Expand Local Input Stencil (n_points = 8):
+# 1. Expand Local Input Stencil (n_points = 8): done
 #    - Update `compute_local_energy_spectrum` stencil size from 4 to 8 nodes.
 #    - Allows `wavenumbers > 0` to yield 3 positive spectral bins per node instead of 1 scalar.
 #    - Normalize each local spectrum by its local energy sum before concatenating into state vector.
 
-# 2. Implement Grouped Spatial Mapping:
+# 2. Implement Grouped Spatial Mapping: done
 #    - Divide grid domain into M local groups/patches (e.g., M = 4 or 8 groups across N nodes).
 #    - Add `map_grouped_actions_to_nodes()` helper to map group residual actions to finite element nodes.
 
@@ -43,10 +43,19 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 #        4. Best Raw Prescribed Trajectory (Episode Replay)
 #    - Save side-by-side plots for Velocity Profiles, Kinetic Energy, and Energy Spectrum.
 
+# 6. When the ANN is run with 3 or 4 parameters, it should learn to shut of the extra parameters
+#    in order to approach performance of the 2 parameter model, as this outclasses both.
+
+# 7. Add different types of randomized exploration phases, such as close to base model, more wild, single parameter variations or removed (extra) parameter mode
+
+# 8. change input stencil to use velocity values and u_x instead of spectral components of local stencils
+
+# 9. improve post visualization of local corrections applied over time and space
+
 # -------------------- Problem and pipeline configuration ------------------------------ #
 CURRENT_DIR = Path(__file__).parent.resolve()
-problem: Problem = Problems.raj_two
-problem = replace(problem, domain_timespan=4.0, reynolds=100)
+problem: Problem = Problems.raj_one
+problem = replace(problem, domain_timespan=2.0, reynolds=100)
 
 # general simulation parameters
 n_nodes_les: int = 9
@@ -57,8 +66,8 @@ simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.FOUR_PARAMS
 
 TOTAL_EPISODES: int = 300
-max_action = 2.0
-input_scope = Scope.LOCAL
+max_action = 1.0
+input_scope = Scope.GLOBAL
 output_scope = Scope.LOCAL
 hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES, max_action=max_action)
 
@@ -94,6 +103,8 @@ td3_config = TauANNConfig(
     input_scope=input_scope,
     output_scope=output_scope,
     max_action=max_action,
+    n_local_stencil_points=8,
+    n_local_groups=4,
 )
 
 td3_trainer = TD3Trainer(
@@ -131,7 +142,6 @@ solver_tau_ann = SolverCoupled(
 )
 solver_tau_ann.run_simulation()
 solver_tau_ann.post_processing()
-solver_tau_ann.plot_correction_coefficients()
 
 # Run LES using best action sequence
 solver_prescribed = SolverCoupled(
@@ -145,7 +155,7 @@ solver_prescribed = SolverCoupled(
 )
 solver_prescribed.run_simulation()
 solver_prescribed.post_processing()
-solver_prescribed.plot_correction_coefficients()
+
 
 # -------------------------------------- Plotting --------------------------------------- #
 plot_solution_comparison(
