@@ -65,21 +65,34 @@ class EnvironmentTauAnn:
 
         self.solver.correction_coefficients = action
 
-        for _ in range(self.ann_config.n_skip_steps):
-            self.solver.advance_time_step()
-            self._total_les_steps += 1
-
-        reward_val = self.compute_reward()
-        done_flag = self._total_les_steps >= self._max_les_steps
         try:
-            next_state_array = self.solver.create_input_stencil()
-        except ValueError:
-            next_state = np.zeros(self.ann_config.state_dimension)
-            reward = -1000
-            done = True
-            return next_state, reward, done
+            # Store current valid state before attempting solver steps
+            last_valid_state = self.solver.create_input_stencil()
 
-        return next_state_array, reward_val, done_flag
+            for _ in range(self.ann_config.n_skip_steps):
+                self.solver.advance_time_step()
+                self._total_les_steps += 1
+
+            reward_val = self.compute_reward()
+            done_flag = self._total_les_steps >= self._max_les_steps
+            next_state_array = self.solver.create_input_stencil()
+
+            # Check for NaN/Inf in state array before returning
+            if not np.isfinite(next_state_array).all():
+                raise FloatingPointError("NaN/Inf detected in state stencil.")
+
+            return next_state_array, reward_val, done_flag
+
+        except (FloatingPointError, ZeroDivisionError, Exception):
+            # Catch solver divergence, cap step reward, and return sanitized state
+            reward_val = -50.0  # Softened crash penalty (prevents Q-value collapse)
+            done_flag = True
+
+            # Sanitize last known state to guarantee no NaNs reach replay buffer
+            fallback_state = np.nan_to_num(
+                last_valid_state, nan=0.0, posinf=1.0, neginf=-1.0
+            )
+            return fallback_state, reward_val, done_flag
 
     def compute_reward(self) -> float:
         assert self.solver is not None
@@ -102,6 +115,9 @@ class EnvironmentTauAnn:
                 f"Spectrum length mismatch between live LES ({len(spectrum_k)}) "
                 f"and reference schedule ({len(proj_spectrum_k)}). Check n_wavenumber_bins alignment."
             )
+
+        if not np.isfinite(spectrum_k).all():
+            raise FloatingPointError("NaN/Inf detected in energy spectrum.")
 
         w_energy = self.ann_config.reward_weight_energy
         gamma_exp = self.ann_config.reward_spectral_exponent

@@ -301,7 +301,10 @@ class SolverCoupled(SolverBase):
             )
 
         ax.axhline(
-            self.ann_config.max_action / 2, color="gray", linestyle="--", linewidth=0.8
+            self.ann_config.max_action, color="gray", linestyle="--", linewidth=0.8, label="max action"
+        )
+        ax.axhline(
+            0.0, color="gray", linestyle="--", linewidth=0.8, label="min action"
         )
 
         # FIX 1: Set y-upper limit higher (e.g. 1.25) so markers at 1.0 are not clipped
@@ -328,7 +331,7 @@ class SolverCoupled(SolverBase):
         ax.set_xlim(0.5, n_coeffs + 0.5)
 
         if n_groups > 1:
-            ax.legend(title="Spatial Groups", loc="lower left", frameon=True)
+            ax.legend(title="Spatial Groups", loc="best", frameon=True)
 
         ax.grid(
             True, which="both", linestyle=":", linewidth=0.7, alpha=0.6, color="gray"
@@ -407,10 +410,13 @@ class SolverCoupled(SolverBase):
 
             elif current_style == "heatmap":
                 # layout="constrained" handles colorbar layout without UserWarning
+                n_rows = 1 if n_coeffs <= 2 else 2
+                n_cols = min(n_coeffs, 2)
                 fig, axes = plt.subplots(
-                    1,
-                    n_coeffs,
-                    figsize=(3.8 * n_coeffs, 4),
+                    n_rows,
+                    n_cols,
+                    figsize=(5 * n_cols, 3.8*n_rows),
+                    sharex=True,
                     sharey=True,
                     layout="constrained",
                 )
@@ -430,21 +436,28 @@ class SolverCoupled(SolverBase):
                             -0.5,
                             n_groups - 0.5,
                         ],
-                        cmap="viridis",
+                        cmap="magma",
                         vmin=0.0,
                         vmax=self.ann_config.max_action,
                     )
                     ax.set_title(name, fontsize=11, fontweight="bold")
-                    ax.set_xlabel("Time (t)")
                     ax.set_yticks(range(n_groups))
                     ax.set_yticklabels([f"Group {g}" for g in range(n_groups)])
+
+                    for g_line in range(n_groups - 1):
+                        ax.axhline(
+                            g_line + 0.5, color="white", linewidth=1.5, alpha=0.8
+                        )
+
+                for ax in axes_list[-n_cols:]:
+                    ax.set_xlabel("Time (t)")
 
                 fig.colorbar(
                     im,
                     ax=axes_list.tolist(),
                     orientation="vertical",
                     label="Correction Value",
-                    shrink=0.8,
+                    shrink=0.85,
                 )
                 fig.suptitle(
                     "Spatio-Temporal Maps of Local Corrections",

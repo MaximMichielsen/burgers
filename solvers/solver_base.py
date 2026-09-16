@@ -547,7 +547,13 @@ class SolverBase:
                 delta * 2.0 / self.dt,
             ]
         )
-        return float(np.sum((c * base_terms) ** 2) ** -0.5)
+
+        denom_sq = np.sum((c * base_terms) ** 2)
+
+        if denom_sq < 1e-12:
+            return 0.0  # Physically shuts off tau without diving by zero
+
+        return float(denom_sq ** -0.5)
 
     # ------------------------------------------------------------------ #
     #  FEM primitives
