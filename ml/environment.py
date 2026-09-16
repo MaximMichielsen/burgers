@@ -62,7 +62,6 @@ class EnvironmentTauAnn:
     def step(self, action: NDArray) -> tuple[NDArray, float, bool]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done)."""
         assert self.solver is not None, "Call reset() before step()."
-
         self.solver.correction_coefficients = action
 
         try:
@@ -85,7 +84,7 @@ class EnvironmentTauAnn:
 
         except (FloatingPointError, ZeroDivisionError, Exception):
             # Catch solver divergence, cap step reward, and return sanitized state
-            reward_val = -50.0  # Softened crash penalty (prevents Q-value collapse)
+            reward_val = -100.0  # Softened crash penalty (prevents Q-value collapse)
             done_flag = True
 
             # Sanitize last known state to guarantee no NaNs reach replay buffer
@@ -123,13 +122,10 @@ class EnvironmentTauAnn:
         gamma_exp = self.ann_config.reward_spectral_exponent
         wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
 
-        spectral_penalty = float(
-            np.sum(
-                w_energy
-                * wavenumber_indices**gamma_exp
-                * ((spectrum_k - proj_spectrum_k) / (np.mean(proj_spectrum_k) + 1e-12))
-                ** 2
-            )
-        )
+        rel_err_sq = ((spectrum_k - proj_spectrum_k) / (np.mean(proj_spectrum_k) + 1e-12)) ** 2
+        weighted_err = w_energy * (wavenumber_indices ** gamma_exp) * rel_err_sq
 
-        return -spectral_penalty
+        raw_penalty = float(np.sum(weighted_err))
+        scaled_penalty = float(np.log1p(raw_penalty))  # Smoothly compresses large penalties
+
+        return -scaled_penalty

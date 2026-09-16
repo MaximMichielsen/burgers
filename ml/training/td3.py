@@ -33,7 +33,7 @@ class TD3Hyperparameters:
     """Hyperparameters for TD3 Agent training and environment interactions."""
 
     # Agent / Optimization Params
-    lr: float = 3e-4
+    lr: float = 1e-4
     discount: float = 0.99
     tau_polyak: float = 0.005
     policy_noise: float = 0.2
@@ -118,12 +118,13 @@ class TD3Agent:
             target_q = reward + (1.0 - done) * self.hp.discount * target_q
 
         current_q1, current_q2 = self.critic(state, action)
-        critic_loss = functional.mse_loss(current_q1, target_q) + functional.mse_loss(
+        critic_loss = functional.smooth_l1_loss(current_q1, target_q) + functional.smooth_l1_loss(
             current_q2, target_q
         )
 
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1.0)
         self.critic_optimizer.step()
 
         # Delayed Policy Updates
@@ -132,6 +133,7 @@ class TD3Agent:
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
             self.actor_optimizer.step()
 
             # Soft updates (Polyak averaging)
