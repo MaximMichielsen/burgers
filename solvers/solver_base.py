@@ -553,7 +553,7 @@ class SolverBase:
         if denom_sq < 1e-12:
             return 0.0  # Physically shuts off tau without diving by zero
 
-        return float(denom_sq ** -0.5)
+        return float(denom_sq**-0.5)
 
     # ------------------------------------------------------------------ #
     #  FEM primitives

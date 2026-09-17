@@ -122,10 +122,14 @@ class EnvironmentTauAnn:
         gamma_exp = self.ann_config.reward_spectral_exponent
         wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
 
-        rel_err_sq = ((spectrum_k - proj_spectrum_k) / (np.mean(proj_spectrum_k) + 1e-12)) ** 2
-        weighted_err = w_energy * (wavenumber_indices ** gamma_exp) * rel_err_sq
+        rel_err_sq = (
+            (spectrum_k - proj_spectrum_k) / (np.mean(proj_spectrum_k) + 1e-12)
+        ) ** 2
+        weighted_err = w_energy * (wavenumber_indices**gamma_exp) * rel_err_sq
 
         raw_penalty = float(np.sum(weighted_err))
-        scaled_penalty = float(np.log1p(raw_penalty))  # Smoothly compresses large penalties
+        scaled_penalty = float(
+            np.log1p(raw_penalty)
+        )  # Smoothly compresses large penalties
 
         return -scaled_penalty

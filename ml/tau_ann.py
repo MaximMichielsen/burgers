@@ -16,7 +16,7 @@ EPISODE_REWARD_CLIP = -1e3
 class Scope(str, Enum):
     GLOBAL = "global"
     LOCAL = "local"
-    FULL_LOCAL = "full_local"
+    OUT_FULL_LOCAL = "full_local"
 
 
 @dataclass
@@ -36,19 +36,28 @@ class TauANNConfig:
     output_scope: Scope = Scope.GLOBAL
     input_scope: Scope = Scope.GLOBAL
 
+    input_scope_mode: str = "spatial"
+
     reward_weight_energy: float = 1.0
     reward_spectral_exponent: float = 5.0 / 3.0
 
     group_map: NDArray = field(init=False, repr=False)
+
+    _VALID_INPUT_MODES: frozenset[str] = frozenset({"spatial", "spectral"})
 
     @property
     def n_elements(self) -> int:
         return self.n_nodes_les - 1
 
     def __post_init__(self) -> None:
+        if self.input_scope_mode not in self._VALID_INPUT_MODES:
+            raise ValueError(
+                f"Invalid input stencil mode. Received {self.input_scope_mode} | Valid options are :{self._VALID_INPUT_MODES}"
+            )
+
         if self.output_scope == Scope.GLOBAL:
             self.n_local_groups: int = 1
-        elif self.output_scope == Scope.FULL_LOCAL:
+        elif self.output_scope == Scope.OUT_FULL_LOCAL:
             self.n_local_groups: int = int(self.n_elements)
         elif self.output_scope == Scope.LOCAL:
             self.n_local_groups = max(1, min(self.n_local_groups, self.n_elements))
@@ -69,15 +78,22 @@ class TauANNConfig:
         )
 
         self.n_local_wavenumber_bins: int = (self.n_local_stencil_points - 1) // 2
+
         local_state_dimension = 0
         if self.input_scope == Scope.LOCAL:
-            local_state_dimension = self.n_nodes_les * self.n_local_wavenumber_bins
+            if self.input_scope_mode == "spatial":
+                # u_local (n_points) + u_x_local (n_points) per node
+                features_per_node = 2 * self.n_local_stencil_points
+            else:  # spectral
+                features_per_node = self.n_local_wavenumber_bins
+
+            local_state_dimension = self.n_nodes_les * features_per_node
 
         self.state_dimension = (
             self.n_wavenumber_bins + self.action_dimension + local_state_dimension
         )
 
-        self.hidden_dimension = max(64, self.action_dimension * 2)
+        self.hidden_dimension = max(64, int(self.state_dimension * 1.5))
 
     @staticmethod
     def _create_group_map(n_elements: int, n_groups: int) -> NDArray:

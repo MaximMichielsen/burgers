@@ -44,13 +44,15 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 #    - Save side-by-side plots for Velocity Profiles, Kinetic Energy, and Energy Spectrum.
 
 # 6. When the ANN is run with 3 or 4 parameters, it should learn to shut of the extra parameters
-#    in order to approach performance of the 2 parameter model, as this outclasses both.
+#    in order to approach performance of the 2 parameter model, if this outclasses both.
 
 # 7. Add different types of randomized exploration phases, such as close to base model, more wild, single parameter variations or removed (extra) parameter mode
 
 # 8. change input stencil to use velocity values and u_x instead of spectral components of local stencils
 
 # 9. improve post visualization of local corrections applied over time and space
+
+# 10. add local input stencil to visualization process
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 CURRENT_DIR = Path(__file__).parent.resolve()
@@ -67,7 +69,7 @@ tau_model = TauModel.FOUR_PARAMS
 
 TOTAL_EPISODES: int = 300
 max_action = 1.0
-input_scope = Scope.GLOBAL
+input_scope = Scope.LOCAL
 output_scope = Scope.LOCAL
 hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES, max_action=max_action)
 
@@ -103,7 +105,8 @@ td3_config = TauANNConfig(
     input_scope=input_scope,
     output_scope=output_scope,
     max_action=max_action,
-    n_local_stencil_points=8,
+    input_scope_mode="spatial",
+    n_local_stencil_points=4,
     n_local_groups=4,
 )
 

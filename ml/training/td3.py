@@ -118,9 +118,9 @@ class TD3Agent:
             target_q = reward + (1.0 - done) * self.hp.discount * target_q
 
         current_q1, current_q2 = self.critic(state, action)
-        critic_loss = functional.smooth_l1_loss(current_q1, target_q) + functional.smooth_l1_loss(
-            current_q2, target_q
-        )
+        critic_loss = functional.smooth_l1_loss(
+            current_q1, target_q
+        ) + functional.smooth_l1_loss(current_q2, target_q)
 
         self.critic_optimizer.zero_grad()
         critic_loss.backward()

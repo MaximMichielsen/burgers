@@ -143,12 +143,18 @@ class SolverCoupled(SolverBase):
         if self.ann_config.input_scope == Scope.LOCAL:
             local_stencils = []
             for node in self.nodes:
-                _, local_spectrum = self.compute_local_energy_spectrum(node)
-                local_spectrum_32 = local_spectrum.astype(np.float32)
-                local_total_energy = float(local_spectrum_32.sum())
-                norm_local_spectrum = local_spectrum_32 / max(local_total_energy, 1e-12)
+                local_stencil = None
+                if self.ann_config.input_scope_mode == "spectral":
+                    _, local_spectrum = self.compute_local_energy_spectrum(node)
+                    local_spectrum_32 = local_spectrum.astype(np.float32)
+                    local_total_energy = float(local_spectrum_32.sum())
+                    local_stencil = local_spectrum_32 / max(local_total_energy, 1e-12)
 
-                local_stencils.append(norm_local_spectrum)
+                elif self.ann_config.input_scope_mode == "spatial":
+                    local_stencil = self.compute_local_spatial_input_stencil(node)
+
+                assert local_stencil is not None, "Local stencil is of type None!"
+                local_stencils.append(local_stencil)
 
             flattened_local_features = np.concatenate(local_stencils)
             return np.concatenate(
@@ -157,10 +163,30 @@ class SolverCoupled(SolverBase):
 
         return np.concatenate([normalised_spectrum, previous_coefficients])
 
+    def compute_local_spatial_input_stencil(self, node: int) -> NDArray:
+        """Compute local velocity values across an n-node stencil around a target node."""
+        n_points = self.n_local_stencil_points
+        half_stencil = (n_points - 1) // 2
+        start_idx = node - half_stencil
+        target_indices = np.arange(start_idx, start_idx + n_points, dtype=int)
+        total_nodes = len(self.solution)
+        valid_mask = (target_indices >= 0) & (target_indices < total_nodes)
+
+        if not np.any(valid_mask):
+            return np.array([]), np.array([])
+
+        u_local = np.zeros(n_points, dtype=np.float64)
+        u_local[valid_mask] = self.solution[target_indices[valid_mask]]
+
+        u_x_local = np.gradient(u_local, self.element_size)
+
+        return np.concatenate([u_local, u_x_local])
+
+
     def compute_local_energy_spectrum(
         self, node: int, positive_only: bool = True
     ) -> tuple[NDArray, NDArray]:
-        """Compute local energy spectrum across a 4-node stencil around a target node."""
+        """Compute local energy spectrum across an n-node stencil around a target node."""
         n_points = self.n_local_stencil_points
         half_stencil = (n_points - 1) // 2
         start_idx = node - half_stencil
@@ -301,11 +327,13 @@ class SolverCoupled(SolverBase):
             )
 
         ax.axhline(
-            self.ann_config.max_action, color="gray", linestyle="--", linewidth=0.8, label="max action"
+            self.ann_config.max_action,
+            color="gray",
+            linestyle="--",
+            linewidth=0.8,
+            label="max action",
         )
-        ax.axhline(
-            0.0, color="gray", linestyle="--", linewidth=0.8, label="min action"
-        )
+        ax.axhline(0.0, color="gray", linestyle="--", linewidth=0.8, label="min action")
 
         # FIX 1: Set y-upper limit higher (e.g. 1.25) so markers at 1.0 are not clipped
         max_act = self.ann_config.max_action
@@ -415,7 +443,7 @@ class SolverCoupled(SolverBase):
                 fig, axes = plt.subplots(
                     n_rows,
                     n_cols,
-                    figsize=(5 * n_cols, 3.8*n_rows),
+                    figsize=(5 * n_cols, 3.8 * n_rows),
                     sharex=True,
                     sharey=True,
                     layout="constrained",
