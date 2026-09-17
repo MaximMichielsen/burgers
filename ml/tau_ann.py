@@ -16,6 +16,7 @@ EPISODE_REWARD_CLIP = -1e3
 class Scope(str, Enum):
     GLOBAL = "global"
     LOCAL = "local"
+    HYBRID = "hybrid"
     OUT_FULL_LOCAL = "full_local"
 
 
@@ -31,6 +32,7 @@ class TauANNConfig:
     n_local_groups: int
 
     max_action: float = 1.0
+    min_action: float = 0.0 + 1e-3
     n_local_stencil_points: int = 8
 
     output_scope: Scope = Scope.GLOBAL
@@ -50,20 +52,26 @@ class TauANNConfig:
         return self.n_nodes_les - 1
 
     def __post_init__(self) -> None:
-        if self.input_scope_mode not in self._VALID_INPUT_MODES:
+        mode_str = (
+            self.input_scope_mode.value
+            if hasattr(self.input_scope_mode, "value")
+            else str(self.input_scope_mode)
+        )
+        if mode_str not in self._VALID_INPUT_MODES:
             raise ValueError(
-                f"Invalid input stencil mode. Received {self.input_scope_mode} | Valid options are :{self._VALID_INPUT_MODES}"
+                f"Invalid input stencil mode. Received '{self.input_scope_mode}' | "
+                f"Valid options are: {set(self._VALID_INPUT_MODES)}"
             )
 
         if self.output_scope == Scope.GLOBAL:
-            self.n_local_groups: int = 1
-        elif self.output_scope == Scope.OUT_FULL_LOCAL:
-            self.n_local_groups: int = int(self.n_elements)
-        elif self.output_scope == Scope.LOCAL:
+            self.n_local_groups = 1
+        elif self.output_scope in (Scope.LOCAL, Scope.HYBRID):
             self.n_local_groups = max(1, min(self.n_local_groups, self.n_elements))
+        elif self.output_scope == Scope.OUT_FULL_LOCAL:
+            self.n_local_groups = int(self.n_elements)
         else:
             raise ValueError(
-                f"Invalid output scope received: {self.output_scope.value} | "
+                f"Invalid output scope received: {self.output_scope} | "
                 f"choose from: {', '.join(scope.name for scope in Scope)}"
             )
 
@@ -71,11 +79,12 @@ class TauANNConfig:
             n_elements=self.n_elements, n_groups=self.n_local_groups
         )
 
-        self.action_dimension = (
-            self.n_coefficients
-            if self.output_scope == Scope.GLOBAL
-            else self.n_coefficients * self.n_local_groups
-        )
+        if self.output_scope == Scope.GLOBAL:
+            self.action_dimension = self.n_coefficients
+        elif self.output_scope == Scope.HYBRID:
+            self.action_dimension = self.n_coefficients * (self.n_local_groups + 1)
+        else:
+            self.action_dimension = self.n_coefficients * self.n_local_groups
 
         self.n_local_wavenumber_bins: int = (self.n_local_stencil_points - 1) // 2
 

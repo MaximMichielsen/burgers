@@ -24,7 +24,7 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 #    - Divide grid domain into M local groups/patches (e.g., M = 4 or 8 groups across N nodes).
 #    - Add `map_grouped_actions_to_nodes()` helper to map group residual actions to finite element nodes.
 
-# 3. Hybrid ANN Architecture (Global Base + Grouped Local Residuals):
+# 3. Hybrid ANN Architecture (Global Base + Grouped Local Residuals): done
 #    - Update `TauANN` output layer to split into two heads:
 #        a) Global Head: 1 scalar `c_global` (base macro dissipation level).
 #        b) Grouped-Local Head: M residual outputs `\delta c_m` (local patch corrections).
@@ -70,7 +70,7 @@ tau_model = TauModel.FOUR_PARAMS
 TOTAL_EPISODES: int = 300
 max_action = 1.0
 input_scope = Scope.LOCAL
-output_scope = Scope.LOCAL
+output_scope = Scope.HYBRID
 hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES, max_action=max_action)
 
 # discretization config

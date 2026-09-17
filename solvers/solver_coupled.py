@@ -101,16 +101,62 @@ class SolverCoupled(SolverBase):
         self.correction_coefficients_history.append(self.correction_coefficients)
         self.simulation_time_elapsed += self.dt
 
+    def get_ann_coefficients(self) -> NDArray:
+        """Call ANN and receive correction coefficients."""
+        state_array = self.create_input_stencil()
+        state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
+
+        with torch.no_grad():
+            alpha_tensor = self.ann(state_tensor).squeeze(0)  # (output_dim,)
+
+        return alpha_tensor.numpy().astype(np.float64)
+
+    def _coefficients_as_kwargs(self) -> dict[str, float]:
+        """Map the raw correction_coefficients array to tau-model kwarg names."""
+        assert self.tau_model is not None, "SolverCoupled requires a tau_model."
+        if self.correction_coefficients is None:
+            raise RuntimeError(
+                "correction_coefficients is None — compute_tau() was called "
+                "before get_ann_coefficients() set it for this time step."
+            )
+        names = self._COEFFICIENT_NAMES[self.tau_model]
+        return dict(zip(names, self.correction_coefficients))
+
     def retrieve_local_corrections(self, element: int | None = None) -> NDArray:
-        """Retrieve local or global coefficients for element evaluation."""
-        if self.ann_config.output_scope != Scope.GLOBAL and element is not None:
+        """Retrieve correction coefficients for element evaluation."""
+        assert self.correction_coefficients is not None, (
+            "Correction coefficients not initialized."
+        )
+
+        if self.ann_config.output_scope == Scope.GLOBAL:
+            return self.correction_coefficients
+
+        if self.ann_config.output_scope == Scope.HYBRID:
+            n_coeffs = self.ann_config.n_coefficients
+
+            c_global = self.correction_coefficients[:n_coeffs]
+            c_locals = self.correction_coefficients[n_coeffs:].reshape(
+                self.ann_config.n_local_groups, n_coeffs
+            )
+
+            combined_groups = c_global + c_locals
+            combined_groups = np.clip(
+                combined_groups, self.ann_config.min_action, self.ann_config.max_action
+            )
+
+            if element is not None:
+                group_id = self.ann_config.group_map[element]
+                return combined_groups[group_id]
+
+            return combined_groups.flatten()  # ?
+
+        if element is not None:
             reshaped = self.correction_coefficients.reshape(
                 self.ann_config.n_local_groups, self.ann_config.n_coefficients
             )
             group_id = self.ann_config.group_map[element]
             return reshaped[group_id]
 
-        assert self.correction_coefficients is not None
         return self.correction_coefficients
 
     # ------------------------------------------------------------------ #
@@ -182,7 +228,6 @@ class SolverCoupled(SolverBase):
 
         return np.concatenate([u_local, u_x_local])
 
-
     def compute_local_energy_spectrum(
         self, node: int, positive_only: bool = True
     ) -> tuple[NDArray, NDArray]:
@@ -216,27 +261,6 @@ class SolverCoupled(SolverBase):
 
         return wavenumbers, spectrum
 
-    def get_ann_coefficients(self) -> NDArray:
-        """Call ANN and receive correction coefficients."""
-        state_array = self.create_input_stencil()
-        state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
-
-        with torch.no_grad():
-            alpha_tensor = self.ann(state_tensor).squeeze(0)  # (output_dim,)
-
-        return alpha_tensor.numpy().astype(np.float64)
-
-    def _coefficients_as_kwargs(self) -> dict[str, float]:
-        """Map the raw correction_coefficients array to tau-model kwarg names."""
-        assert self.tau_model is not None, "SolverCoupled requires a tau_model."
-        if self.correction_coefficients is None:
-            raise RuntimeError(
-                "correction_coefficients is None — compute_tau() was called "
-                "before get_ann_coefficients() set it for this time step."
-            )
-        names = self._COEFFICIENT_NAMES[self.tau_model]
-        return dict(zip(names, self.correction_coefficients))
-
     # ------------------------------------------------------------------ #
     #  Tau models
     # ------------------------------------------------------------------ #
@@ -267,25 +291,44 @@ class SolverCoupled(SolverBase):
 
     def post_processing(self) -> None:
         """Run post-plotting and post-logging."""
-        self.post_plotting()
         self.post_logging()
+        self.post_plotting()
 
         if not self.correction_coefficients_history:
             self.logger.warning("No correction coefficients recorded to plot.")
             return
 
         raw_history = np.array(self.correction_coefficients_history)
-
         n_steps = len(raw_history)
-        n_groups = (
-            1
-            if self.ann_config.output_scope == Scope.GLOBAL
-            else self.ann_config.n_local_groups
-        )
         n_coeffs = self.n_correction_coefficients
-
-        history_coeffs = raw_history.reshape(n_steps, n_groups, n_coeffs)
         history_time = self.time_steps[:n_steps]
+
+        if self.ann_config.output_scope == Scope.GLOBAL:
+            history_coeffs = raw_history.reshape(n_steps, 1, n_coeffs)
+
+        elif self.ann_config.output_scope == Scope.HYBRID:
+            n_local = self.ann_config.n_local_groups  # e.g., 4
+            # Reshape to (n_steps, 5, n_coeffs) -> 1 Global + 4 Local Residuals
+            reshaped = raw_history.reshape(n_steps, n_local + 1, n_coeffs)
+
+            c_global = reshaped[:, 0:1, :]  # Shape: (n_steps, 1, n_coeffs)
+            c_residuals = reshaped[:, 1:, :]  # Shape: (n_steps, 4, n_coeffs)
+
+            # Compute effective total coefficients for 4 local groups
+            c_effective = np.clip(
+                c_global + c_residuals,
+                self.ann_config.min_action,
+                self.ann_config.max_action,
+            )
+
+            # Stack into 5 total channels for evolution plotting:
+            # Channel 0: Global Base
+            # Channels 1..4: Effective Groups 0..3
+            history_coeffs = np.concatenate([c_global, c_effective], axis=1)
+
+        else:  # LOCAL / OUT_FULL_LOCAL
+            n_groups = self.ann_config.n_local_groups
+            history_coeffs = raw_history.reshape(n_steps, n_groups, n_coeffs)
 
         self.plot_correction_coefficients_snapshot(
             show_plot=False, save_suffix="final_step"
@@ -299,21 +342,39 @@ class SolverCoupled(SolverBase):
         )
 
     def plot_correction_coefficients_snapshot(
-        self, show_plot: bool = False, save_suffix: str = "snapshot"
+            self, show_plot: bool = False, save_suffix: str = "snapshot"
     ) -> None:
+        n_coeffs = self.ann_config.n_coefficients
+        c_raw = np.atleast_1d(self.correction_coefficients)
+
+        c_global_ref = None
         if self.ann_config.output_scope == Scope.GLOBAL:
-            coefficients = np.atleast_2d(self.correction_coefficients)
-        else:
-            coefficients = self.correction_coefficients.reshape(
-                self.ann_config.n_local_groups, self.ann_config.n_coefficients
+            coefficients = c_raw.reshape(1, n_coeffs)
+
+        elif self.ann_config.output_scope == Scope.HYBRID:
+            n_local = self.ann_config.n_local_groups
+            reshaped = c_raw.reshape(n_local + 1, n_coeffs)
+
+            c_global_ref = reshaped[0]  # First row is Global Base
+            c_residuals = reshaped[1:]  # Remaining 4 rows are Local Residuals
+
+            # Effective coefficients for the 4 spatial groups
+            coefficients = np.clip(
+                c_global_ref + c_residuals,
+                self.ann_config.min_action,
+                self.ann_config.max_action,
             )
 
-        n_groups, n_coeffs = coefficients.shape
+        else:
+            coefficients = c_raw.reshape(self.ann_config.n_local_groups, n_coeffs)
+
+        n_groups, _ = coefficients.shape
         param_names = ["Advection", "Viscosity", "Diffusion", "Time"][:n_coeffs]
         x_base = np.arange(1, n_coeffs + 1)
 
         fig, ax = plt.subplots(figsize=(8, 5.5))
 
+        # Plot spatial group markers (effective values)
         for g in range(n_groups):
             offset = (g - (n_groups - 1) / 2) * 0.12 if n_groups > 1 else 0.0
             ax.plot(
@@ -322,8 +383,22 @@ class SolverCoupled(SolverBase):
                 "x",
                 markersize=9,
                 markeredgewidth=2.0,
-                alpha=0.85,  # Prevents hidden overlap
+                alpha=0.85,
                 label=f"Group {g}",
+            )
+
+        # Plot Base Global markers as discrete circles (NO connecting line)
+        if c_global_ref is not None:
+            ax.plot(
+                x_base,
+                c_global_ref,
+                "o",
+                color="black",
+                markerfacecolor="none",
+                markeredgewidth=2.0,
+                markersize=10,
+                linestyle="None",  # Fixes ugly line
+                label="Base Global ($c_{global}$)",
             )
 
         ax.axhline(
@@ -333,13 +408,17 @@ class SolverCoupled(SolverBase):
             linewidth=0.8,
             label="max action",
         )
-        ax.axhline(0.0, color="gray", linestyle="--", linewidth=0.8, label="min action")
+        ax.axhline(
+            self.ann_config.min_action,
+            color="gray",
+            linestyle="--",
+            linewidth=0.8,
+            label="min action",
+        )
 
-        # FIX 1: Set y-upper limit higher (e.g. 1.25) so markers at 1.0 are not clipped
         max_act = self.ann_config.max_action
         ax.set_ylim(-0.1, max_act * 1.25)
 
-        # FIX 2: Raise label text positions above the highest possible marker
         for x_pos, name in zip(x_base, param_names):
             ax.text(
                 x_pos,
@@ -358,19 +437,24 @@ class SolverCoupled(SolverBase):
         ax.spines["bottom"].set_visible(False)
         ax.set_xlim(0.5, n_coeffs + 0.5)
 
-        if n_groups > 1:
-            ax.legend(title="Spatial Groups", loc="best", frameon=True)
+        if n_groups > 1 or c_global_ref is not None:
+            ax.legend(title="Spatial Corrections", loc="best", frameon=True)
 
         ax.grid(
             True, which="both", linestyle=":", linewidth=0.7, alpha=0.6, color="gray"
         )
 
-        plt.suptitle("Correction Coefficients", fontsize=13, fontweight="bold", y=0.98)
+        plt.suptitle(
+            f"Correction Coefficients ({self.ann_config.output_scope.value})",
+            fontsize=13,
+            fontweight="bold",
+            y=0.98,
+        )
         plt.tight_layout()
 
         save_path = (
-            self.master_path
-            / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{save_suffix}.png"
+                self.master_path
+                / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{save_suffix}.png"
         )
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
@@ -380,20 +464,28 @@ class SolverCoupled(SolverBase):
             plt.close(fig)
 
     def plot_correction_coefficients_evolution(
-        self,
-        history_time: NDArray,
-        history_coefficients: NDArray,
-        style: str = "lines",  # Choose "lines", "heatmap", or "both"
-        show_plot: bool = False,
+            self,
+            history_time: NDArray,
+            history_coefficients: NDArray,
+            style: str = "lines",
+            show_plot: bool = False,
     ) -> None:
-        """Plots the temporal evolution of local correction coefficients over time."""
+        """Plots the temporal evolution of coefficients over time."""
         if style not in ("lines", "heatmap", "both"):
             raise ValueError(
                 f"Invalid style: {style!r}. Choose 'lines', 'heatmap', or 'both'."
             )
 
-        n_steps, n_groups, n_coeffs = history_coefficients.shape
+        n_steps, total_channels, n_coeffs = history_coefficients.shape
         param_names = ["Advection", "Viscosity", "Diffusion", "Time"][:n_coeffs]
+
+        # Resolve labels for line and heatmap plotting
+        if self.ann_config.output_scope == Scope.HYBRID:
+            group_labels = ["Global Base"] + [
+                f"Group {g}" for g in range(total_channels - 1)
+            ]
+        else:
+            group_labels = [f"Group {g}" for g in range(total_channels)]
 
         styles_to_render = ["lines", "heatmap"] if style == "both" else [style]
 
@@ -412,32 +504,36 @@ class SolverCoupled(SolverBase):
 
                 for c_idx, name in enumerate(param_names):
                     ax = axes_list[c_idx]
-                    for g in range(n_groups):
+                    for ch in range(total_channels):
+                        is_global = (
+                                self.ann_config.output_scope == Scope.HYBRID and ch == 0
+                        )
                         ax.plot(
                             history_time,
-                            history_coefficients[:, g, c_idx],
-                            label=f"Group {g}",
-                            linewidth=1.8,
+                            history_coefficients[:, ch, c_idx],
+                            label=group_labels[ch],
+                            linestyle="--" if is_global else "-",
+                            color="black" if is_global else None,
+                            linewidth=2.2 if is_global else 1.8,
+                            zorder=5 if is_global else 3,
                         )
                     ax.set_title(name, fontsize=11, fontweight="bold")
                     ax.set_ylabel("Coefficient Value")
                     ax.grid(True, linestyle=":", alpha=0.6)
-                    if c_idx == 0 and n_groups > 1:
+                    if c_idx == 0:
                         ax.legend(loc="best", frameon=True)
 
                 for ax in axes_list[-n_cols:]:
                     ax.set_xlabel("Time (t)")
 
                 fig.suptitle(
-                    "Temporal Evolution of Local Corrections",
+                    f"Temporal Evolution of Corrections ({self.ann_config.output_scope.value})",
                     fontsize=13,
                     fontweight="bold",
                 )
-                # rect prevents suptitle from overlapping subplot titles
                 fig.tight_layout(rect=[0, 0, 1, 0.95])
 
             elif current_style == "heatmap":
-                # layout="constrained" handles colorbar layout without UserWarning
                 n_rows = 1 if n_coeffs <= 2 else 2
                 n_cols = min(n_coeffs, 2)
                 fig, axes = plt.subplots(
@@ -452,7 +548,7 @@ class SolverCoupled(SolverBase):
 
                 for c_idx, name in enumerate(param_names):
                     ax = axes_list[c_idx]
-                    data = history_coefficients[:, :, c_idx].T
+                    data = history_coefficients[:, :, c_idx].T  # Shape: (total_channels, n_steps)
 
                     im = ax.imshow(
                         data,
@@ -462,19 +558,25 @@ class SolverCoupled(SolverBase):
                             history_time[0],
                             history_time[-1],
                             -0.5,
-                            n_groups - 0.5,
+                            total_channels - 0.5,
                         ],
                         cmap="magma",
-                        vmin=0.0,
+                        vmin=self.ann_config.min_action,
                         vmax=self.ann_config.max_action,
                     )
                     ax.set_title(name, fontsize=11, fontweight="bold")
-                    ax.set_yticks(range(n_groups))
-                    ax.set_yticklabels([f"Group {g}" for g in range(n_groups)])
+                    ax.set_yticks(range(total_channels))
+                    ax.set_yticklabels(group_labels)
 
-                    for g_line in range(n_groups - 1):
+                    for g_line in range(total_channels - 1):
+                        # Draw a distinct boundary line above the Global Base row
+                        line_color = (
+                            "cyan"
+                            if (self.ann_config.output_scope == Scope.HYBRID and g_line == 0)
+                            else "white"
+                        )
                         ax.axhline(
-                            g_line + 0.5, color="white", linewidth=1.5, alpha=0.8
+                            g_line + 0.5, color=line_color, linewidth=1.5, alpha=0.9
                         )
 
                 for ax in axes_list[-n_cols:]:
@@ -484,19 +586,18 @@ class SolverCoupled(SolverBase):
                     im,
                     ax=axes_list.tolist(),
                     orientation="vertical",
-                    label="Correction Value",
+                    label="Coefficient Value",
                     shrink=0.85,
                 )
                 fig.suptitle(
-                    "Spatio-Temporal Maps of Local Corrections",
+                    f"Spatio-Temporal Maps of Corrections ({self.ann_config.output_scope.value})",
                     fontsize=13,
                     fontweight="bold",
                 )
 
-            # Save each plot individually
             save_path = (
-                self.master_path
-                / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{current_style}.png"
+                    self.master_path
+                    / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{current_style}.png"
             )
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
             print(f"Evolution plot ({current_style}) saved to: {save_path}")
