@@ -276,7 +276,7 @@ class TD3Trainer:
                 f"Episode: {episode + 1}/{self.hp.total_episodes} | "
                 f"Steps in Ep: {episode_steps} | "
                 f"Total Steps: {total_steps} | "
-                f"Scope: {self.ann_config.output_scope.value} ({self.ann_config.n_local_groups}) | "
+                f"Scope: {self.ann_config.output_scope.value} ({self.ann_config.n_local_action_groups}) | "
                 f"Reward: {episode_reward:.4f} | "
                 f"baseline: {baseline_episode_reward:.2f}"
             )

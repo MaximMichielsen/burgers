@@ -52,7 +52,7 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 
 # 9. improve post visualization of local corrections applied over time and space
 
-# 10. add local input stencil to visualization process
+# 10. add local input stencil to visualization process: DIY
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 CURRENT_DIR = Path(__file__).parent.resolve()
@@ -67,7 +67,7 @@ courant_les: float = 1.0
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.FOUR_PARAMS
 
-TOTAL_EPISODES: int = 300
+TOTAL_EPISODES: int = 150
 max_action = 1.0
 input_scope = Scope.LOCAL
 output_scope = Scope.HYBRID
@@ -107,7 +107,7 @@ td3_config = TauANNConfig(
     max_action=max_action,
     input_scope_mode="spatial",
     n_local_stencil_points=4,
-    n_local_groups=4,
+    n_local_action_groups=4,
 )
 
 td3_trainer = TD3Trainer(

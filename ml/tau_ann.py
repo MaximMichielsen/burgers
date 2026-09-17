@@ -29,7 +29,7 @@ class TauANNConfig:
     n_skip_steps: int
     n_nodes_les: int
 
-    n_local_groups: int
+    n_local_action_groups: int
 
     max_action: float = 1.0
     min_action: float = 0.0 + 1e-3
@@ -64,11 +64,13 @@ class TauANNConfig:
             )
 
         if self.output_scope == Scope.GLOBAL:
-            self.n_local_groups = 1
+            self.n_local_action_groups = 1
         elif self.output_scope in (Scope.LOCAL, Scope.HYBRID):
-            self.n_local_groups = max(1, min(self.n_local_groups, self.n_elements))
+            self.n_local_action_groups = max(
+                1, min(self.n_local_action_groups, self.n_elements)
+            )
         elif self.output_scope == Scope.OUT_FULL_LOCAL:
-            self.n_local_groups = int(self.n_elements)
+            self.n_local_action_groups = int(self.n_elements)
         else:
             raise ValueError(
                 f"Invalid output scope received: {self.output_scope} | "
@@ -76,15 +78,17 @@ class TauANNConfig:
             )
 
         self.group_map = self._create_group_map(
-            n_elements=self.n_elements, n_groups=self.n_local_groups
+            n_elements=self.n_elements, n_groups=self.n_local_action_groups
         )
 
         if self.output_scope == Scope.GLOBAL:
             self.action_dimension = self.n_coefficients
         elif self.output_scope == Scope.HYBRID:
-            self.action_dimension = self.n_coefficients * (self.n_local_groups + 1)
+            self.action_dimension = self.n_coefficients * (
+                self.n_local_action_groups + 1
+            )
         else:
-            self.action_dimension = self.n_coefficients * self.n_local_groups
+            self.action_dimension = self.n_coefficients * self.n_local_action_groups
 
         self.n_local_wavenumber_bins: int = (self.n_local_stencil_points - 1) // 2
 

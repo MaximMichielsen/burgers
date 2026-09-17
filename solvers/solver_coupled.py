@@ -136,7 +136,7 @@ class SolverCoupled(SolverBase):
 
             c_global = self.correction_coefficients[:n_coeffs]
             c_locals = self.correction_coefficients[n_coeffs:].reshape(
-                self.ann_config.n_local_groups, n_coeffs
+                self.ann_config.n_local_action_groups, n_coeffs
             )
 
             combined_groups = c_global + c_locals
@@ -152,7 +152,7 @@ class SolverCoupled(SolverBase):
 
         if element is not None:
             reshaped = self.correction_coefficients.reshape(
-                self.ann_config.n_local_groups, self.ann_config.n_coefficients
+                self.ann_config.n_local_action_groups, self.ann_config.n_coefficients
             )
             group_id = self.ann_config.group_map[element]
             return reshaped[group_id]
@@ -307,7 +307,7 @@ class SolverCoupled(SolverBase):
             history_coeffs = raw_history.reshape(n_steps, 1, n_coeffs)
 
         elif self.ann_config.output_scope == Scope.HYBRID:
-            n_local = self.ann_config.n_local_groups  # e.g., 4
+            n_local = self.ann_config.n_local_action_groups  # e.g., 4
             # Reshape to (n_steps, 5, n_coeffs) -> 1 Global + 4 Local Residuals
             reshaped = raw_history.reshape(n_steps, n_local + 1, n_coeffs)
 
@@ -327,7 +327,7 @@ class SolverCoupled(SolverBase):
             history_coeffs = np.concatenate([c_global, c_effective], axis=1)
 
         else:  # LOCAL / OUT_FULL_LOCAL
-            n_groups = self.ann_config.n_local_groups
+            n_groups = self.ann_config.n_local_action_groups
             history_coeffs = raw_history.reshape(n_steps, n_groups, n_coeffs)
 
         self.plot_correction_coefficients_snapshot(
@@ -342,7 +342,7 @@ class SolverCoupled(SolverBase):
         )
 
     def plot_correction_coefficients_snapshot(
-            self, show_plot: bool = False, save_suffix: str = "snapshot"
+        self, show_plot: bool = False, save_suffix: str = "snapshot"
     ) -> None:
         n_coeffs = self.ann_config.n_coefficients
         c_raw = np.atleast_1d(self.correction_coefficients)
@@ -352,7 +352,7 @@ class SolverCoupled(SolverBase):
             coefficients = c_raw.reshape(1, n_coeffs)
 
         elif self.ann_config.output_scope == Scope.HYBRID:
-            n_local = self.ann_config.n_local_groups
+            n_local = self.ann_config.n_local_action_groups
             reshaped = c_raw.reshape(n_local + 1, n_coeffs)
 
             c_global_ref = reshaped[0]  # First row is Global Base
@@ -366,7 +366,9 @@ class SolverCoupled(SolverBase):
             )
 
         else:
-            coefficients = c_raw.reshape(self.ann_config.n_local_groups, n_coeffs)
+            coefficients = c_raw.reshape(
+                self.ann_config.n_local_action_groups, n_coeffs
+            )
 
         n_groups, _ = coefficients.shape
         param_names = ["Advection", "Viscosity", "Diffusion", "Time"][:n_coeffs]
@@ -453,8 +455,8 @@ class SolverCoupled(SolverBase):
         plt.tight_layout()
 
         save_path = (
-                self.master_path
-                / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{save_suffix}.png"
+            self.master_path
+            / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{save_suffix}.png"
         )
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
@@ -464,11 +466,11 @@ class SolverCoupled(SolverBase):
             plt.close(fig)
 
     def plot_correction_coefficients_evolution(
-            self,
-            history_time: NDArray,
-            history_coefficients: NDArray,
-            style: str = "lines",
-            show_plot: bool = False,
+        self,
+        history_time: NDArray,
+        history_coefficients: NDArray,
+        style: str = "lines",
+        show_plot: bool = False,
     ) -> None:
         """Plots the temporal evolution of coefficients over time."""
         if style not in ("lines", "heatmap", "both"):
@@ -506,7 +508,7 @@ class SolverCoupled(SolverBase):
                     ax = axes_list[c_idx]
                     for ch in range(total_channels):
                         is_global = (
-                                self.ann_config.output_scope == Scope.HYBRID and ch == 0
+                            self.ann_config.output_scope == Scope.HYBRID and ch == 0
                         )
                         ax.plot(
                             history_time,
@@ -548,7 +550,9 @@ class SolverCoupled(SolverBase):
 
                 for c_idx, name in enumerate(param_names):
                     ax = axes_list[c_idx]
-                    data = history_coefficients[:, :, c_idx].T  # Shape: (total_channels, n_steps)
+                    data = history_coefficients[
+                        :, :, c_idx
+                    ].T  # Shape: (total_channels, n_steps)
 
                     im = ax.imshow(
                         data,
@@ -572,7 +576,10 @@ class SolverCoupled(SolverBase):
                         # Draw a distinct boundary line above the Global Base row
                         line_color = (
                             "cyan"
-                            if (self.ann_config.output_scope == Scope.HYBRID and g_line == 0)
+                            if (
+                                self.ann_config.output_scope == Scope.HYBRID
+                                and g_line == 0
+                            )
                             else "white"
                         )
                         ax.axhline(
@@ -596,8 +603,8 @@ class SolverCoupled(SolverBase):
                 )
 
             save_path = (
-                    self.master_path
-                    / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{current_style}.png"
+                self.master_path
+                / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{current_style}.png"
             )
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
             print(f"Evolution plot ({current_style}) saved to: {save_path}")
