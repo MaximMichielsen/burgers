@@ -40,6 +40,7 @@ class ProjectionReferenceSchedule:
         self,
         snapshot_times: NDArray,
         spectra_array: NDArray,
+        velocities_array: NDArray,
         n_wavenumber_bins: int,
     ) -> None:
         if snapshot_times.ndim != 1:
@@ -49,10 +50,17 @@ class ProjectionReferenceSchedule:
                 f"spectra_array shape {spectra_array.shape} does not match "
                 f"(T={len(snapshot_times)}, K={n_wavenumber_bins})."
             )
+        if velocities_array.shape[0] != len(snapshot_times):
+            raise ValueError(
+                f"velocities_array shape {velocities_array.shape} does not match "
+                f"T={len(snapshot_times)} snapshots."
+            )
 
         self._snapshot_times = snapshot_times
         self._spectra_array = spectra_array
+        self._velocities_array = velocities_array
         self.n_wavenumber_bins = n_wavenumber_bins
+        self.n_nodes_les = velocities_array.shape[1]
         self.t_min: float = float(snapshot_times[0])
         self.t_max: float = float(snapshot_times[-1])
 
@@ -73,11 +81,13 @@ class ProjectionReferenceSchedule:
 
         snapshot_times_list: list[float] = []
         spectra_list: list[NDArray] = []
+        velocities_list: list[NDArray] = []
 
         for csv_path in csv_files:
             time_value = float(csv_path.stem.replace("sol_t", ""))
             velocity_array = np.loadtxt(csv_path, delimiter=",", skiprows=1, usecols=2)
             snapshot_times_list.append(time_value)
+            velocities_list.append(velocity_array)
             spectra_list.append(
                 _compute_spectrum_bins(
                     velocity_array=velocity_array,
@@ -87,10 +97,12 @@ class ProjectionReferenceSchedule:
 
         snapshot_times_array = np.array(snapshot_times_list, dtype=np.float64)
         spectra_array = np.stack(spectra_list, axis=0).astype(np.float64)
+        velocities_array = np.stack(velocities_list, axis=0).astype(np.float64)
 
         sort_indices = np.argsort(snapshot_times_array)
         snapshot_times_array = snapshot_times_array[sort_indices]
         spectra_array = spectra_array[sort_indices]
+        velocities_array = velocities_array[sort_indices]
 
         logger.info(
             "ProjectionReferenceSchedule loaded %d snapshots from %s (t=[%.4f, %.4f], K=%d).",
@@ -104,6 +116,7 @@ class ProjectionReferenceSchedule:
         return cls(
             snapshot_times=snapshot_times_array,
             spectra_array=spectra_array,
+            velocities_array=velocities_array,
             n_wavenumber_bins=n_wavenumber_bins,
         )
 
@@ -112,35 +125,58 @@ class ProjectionReferenceSchedule:
     # ------------------------------------------------------------------
 
     def query(self, t: float) -> NDArray:
-        """Return DNS spectrum and dissipation interpolated to time *t*.
+        """Return the projected-reference energy spectrum interpolated to time *t*.
 
-        Linear interpolation between the two nearest snapshots.  Clamps to
+        Linear interpolation between the two nearest snapshots. Clamps to
         the boundary values outside [t_min, t_max].
 
         Parameters
         ----------
         t:
-            Simulation time at which to evaluate the DNS reference.
+            Simulation time at which to evaluate the reference.
 
         Returns
         -------
-        dns_spectrum_k : float64 array, shape (K)
-            Interpolated DNS energy spectrum E_DNS(k, t).
-        dns_dissipation : float
-            Interpolated DNS dissipation rate ε_DNS(t).
+        proj_spectrum_k : float64 array, shape (K)
+            Interpolated projected-reference energy spectrum E(k, t).
         """
         t_clamped = float(np.clip(t, self.t_min, self.t_max))
 
-        # np.interp handles scalar interpolation; for the 2-D spectrum we
-        # interpolate each wavenumber bin independently via broadcasting.
-        dns_spectrum_k = np.array(
+        proj_spectrum_k = np.array(
             [
                 np.interp(t_clamped, self._snapshot_times, self._spectra_array[:, k])
                 for k in range(self.n_wavenumber_bins)
             ],
             dtype=np.float64,
         )
-        return dns_spectrum_k
+        return proj_spectrum_k
+
+    def query_velocity(self, t: float) -> NDArray:
+        """Return the projected-reference velocity profile interpolated to time *t*.
+
+        Linear interpolation between the two nearest snapshots, per grid node.
+        Clamps to the boundary values outside [t_min, t_max].
+
+        Parameters
+        ----------
+        t:
+            Simulation time at which to evaluate the reference.
+
+        Returns
+        -------
+        proj_velocity : float64 array, shape (N)
+            Interpolated projected-reference velocity profile u(x, t).
+        """
+        t_clamped = float(np.clip(t, self.t_min, self.t_max))
+
+        proj_velocity = np.array(
+            [
+                np.interp(t_clamped, self._snapshot_times, self._velocities_array[:, i])
+                for i in range(self.n_nodes_les)
+            ],
+            dtype=np.float64,
+        )
+        return proj_velocity
 
     def plot_schedule(
         self, query_times: NDArray | None = None, output_path: Path | None = None
@@ -184,26 +220,6 @@ class ProjectionReferenceSchedule:
 # ------------------------------------------------------------------
 # Private helpers
 # ------------------------------------------------------------------
-
-
-def _load_snapshot_csv(csv_path: Path) -> tuple[NDArray, float]:
-    """Read a ``sol_t{time:.6f}.csv`` snapshot and return (velocity, time).
-
-    The time value is parsed from the filename rather than the file contents
-    to avoid floating-point round-trip issues.
-    """
-    time_val = float(csv_path.stem.removeprefix("sol_t"))
-    velocity_list: list[float] = []
-
-    with csv_path.open(newline="") as file_handle:
-        reader = csv.reader(file_handle)
-        next(reader)  # skip header row
-        for row in reader:
-            # Columns: node_index, x_coordinate, velocity, forcing
-            velocity_list.append(float(row[2]))
-
-    return np.array(velocity_list, dtype=np.float64), time_val
-
 
 def _compute_spectrum_bins(
     velocity_array: NDArray,

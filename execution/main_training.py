@@ -68,9 +68,10 @@ simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.FOUR_PARAMS
 
 TOTAL_EPISODES: int = 300
-max_action = 1.0
+max_action = 2.0
 input_scope = Scope.LOCAL
 output_scope = Scope.HYBRID
+reward_mode = "both"
 hp_td3 = TD3Hyperparameters(total_episodes=TOTAL_EPISODES, max_action=max_action)
 
 # discretization config
@@ -101,13 +102,14 @@ td3_config = TauANNConfig(
     n_skip_steps=1,
     reward_weight_energy=1.0,
     reward_spectral_exponent=5.0 / 3.0,
+    reward_mode=reward_mode,
     n_nodes_les=disc_cfg.n_nodes_les,
     input_scope=input_scope,
     output_scope=output_scope,
     max_action=max_action,
     input_scope_mode="spatial",
     n_local_stencil_points=4,
-    n_local_action_groups=4,
+    n_local_action_groups=9,
 )
 
 td3_trainer = TD3Trainer(

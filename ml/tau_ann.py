@@ -39,13 +39,17 @@ class TauANNConfig:
     input_scope: Scope = Scope.GLOBAL
 
     input_scope_mode: str = "spatial"
+    reward_mode: str = "spectral"
 
     reward_weight_energy: float = 1.0
     reward_spectral_exponent: float = 5.0 / 3.0
+    reward_weight_profile: float = 1.0
+    reward_weight_grad: float = 0.1
 
     group_map: NDArray = field(init=False, repr=False)
 
     _VALID_INPUT_MODES: frozenset[str] = frozenset({"spatial", "spectral"})
+    _VALID_REWARD_MODES: frozenset[str] = frozenset({"spectral", "spatial", "both"})
 
     @property
     def n_elements(self) -> int:

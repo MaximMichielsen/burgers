@@ -929,6 +929,14 @@ class SolverBase:
         """Compute energy spectrum of the given solution snapshot."""
         return compute_energy_spectrum(solution, self.domain_length)
 
+    def compute_gradient_(self, solution: NDArray) -> NDArray:
+        """Elemental du/dx consistent with the solver's own linear-basis gradient.
+
+        Returns one value per element (length n_elements), matching the constant
+        gradient_basis used in residual/Jacobian assembly and the tau models.
+        """
+        return np.diff(solution) / self.element_size
+
     # ------------------------------------------------------------------ #
     #  Post-plotting
     # ------------------------------------------------------------------ #

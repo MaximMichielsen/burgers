@@ -95,41 +95,78 @@ class EnvironmentTauAnn:
 
     def compute_reward(self) -> float:
         assert self.solver is not None
+        reward_mode = self.ann_config.reward_mode
 
-        wavenumbers_all, raw_spectrum_all = self.solver.compute_energy_spectrum_(
-            self.solver.solution
-        )
-        _, positive_spectrum = self.solver.get_positive_spectrum(
-            wavenumbers_all, raw_spectrum_all
-        )
+        spectral_penalty_raw = 0
+        spatial_penalty_raw = 0
 
-        spectrum_k = positive_spectrum.astype(np.float64)
-
-        proj_spectrum_k = self.proj_ref_schedule.query(
-            self.solver.simulation_time_elapsed
-        )
-
-        if len(spectrum_k) != len(proj_spectrum_k):
-            raise ValueError(
-                f"Spectrum length mismatch between live LES ({len(spectrum_k)}) "
-                f"and reference schedule ({len(proj_spectrum_k)}). Check n_wavenumber_bins alignment."
+        if reward_mode == "spectral" or reward_mode == "both":
+            wavenumbers_all, raw_spectrum_all = self.solver.compute_energy_spectrum_(
+                self.solver.solution
+            )
+            _, positive_spectrum = self.solver.get_positive_spectrum(
+                wavenumbers_all, raw_spectrum_all
             )
 
-        if not np.isfinite(spectrum_k).all():
-            raise FloatingPointError("NaN/Inf detected in energy spectrum.")
+            spectrum_k = positive_spectrum.astype(np.float64)
 
-        w_energy = self.ann_config.reward_weight_energy
-        gamma_exp = self.ann_config.reward_spectral_exponent
-        wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
+            proj_spectrum_k = self.proj_ref_schedule.query(
+                self.solver.simulation_time_elapsed
+            )
 
-        rel_err_sq = (
-            (spectrum_k - proj_spectrum_k) / (np.mean(proj_spectrum_k) + 1e-12)
-        ) ** 2
-        weighted_err = w_energy * (wavenumber_indices**gamma_exp) * rel_err_sq
+            if len(spectrum_k) != len(proj_spectrum_k):
+                raise ValueError(
+                    f"Spectrum length mismatch between live LES ({len(spectrum_k)}) "
+                    f"and reference schedule ({len(proj_spectrum_k)}). Check n_wavenumber_bins alignment."
+                )
 
-        raw_penalty = float(np.sum(weighted_err))
+            if not np.isfinite(spectrum_k).all():
+                raise FloatingPointError("NaN/Inf detected in energy spectrum.")
+
+            w_energy = self.ann_config.reward_weight_energy
+            gamma_exp = self.ann_config.reward_spectral_exponent
+            wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
+
+            rel_err_sq = (
+                (spectrum_k - proj_spectrum_k) / (np.mean(proj_spectrum_k) + 1e-12)
+            ) ** 2
+            weighted_err = w_energy * (wavenumber_indices**gamma_exp) * rel_err_sq
+
+            spectral_penalty_raw = float(np.sum(weighted_err))
+
+        if reward_mode == "spatial" or reward_mode == "both":
+            les_velocity = self.solver.solution
+            proj_velocity = self.proj_ref_schedule.query_velocity(
+                self.solver.simulation_time_elapsed
+            )
+
+            if les_velocity.shape != proj_velocity.shape:
+                raise ValueError(
+                    f"LES state shape ({les_velocity.shape}) does not match "
+                    f"projected reference shape ({proj_velocity.shape}). "
+                    f"Check n_nodes_les alignment."
+                )
+
+            if not np.isfinite(proj_velocity).all():
+                raise FloatingPointError("NaN/Inf detected in projected reference velocity.")
+
+            w_profile = self.ann_config.reward_weight_profile
+            sigma_u = np.std(proj_velocity) + 1e-12
+            profile_err_sq = ((les_velocity - proj_velocity) / sigma_u) ** 2
+            profile_penalty_raw = float(np.sum(profile_err_sq))
+
+            du_les = self.solver.compute_gradient_(les_velocity)
+            du_ref = self.solver.compute_gradient_(proj_velocity)
+
+            w_grad = self.ann_config.reward_weight_grad
+            sigma_du = np.std(du_ref) + 1e-12
+            grad_err_sq = ((du_les - du_ref) / sigma_du) ** 2
+            grad_penalty_raw = float(np.sum(grad_err_sq))
+
+            spatial_penalty_raw = w_profile * profile_penalty_raw + w_grad * grad_penalty_raw
+
         scaled_penalty = float(
-            np.log1p(raw_penalty)
+            np.log1p(spectral_penalty_raw + spatial_penalty_raw)
         )  # Smoothly compresses large penalties
 
         return -scaled_penalty
