@@ -43,7 +43,9 @@ class TD3Hyperparameters:
 
     # Training / Environment Setup Params
     total_episodes: int = 100
-    start_timesteps: int = 1000
+    stochastic_timesteps: int = 1200
+    reduced_parameter_timesteps: int = 800
+    start_timesteps = stochastic_timesteps + reduced_parameter_timesteps
     batch_size: int = 64
     expl_noise: float = 0.1
     replay_buffer_max_size: int = int(1e5)
@@ -217,6 +219,8 @@ class TD3Trainer:
             max_size=self.hp.replay_buffer_max_size,
         )
 
+        stochastic_mode = ""
+
         # baseline episode run
         _ = env.reset()
         baseline_episode_reward = 0
@@ -246,13 +250,30 @@ class TD3Trainer:
                 episode_steps += 1
 
                 # Select Action: Pure random uniforms at start, then policy + noise
-                if total_steps < self.hp.start_timesteps:
-                    action = np.random.uniform(
-                        0.0, self.hp.max_action, size=self.ann_config.action_dimension
+                if total_steps < self.hp.stochastic_timesteps:
+                    if total_steps < self.hp.stochastic_timesteps / 2:
+                        stochastic_mode = "random narrow"
+                        high_action = 1.2 if 1.2 < self.hp.max_action else self.hp.max_action
+                        low_action = 0.8
+                        action = np.random.uniform(low_action, high_action, size=self.ann_config.action_dimension)
+                    elif total_steps >= self.hp.stochastic_timesteps / 2:
+                        stochastic_mode = "random wide"
+                        action = np.random.uniform(
+                            0.0, self.hp.max_action, size=self.ann_config.action_dimension
                     )
+
+                elif total_steps < self.hp.start_timesteps:
+                    if self.ann_config.action_dimension > 2:
+                        stochastic_mode = "reduced parameters"
+                        action = np.random.uniform(
+                            0.0, self.hp.max_action, size=self.ann_config.action_dimension
+                        )
+                        action[2:] = 0
+
                 else:
                     if self.end_of_random_episode is None:
                         self.end_of_random_episode = episode
+                    stochastic_mode = "deterministic"
                     action = agent.select_action(state, noise_std=self.hp.expl_noise)
 
                 actions.append(action)
@@ -276,6 +297,7 @@ class TD3Trainer:
                 f"Episode: {episode + 1}/{self.hp.total_episodes} | "
                 f"Steps in Ep: {episode_steps} | "
                 f"Total Steps: {total_steps} | "
+                f"Stochastic Mode: {stochastic_mode} | "
                 f"Scope: {self.ann_config.output_scope.value} ({self.ann_config.n_local_action_groups}) | "
                 f"Reward: {episode_reward:.4f} | "
                 f"baseline: {baseline_episode_reward:.2f}"
