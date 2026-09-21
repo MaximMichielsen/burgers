@@ -253,20 +253,30 @@ class TD3Trainer:
                 if total_steps < self.hp.stochastic_timesteps:
                     if total_steps < self.hp.stochastic_timesteps / 2:
                         stochastic_mode = "random narrow"
-                        high_action = 1.2 if 1.2 < self.hp.max_action else self.hp.max_action
+                        high_action = (
+                            1.2 if 1.2 < self.hp.max_action else self.hp.max_action
+                        )
                         low_action = 0.8
-                        action = np.random.uniform(low_action, high_action, size=self.ann_config.action_dimension)
+                        action = np.random.uniform(
+                            low_action,
+                            high_action,
+                            size=self.ann_config.action_dimension,
+                        )
                     elif total_steps >= self.hp.stochastic_timesteps / 2:
                         stochastic_mode = "random wide"
                         action = np.random.uniform(
-                            0.0, self.hp.max_action, size=self.ann_config.action_dimension
-                    )
+                            0.0,
+                            self.hp.max_action,
+                            size=self.ann_config.action_dimension,
+                        )
 
                 elif total_steps < self.hp.start_timesteps:
                     if self.ann_config.action_dimension > 2:
                         stochastic_mode = "reduced parameters"
                         action = np.random.uniform(
-                            0.0, self.hp.max_action, size=self.ann_config.action_dimension
+                            0.0,
+                            self.hp.max_action,
+                            size=self.ann_config.action_dimension,
                         )
                         action[2:] = 0
 

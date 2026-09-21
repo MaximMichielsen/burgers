@@ -148,7 +148,9 @@ class EnvironmentTauAnn:
                 )
 
             if not np.isfinite(proj_velocity).all():
-                raise FloatingPointError("NaN/Inf detected in projected reference velocity.")
+                raise FloatingPointError(
+                    "NaN/Inf detected in projected reference velocity."
+                )
 
             w_profile = self.ann_config.reward_weight_profile
             sigma_u = np.std(proj_velocity) + 1e-12
@@ -163,7 +165,9 @@ class EnvironmentTauAnn:
             grad_err_sq = ((du_les - du_ref) / sigma_du) ** 2
             grad_penalty_raw = float(np.sum(grad_err_sq))
 
-            spatial_penalty_raw = w_profile * profile_penalty_raw + w_grad * grad_penalty_raw
+            spatial_penalty_raw = (
+                w_profile * profile_penalty_raw + w_grad * grad_penalty_raw
+            )
 
         scaled_penalty = float(
             np.log1p(spectral_penalty_raw + spatial_penalty_raw)

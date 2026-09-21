@@ -19,8 +19,8 @@ from utils.plotting.velocity_comparison import plot_solution_comparison
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CURRENT_DIR = Path(__file__).parent.resolve()
 
-CRD_PATH = PROJECT_ROOT / "dns_raw_data" / "burgers_1D.crd"
-DAT_PATH = PROJECT_ROOT / "dns_raw_data" / "burgers_1D.dat"
+CRD_PATH = PROJECT_ROOT / "dns_data" / "burgers_1D.crd"
+DAT_PATH = PROJECT_ROOT / "dns_data" / "burgers_1D.dat"
 
 N_NODES_LES: int = 32
 COURANT_LES: float = 0.5

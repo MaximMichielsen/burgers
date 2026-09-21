@@ -17,7 +17,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 # Needed for _load_snapshot_csv — import at module level.
-import csv
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +219,7 @@ class ProjectionReferenceSchedule:
 # ------------------------------------------------------------------
 # Private helpers
 # ------------------------------------------------------------------
+
 
 def _compute_spectrum_bins(
     velocity_array: NDArray,
