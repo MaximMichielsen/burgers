@@ -18,10 +18,7 @@ mean_w_profiles = np.load(PARSED_STAT_DIR / "stat_mean_w.npy")
 # Resolve target directory for LES profiles
 
 profiles_dir = (
-    CURRENT_DIR
-    / "solver_data"
-    / f"les_n{n_nodes_les}_p{tau_params}"
-    / "mean_profiles"
+    CURRENT_DIR / "solver_data" / f"les_n{n_nodes_les}_p{tau_params}" / "mean_profiles"
 )
 
 # Automatically locate all .npy LES profiles sorted by timestamp
@@ -89,7 +86,8 @@ for frame_idx, les_path in enumerate(les_files):
 
     # Styling and Labels
     ax.set_title(
-        r"Mean Velocity Profile Comparison $\langle w \rangle$ " + f"({time_interval_str})",
+        r"Mean Velocity Profile Comparison $\langle w \rangle$ "
+        + f"({time_interval_str})",
         fontsize=13,
         pad=10,
     )

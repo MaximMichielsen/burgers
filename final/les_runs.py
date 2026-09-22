@@ -14,7 +14,7 @@ n_nodes_les = 33
 z_length = 2.0
 dt = 1e-4
 t_start = 308.0101
-t_end = 311.0100
+t_end = 309.0100
 
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS
@@ -55,10 +55,12 @@ solver_les = SolverBase(
     problem=problem,
     disc_config=disc_config,
     simulation_mode=simulation_mode,
-    master_path=PROJECT_ROOT / "final" / "solver_data" / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}",
+    master_path=PROJECT_ROOT
+    / "final"
+    / "solver_data"
+    / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}",
     tau_model=tau_model,
     t_start=t_start,
 )
-
 solver_les.run_simulation()
 solver_les.post_plotting()

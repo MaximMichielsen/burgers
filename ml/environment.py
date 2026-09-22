@@ -110,9 +110,7 @@ class EnvironmentTauAnn:
 
             spectrum_k = positive_spectrum.astype(np.float64)
 
-            proj_spectrum_k = self.proj_ref_schedule.query(
-                self.solver.time
-            )
+            proj_spectrum_k = self.proj_ref_schedule.query(self.solver.time)
 
             if len(spectrum_k) != len(proj_spectrum_k):
                 raise ValueError(
@@ -136,9 +134,7 @@ class EnvironmentTauAnn:
 
         if reward_mode == "spatial" or reward_mode == "both":
             les_velocity = self.solver.solution
-            proj_velocity = self.proj_ref_schedule.query_velocity(
-                self.solver.time
-            )
+            proj_velocity = self.proj_ref_schedule.query_velocity(self.solver.time)
 
             if les_velocity.shape != proj_velocity.shape:
                 raise ValueError(

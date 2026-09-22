@@ -33,7 +33,6 @@ from utils.diagnostics import (
     compute_dissipation,
     compute_energy_spectrum,
 )
-from utils.io_utils import compute_adjusted_dt
 from setup.problems import Problem
 from utils.pipeline_utils import RunPaths
 
@@ -123,7 +122,6 @@ class SolverBase:
         self.simulation_mode = SimulationMode(simulation_mode)
         self.tau_model = TauModel(tau_model) if tau_model else None
 
-
         self.domain_length: float = problem.domain_length
 
         self.current_time_step: int = 0
@@ -146,11 +144,12 @@ class SolverBase:
         self._dt: float = (
             disc_config.dt_dns if simulation_mode == "dns" else disc_config.dt_les
         )
-        self.dt, self._n_time_steps = compute_adjusted_dt(
+        self.dt: float = self._dt
+        self._n_time_steps, self._step_dts = self._compute_time_stepping(
             self._dt, self.domain_timespan
         )
-        self.time_steps: NDArray = np.linspace(
-            t_start, t_start + self.domain_timespan, self._n_time_steps + 1
+        self.time_steps: NDArray = self.t_start + np.concatenate(
+            ([0.0], np.cumsum(self._step_dts))
         )
 
         # mesh
@@ -645,6 +644,32 @@ class SolverBase:
     #  Internal helpers
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _compute_time_stepping(
+        dt: float, timespan: float, rel_tol: float = 1e-9
+    ) -> tuple[int, NDArray]:
+        """Build the per-step dt array: fixed `dt` for every step, except the
+        final step, which is shortened so the simulation lands exactly on
+        t_start + timespan instead of overshooting it.
+
+        Returns (n_time_steps, step_dts).
+        """
+        if dt <= 0:
+            raise ValueError(f"dt must be positive, got {dt!r}")
+        if timespan <= 0:
+            raise ValueError(f"domain_timespan must be positive, got {timespan!r}")
+
+        n_full = int(np.floor(timespan / dt + rel_tol))
+        remainder = timespan - n_full * dt
+
+        if remainder > rel_tol * dt:
+            step_dts = np.full(n_full + 1, dt)
+            step_dts[-1] = remainder
+        else:
+            step_dts = np.full(n_full, dt)
+
+        return len(step_dts), step_dts
+
     def calculate_mean_profile(self) -> np.ndarray:
         """Computes the time-averaged spatial mean profile over the stored solution history."""
         if self.snapshots_solution is None or len(self.snapshots_solution) == 0:
@@ -1120,9 +1145,7 @@ if __name__ == "__main__":
     solver.run_simulation()
 
     simulated_solution = solver.solution
-    exact_solution = manufactured_solution(
-        x=solver.mesh, t=solver.time
-    )
+    exact_solution = manufactured_solution(x=solver.mesh, t=solver.time)
 
     plt.plot(solver.mesh, exact_solution, label="exact")
     plt.plot(solver.mesh, simulated_solution, label="simulated")
