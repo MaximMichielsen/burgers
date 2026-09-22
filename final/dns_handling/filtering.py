@@ -12,6 +12,7 @@ DAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_dat"
 STAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_stat"
 
 FORCING_PATH = DAT_PARSED_DIR / "f_forcing.npy"
+W_FIELD_PATH = DAT_PARSED_DIR / "w_field.npy"
 FILTERED_PATH = PROJECT_ROOT / "dns_data" / "filtered"
 
 
@@ -109,10 +110,15 @@ def filter_forcing(
     return filtered_forcing
 
 
+def filter_ic(ic_dns: NDArray, mesh_les: NDArray, mesh_dns: NDArray) -> NDArray:
+    """Projects the DNS initial condition onto the LES mesh via linear interpolation."""
+    return np.interp(mesh_les, mesh_dns, ic_dns)
+
+
 if __name__ == "__main__":
+    n_nodes_les = 33
     if FORCING_PATH.exists():
         forcing_dns = np.load(FORCING_PATH)
-        n_nodes_les = 9
 
         l2_data = filter_forcing(
             forcing_dns,
@@ -133,3 +139,12 @@ if __name__ == "__main__":
         print(f"Filtering complete. Outputs saved to {FILTERED_PATH}")
     else:
         print(f"Forcing file not found at {FORCING_PATH}")
+
+    if W_FIELD_PATH.exists():
+        ic_dns = np.load(W_FIELD_PATH)[0]
+        mesh_dns = np.linspace(0.0, 2.0, 513)
+        mesh_les = np.linspace(0.0, 2.0, n_nodes_les)
+
+        ic_les = filter_ic(ic_dns, mesh_les=mesh_les, mesh_dns=mesh_dns)
+
+        np.save(FILTERED_PATH / f"ic_linear_{n_nodes_les}.npy", ic_les)

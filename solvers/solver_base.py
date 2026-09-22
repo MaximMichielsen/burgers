@@ -169,6 +169,7 @@ class SolverBase:
         )
         self.solution: NDArray = self.initial_condition.copy()
         self.solution_previous: NDArray = self.initial_condition.copy()
+        self.mean_solution: NDArray | None = None
 
         # forcing
         self.forcing: NDArray | Callable | None = problem.forcing
@@ -241,6 +242,8 @@ class SolverBase:
 
             self.write_config_to_json()
             self.write_solution_to_csv()
+            self.mean_solution = self.calculate_mean_profile()
+            self.write_mean_solution_to_csv()
 
     def advance_time_step(self) -> None:
         """Advance the solution by one time step: U^{n+1} ← U^n.
@@ -623,6 +626,15 @@ class SolverBase:
     #  Internal helpers
     # ------------------------------------------------------------------ #
 
+    def calculate_mean_profile(self) -> np.ndarray:
+        """Computes the time-averaged spatial mean profile over the stored solution history."""
+        if self.snapshots_solution is None or len(self.snapshots_solution) == 0:
+            raise ValueError(
+                "No solution history found. Run the solver before computing statistics."
+            )
+
+        return np.mean(np.asarray(self.snapshots_solution), axis=0)
+
     @staticmethod
     def is_residual_converged(
         residual: float | NDArray, tolerance: float = 1e-6
@@ -646,7 +658,7 @@ class SolverBase:
         elif self.forcing is None:
             self.forcing_current = np.zeros_like(self.solution)
         else:
-            self.forcing_current = self.forcing
+            self.forcing_current = self.forcing[self.current_time_step]
 
     def _extract_snapshot(self) -> None:
         """Store current solution and forcing as a snapshot."""
@@ -756,7 +768,6 @@ class SolverBase:
             "convergence_tol_residual": self.convergence_tol_residual,
             "convergence_tol_update": self.convergence_tol_update,
             "snapshot_factor": self.snapshot_factor,
-            "forcing": self.forcing,
             "forcing_is_steady": self.forcing_is_steady,
             "problem_name": self.problem_name,
         }
@@ -779,14 +790,15 @@ class SolverBase:
         """Write extracted solution snapshots to CSV files."""
         solutions = self.snapshots_solution
         forcings = self.snapshots_forcing
-        if self.requested_snapshots is None:
-            return
 
         times = self.requested_snapshots[: len(solutions)]
 
+        master_path = save_path if save_path is not None else self.master_path
+        solution_dir = master_path / "u_field"
+        solution_dir.mkdir(exist_ok=True, parents=True)
+
         for solution, time_value, forcing in zip(solutions, times, forcings):
-            master_path = save_path if save_path is not None else self.master_path
-            filepath = master_path / f"sol_t{time_value:.6f}.csv"
+            filepath = solution_dir / f"sol_t{time_value:.6f}.csv"
             with open(filepath, mode="w", newline="") as file_handle:
                 writer = csv.writer(file_handle)
                 writer.writerow(["node_index", "x_coordinate", "velocity", "forcing"])
@@ -801,6 +813,19 @@ class SolverBase:
                     )
 
         print(f"wrote {len(solutions)} snapshots at {self.master_path}")
+
+    def write_mean_solution_to_csv(self):
+        mean_profile = self.mean_solution
+        file_dir = self.master_path / "mean_profiles"
+        filepath = file_dir / "mean_w.csv"
+        file_dir.mkdir(parents=True, exist_ok=True)
+        with open(filepath, mode="w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(["node_index", "x_coordinate", "w"])
+            for i in range(len(self.nodes)):
+                writer.writerow([self.nodes[i], self.mesh[i], mean_profile[i]])
+
+        print(f"wrote mean profile at {self.master_path}")
 
     def post_processing(self) -> None:
         """Run post-plotting and post-logging."""

@@ -120,11 +120,9 @@ def animate_forcing_comparison(
             line.set_ydata(f_les[frame])
 
         time_text.set_text(f"Timestep: {frame} / {len(f_dns) - 1}")
-        return [line_dns] + [l[0] for l in lines_les.values()] + [time_text]
+        return [line_dns] + [line[0] for line in lines_les.values()] + [time_text]
 
-    anim = FuncAnimation(
-        fig, update, frames=len(f_dns), interval=interval, blit=False
-    )
+    anim = FuncAnimation(fig, update, frames=len(f_dns), interval=interval, blit=False)
     plt.tight_layout()
 
     if save_path is not None:
@@ -167,9 +165,7 @@ def plot_mean_statistics(
 
     # Subplot 2: Domain-Averaged Mean over Time
     domain_avg_w = np.mean(w_mean_data, axis=1)
-    ax2.plot(
-        stat_times, domain_avg_w, marker="o", color="darkred", linestyle="-"
-    )
+    ax2.plot(stat_times, domain_avg_w, marker="o", color="darkred", linestyle="-")
 
     ax2.set_title(f"Domain-Averaged {field_title} over Time")
     ax2.set_xlabel("Time $t$ (s)")

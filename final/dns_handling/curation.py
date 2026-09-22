@@ -22,6 +22,9 @@ DAT_PATH = RAW_DATA_DIR / "burgers_1D.dat"
 STAT_PATH = RAW_DATA_DIR / "burgers_1D.stat"
 
 
+# TODO: rename saving path files of the reynolds terms to actually reflect the reynolds stuff, not var!
+
+
 # Data Parsers
 def read_crd_file(file_path: Path) -> tuple[dict, NDArray]:
     """
