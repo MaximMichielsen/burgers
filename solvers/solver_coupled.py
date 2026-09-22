@@ -99,7 +99,7 @@ class SolverCoupled(SolverBase):
         self.energy_history.append(self.compute_energy_(self.solution))
         self.dissipation_history.append(self.compute_dissipation_(self.solution))
         self.correction_coefficients_history.append(self.correction_coefficients)
-        self.simulation_time_elapsed += self.dt
+        self.time += self.dt
 
     def get_ann_coefficients(self) -> NDArray:
         """Call ANN and receive correction coefficients."""

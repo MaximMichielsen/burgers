@@ -114,7 +114,7 @@ class BurgersDataGenerator(SolverBase):
         self.solution_previous = self.solution
         self.solution = new_solution
 
-        self.simulation_time_elapsed += self.dt
+        self.time += self.dt
         self.u_bar_now, self.interp_les_to_dns_u, self.projected_forcing = (
             self.project_u_to_les()
         )
@@ -167,7 +167,7 @@ class BurgersDataGenerator(SolverBase):
                     pbar.update(1)
                     pbar.set_postfix(
                         {
-                            "t": f"{self.simulation_time_elapsed:.3f}",
+                            "t": f"{self.time:.3f}",
                             "dt": f"{self.dt:.3f}",
                             "step_time": f"{perf_counter() - step_start:.3f}s",
                         }
@@ -215,7 +215,7 @@ class BurgersDataGenerator(SolverBase):
                 )
                 self.du_bar_dt_history.append(self.du_bar_dt_now)
 
-            self.simulation_time_elapsed += self.dt
+            self.time += self.dt
 
         self.projection_save_path.mkdir(parents=True, exist_ok=True)
         self.write_projected_solution_to_csv(save_path=self.projection_save_path)

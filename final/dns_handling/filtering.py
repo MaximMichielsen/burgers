@@ -5,7 +5,7 @@ from scipy.sparse import diags
 from scipy.sparse.linalg import factorized
 
 # Paths Setup
-PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 
 PARSED_DATA_DIR = PROJECT_ROOT / "dns_data" / "curated"
 DAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_dat"
@@ -116,7 +116,7 @@ def filter_ic(ic_dns: NDArray, mesh_les: NDArray, mesh_dns: NDArray) -> NDArray:
 
 
 if __name__ == "__main__":
-    n_nodes_les = 33
+    n_nodes_les = 65
     if FORCING_PATH.exists():
         forcing_dns = np.load(FORCING_PATH)
 
@@ -148,3 +148,5 @@ if __name__ == "__main__":
         ic_les = filter_ic(ic_dns, mesh_les=mesh_les, mesh_dns=mesh_dns)
 
         np.save(FILTERED_PATH / f"ic_linear_{n_nodes_les}.npy", ic_les)
+    else:
+        print("no w field")

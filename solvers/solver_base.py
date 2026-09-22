@@ -122,18 +122,10 @@ class SolverBase:
         # simulation settings
         self.simulation_mode = SimulationMode(simulation_mode)
         self.tau_model = TauModel(tau_model) if tau_model else None
-        self.domain_timespan: float = problem.domain_timespan
-        self.simulation_time_elapsed: float = t_start
+
+
         self.domain_length: float = problem.domain_length
-        self._dt: float = (
-            disc_config.dt_dns if simulation_mode == "dns" else disc_config.dt_les
-        )
-        self.dt, self._n_time_steps = compute_adjusted_dt(
-            self._dt, self.domain_timespan
-        )
-        self.time_steps: NDArray = np.linspace(
-            t_start, t_start + self.domain_timespan, self._n_time_steps + 1
-        )
+
         self.current_time_step: int = 0
         self.viscosity: float = problem.viscosity
         self.max_iterations: int = (
@@ -143,6 +135,23 @@ class SolverBase:
         )
         self.convergence_tol_update = TOLERANCE_RESIDUAL
         self.convergence_tol_residual = TOLERANCE_UPDATE
+
+        # time
+        self.t_start = t_start
+        self.time: float = t_start
+        self.time_elapsed: float = 0.0
+        self.prev_elapsed = 0.0
+
+        self.domain_timespan: float = problem.domain_timespan
+        self._dt: float = (
+            disc_config.dt_dns if simulation_mode == "dns" else disc_config.dt_les
+        )
+        self.dt, self._n_time_steps = compute_adjusted_dt(
+            self._dt, self.domain_timespan
+        )
+        self.time_steps: NDArray = np.linspace(
+            t_start, t_start + self.domain_timespan, self._n_time_steps + 1
+        )
 
         # mesh
         self.n_nodes: int = (
@@ -234,7 +243,7 @@ class SolverBase:
                     pbar.update(1)
                     pbar.set_postfix(
                         {
-                            "t": f"{self.simulation_time_elapsed:.3f}",
+                            "t": f"{self.time:.3f}",
                             "dt": f"{self.dt:.3f}",
                             "step_time": f"{perf_counter() - step_start:.3f}s",
                         }
@@ -242,6 +251,8 @@ class SolverBase:
 
             self.write_config_to_json()
             self.write_solution_to_csv()
+
+            # final flush
             self.mean_solution = self.calculate_mean_profile()
             self.write_mean_solution_to_csv()
 
@@ -257,7 +268,15 @@ class SolverBase:
 
         self.energy_history.append(self.compute_energy_(self.solution))
         self.dissipation_history.append(self.compute_dissipation_(self.solution))
-        self.simulation_time_elapsed += self.dt
+        self.time += self.dt
+        self.time_elapsed += self.dt
+
+        # create mean profile per 1 second interval or at the end
+        if int(self.time_elapsed) > int(self.prev_elapsed):
+            self.mean_solution = self.calculate_mean_profile()
+            self.write_mean_solution_to_csv()
+
+        self.prev_elapsed = self.time_elapsed
         self.current_time_step += 1
 
     def nr_iteration(self, solution: NDArray, solution_prev: NDArray) -> NDArray:
@@ -651,7 +670,7 @@ class SolverBase:
     def resolve_current_forcing(self) -> None:
         if callable(self.forcing):
             self.forcing_current = (
-                self.forcing(self.mesh, self.simulation_time_elapsed)
+                self.forcing(self.mesh, self.time)
                 if not self.forcing_is_steady
                 else self.forcing(self.mesh)
             )
@@ -816,14 +835,18 @@ class SolverBase:
 
     def write_mean_solution_to_csv(self):
         mean_profile = self.mean_solution
+        time = round(self.time, ndigits=3)
         file_dir = self.master_path / "mean_profiles"
-        filepath = file_dir / "mean_w.csv"
+        filepath = file_dir / f"mean_w_{time}.csv"
+        filepath_npy = file_dir / f"mean_w_{time}.npy"
         file_dir.mkdir(parents=True, exist_ok=True)
         with open(filepath, mode="w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow(["node_index", "x_coordinate", "w"])
             for i in range(len(self.nodes)):
                 writer.writerow([self.nodes[i], self.mesh[i], mean_profile[i]])
+
+        np.save(filepath_npy, mean_profile)
 
         print(f"wrote mean profile at {self.master_path}")
 
@@ -1098,7 +1121,7 @@ if __name__ == "__main__":
 
     simulated_solution = solver.solution
     exact_solution = manufactured_solution(
-        x=solver.mesh, t=solver.simulation_time_elapsed
+        x=solver.mesh, t=solver.time
     )
 
     plt.plot(solver.mesh, exact_solution, label="exact")
