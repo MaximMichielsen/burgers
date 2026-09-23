@@ -17,7 +17,7 @@ import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-from ml.tau_ann import load_tau_ann, TauANN, TauANNConfig, Scope
+from ml_old_old_old.tau_ann import load_tau_ann, TauANN, TauANNConfig, Scope
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
@@ -163,7 +163,7 @@ class SolverCoupled(SolverBase):
     #  ANN
     # ------------------------------------------------------------------ #
 
-    def create_input_stencil(self) -> NDArray:
+    def create_input_stencil(self, mean_profile: NDArray) -> NDArray:
         """Build the MDP state s_n in R^(K+n_coefficients).
 
         s_n = (Ehat_1, ..., Ehat_K, c_1^{n-1}, c_...^{n-1})
@@ -207,7 +207,9 @@ class SolverCoupled(SolverBase):
                 [normalised_spectrum, previous_coefficients, flattened_local_features]
             )
 
-        return np.concatenate([normalised_spectrum, previous_coefficients])
+        return np.concatenate(
+            [normalised_spectrum, mean_profile, previous_coefficients]
+        )
 
     def compute_local_spatial_input_stencil(self, node: int) -> NDArray:
         """Compute local velocity values across an n-node stencil around a target node."""

@@ -21,6 +21,7 @@ class DiscretizationConfig:
     temporal_refinement: int
     courant_les: float
     domain_length: float
+    domain_timespan: float
     suppress_file_logging: bool = False
 
     def __post_init__(self) -> None:
@@ -39,3 +40,5 @@ class DiscretizationConfig:
         self.mesh_dns = np.linspace(0, self.domain_length, self.n_nodes_dns)
 
         self.n_wavenumber_bins: int = (self.n_nodes_les - 1) // 2
+
+        self.n_timesteps = int(self.domain_timespan / self.dt_les)

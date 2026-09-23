@@ -45,7 +45,7 @@ mean_w_training = mean_w_data[:index_stat]
 mean_w_evaluation = mean_w_data[index_stat:]
 
 np.save(path_to_training_dir / f"w_field_{n_les}.npy", w_training)
-np.save(path_to_training_dir / f"stat_mean_w.npy", mean_w_training)
+np.save(path_to_training_dir / "stat_mean_w.npy", mean_w_training)
 np.save(path_to_training_dir / "training_times.npy", times_training)
 
 np.save(path_to_eval_dir / f"w_field_{n_les}.npy", w_validation)

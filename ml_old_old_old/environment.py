@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ml.projection_schedule import ProjectionReferenceSchedule
-from ml.tau_ann import TauANNConfig
+from ml_old_old_old.projection_schedule import ProjectionReferenceSchedule
+from ml_old_old_old.tau_ann import TauANNConfig
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode

@@ -10,16 +10,16 @@ from mpl_toolkits.axes_grid1.inset_locator import mark_inset, inset_axes
 from numpy.typing import NDArray
 import torch.nn.functional as functional
 
-from ml.environment import EnvironmentTauAnn
-from ml.projection_schedule import ProjectionReferenceSchedule
-from ml.tau_ann import (
+from ml_old_old_old.environment import EnvironmentTauAnn
+from ml_old_old_old.projection_schedule import ProjectionReferenceSchedule
+from ml_old_old_old.tau_ann import (
     TauANN,
     TauANNConfig,
     save_tau_ann,
     N_HIDDEN_UNITS,
     EPISODE_REWARD_CLIP,
 )
-from ml.training.shared_assets import TwinQCritic, ReplayBuffer
+from ml_old_old_old.training.shared_assets import TwinQCritic, ReplayBuffer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 

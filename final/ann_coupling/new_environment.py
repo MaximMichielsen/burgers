@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from final.ann_coupling.reference_scheduler import ReferenceTrajectory
-from ml.tau_ann import TauANNConfig
+from ml_old_old_old.tau_ann import TauANNConfig
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode
@@ -35,7 +35,7 @@ class EnvironmentForcingDNS:
         self.running_mean_solution: NDArray | None = None
 
         # TODO: Move _max_les_steps into DiscretizationConfig
-        self._max_les_steps: int = self.disc_config.n_time_steps
+        self._max_les_steps: int = self.disc_config.n_timesteps
         self._total_les_steps: int = 0
 
         self.total_reward_history: list[float] = []
@@ -63,7 +63,7 @@ class EnvironmentForcingDNS:
         self.distance_error_history.clear()
         self.reference_schedule.reset()
         self.running_mean_solution = self.solver.solution.copy()
-        return self.solver.create_input_stencil()
+        return self.solver.create_input_stencil(mean_profile=self.running_mean_solution)
 
     def step(self, action: NDArray) -> tuple[NDArray, float, bool]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done)."""
@@ -71,7 +71,9 @@ class EnvironmentForcingDNS:
             raise RuntimeError("Call reset() before step().")
 
         self.solver.correction_coefficients = action
-        last_valid_state = self.solver.create_input_stencil()
+        last_valid_state = self.solver.create_input_stencil(
+            mean_profile=self.running_mean_solution
+        )
 
         try:
             for _ in range(self.ann_config.n_skip_steps):
@@ -88,7 +90,9 @@ class EnvironmentForcingDNS:
                 self._total_les_steps >= self._max_les_steps
                 or self.solver.simulation_done
             )
-            next_state_array = self.solver.create_input_stencil()
+            next_state_array = self.solver.create_input_stencil(
+                mean_profile=self.running_mean_solution
+            )
 
             if not np.all(np.isfinite(next_state_array)):
                 raise FloatingPointError("NaN/Inf detected in state stencil.")

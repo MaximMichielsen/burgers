@@ -6,9 +6,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-# TODO: adjust name to something better
-
-
 class ReferenceTrajectory:
     """Manages reference target profiles and projected snapshots for RL rewards."""
 
@@ -17,11 +14,13 @@ class ReferenceTrajectory:
         target_profile_path: Path,
         projected_w_path: Path,
         n_les_nodes: int,
+        target_time_index: int,
     ) -> None:
 
         self.target_profile_path = Path(target_profile_path)
         self.projected_w_path = Path(projected_w_path)
         self.n_les_nodes = n_les_nodes
+        self.target_time_index = target_time_index
 
         self._current_step_idx: int = 0
         self._target_profile: NDArray | None = None
@@ -30,7 +29,7 @@ class ReferenceTrajectory:
         self.load_data()
 
     def load_data(self) -> None:
-        """Loads reference datasets into memory with memory-mapped array access."""
+        """Loads reference datasets into memory and project target profile if needed."""
         if not self.target_profile_path.exists():
             raise FileNotFoundError(
                 f"Target profile missing at {self.target_profile_path}"
@@ -41,14 +40,25 @@ class ReferenceTrajectory:
             )
 
         # Static 1D target mean profile <u_DNS>_T
-        self._target_profile = np.load(self.target_profile_path).astype(np.float64)
+        raw_target_profile = np.load(self.target_profile_path).astype(np.float64)[
+            self.target_time_index
+        ]
+
+        # Nodal projection (linear interpolation) if DNS grid size != LES node count
+        n_dns_nodes = raw_target_profile.shape[-1]
+        if n_dns_nodes != self.n_les_nodes:
+            dns_grid = np.linspace(0.0, 1.0, n_dns_nodes)
+            les_grid = np.linspace(0.0, 1.0, self.n_les_nodes)
+            self._target_profile = np.interp(les_grid, dns_grid, raw_target_profile)
+        else:
+            self._target_profile = raw_target_profile
 
         # Time-resolved projected field (Memory-mapped query interface)
         self._projected_w_data = np.load(self.projected_w_path, mmap_mode="r").astype(
             np.float64
         )
 
-        # Basic shape validation
+        # Shape validation
         if self._target_profile.shape[-1] != self.n_les_nodes:
             raise ValueError(
                 f"Target profile node count ({self._target_profile.shape[-1]}) "

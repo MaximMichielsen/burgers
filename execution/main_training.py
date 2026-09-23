@@ -1,9 +1,9 @@
 from dataclasses import replace
 from pathlib import Path
 
-from ml.projection_schedule import ProjectionReferenceSchedule
-from ml.tau_ann import TauANNConfig, Scope
-from ml.training.td3 import TD3Hyperparameters, TD3Trainer
+from ml_old_old_old.projection_schedule import ProjectionReferenceSchedule
+from ml_old_old_old.tau_ann import TauANNConfig, Scope
+from ml_old_old_old.training.td3 import TD3Hyperparameters, TD3Trainer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem, Problems
 from solvers.solver_base import SimulationMode, SolverBase, TauModel
