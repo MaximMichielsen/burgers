@@ -18,11 +18,13 @@ from numpy.typing import NDArray
 matplotlib.use("TkAgg")
 
 # Project Directories
-PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 PARSED_DATA_DIR = PROJECT_ROOT / "dns_data" / "curated"
 DAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_dat"
 STAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_stat"
-FILTERED_DIR = PROJECT_ROOT / "dns_data" / "filtered"
+FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
+
+W_FIELD_PATH = DAT_PARSED_DIR / "w_field.npy"
 FORCING_PATH = DAT_PARSED_DIR / "f_forcing.npy"
 
 
@@ -132,6 +134,95 @@ def animate_forcing_comparison(
     return anim
 
 
+def animate_w_field_comparison(
+    z_dns: NDArray,
+    w_dns: NDArray,
+    projected_fields: Dict[str, Tuple[NDArray, NDArray]],
+    interval: int = 1,
+    save_path: Optional[Path] = None,
+) -> FuncAnimation:
+    """Animates the high-resolution DNS w field alongside projected LES fields."""
+    with plt.style.context("dark_background"):
+        fig, ax = plt.subplots(figsize=(9, 5), dpi=120)
+
+        # 1. Plot DNS Reference line
+        (line_dns,) = ax.plot(
+            z_dns,
+            w_dns[0],
+            color="white",
+            lw=1.2,
+            alpha=0.6,
+            linestyle="--",
+            label="DNS w (513 pts)",
+        )
+
+        # 2. Plot Projected LES lines
+        lines_les = {}
+        styles = [
+            ("lightgreen", "x--", 1.0),
+            ("royalblue", "s--", 2.0),
+            ("forestgreen", "^-.", 2.0),
+        ]
+
+        for idx, (label, (z_les, f_les)) in enumerate(projected_fields.items()):
+            color, marker, lw = styles[idx % len(styles)]
+            (line,) = ax.plot(
+                z_les,
+                f_les[0],
+                marker,
+                color=color,
+                lw=lw,
+                markersize=5,
+                label=f"LES Projection ({label})",
+            )
+            lines_les[label] = (line, z_les, f_les)
+
+        # Calculate global y-bounds across DNS and all projected fields
+        all_min = min([w_dns.min()] + [f[1].min() for f in projected_fields.values()])
+        all_max = max([w_dns.max()] + [f[1].max() for f in projected_fields.values()])
+        margin = 0.1 * abs(all_max - all_min) if abs(all_max - all_min) > 1e-12 else 0.1
+        down_scale = 0.4
+
+        ax.set_xlim(z_dns.min(), z_dns.max())
+        ax.set_ylim((all_min - margin) * down_scale, (all_max + margin) * down_scale)
+        ax.set_xlabel("Domain Coordinate $z$")
+        ax.set_ylabel("Velocity $f(z, t)$")
+        ax.set_title("DNS vs. Projected LES Solution Field Comparison")
+        ax.grid(True, linestyle="--", alpha=0.6)
+        ax.legend(loc="upper right")
+
+        time_text = ax.text(
+            0.02,
+            0.92,
+            "",
+            transform=ax.transAxes,
+            fontsize=11,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+        )
+
+        def update(frame: int):
+            # Update DNS Line
+            line_dns.set_ydata(w_dns[frame])
+
+            # Update LES Projection Lines
+            for label, (line, _, f_les) in lines_les.items():
+                line.set_ydata(f_les[frame])
+
+            time_text.set_text(f"Timestep: {frame} / {len(w_dns) - 1}")
+            return [line_dns] + [line[0] for line in lines_les.values()] + [time_text]
+
+        anim = FuncAnimation(
+            fig, update, frames=len(w_dns), interval=interval, blit=False
+        )
+        plt.tight_layout()
+
+        if save_path is not None:
+            anim.save(str(save_path))
+
+        plt.show()
+        return anim
+
+
 def plot_mean_statistics(
     z_coords: NDArray,
     stat_times: NDArray,
@@ -148,7 +239,7 @@ def plot_mean_statistics(
         Timestamps for statistical frames (N_frames,).
     w_mean_data : NDArray
         Spatial mean profiles across time (N_frames, N_nodes).
-    field_title : str, default=r"Mean Velocity $\langle w \rangle$"
+    field_title : str, default=r"Mean Velocity"
         Latex title formatted string for headers.
     """
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), dpi=120)
@@ -177,7 +268,7 @@ def plot_mean_statistics(
 
 
 def main():
-    """Main execution: Loads DNS and filtered LES forcing data, animates the comparison,
+    """Main execution: Loads DNS and projected LES forcing data, animates the comparison,
     and then plots velocity mean profile statistics."""
     print("=== Launching Forcing Comparison Animation ===")
 
@@ -187,40 +278,53 @@ def main():
             f"Missing DNS forcing file at {FORCING_PATH}. Parse .dat files first."
         )
 
+    w_dns = np.load(W_FIELD_PATH)
     f_dns = np.load(FORCING_PATH)
     n_dns_nodes = f_dns.shape[1]
     z_dns = np.linspace(0.0, 2.0, n_dns_nodes)  # Matches domain z ∈ [0, 2]
 
-    # 2. Search for saved L2 and H10 filtered arrays
-    les_resolution = 9
+    # 2. Search for saved L2 and H10 projected arrays
+    les_resolution = 33
     l2_file = FILTERED_DIR / f"forcing_l2_{les_resolution}.npy"
     h10_file = FILTERED_DIR / f"forcing_h10_{les_resolution}.npy"
 
-    projected_fields = {}
+    projected_f_fields = {}
     z_les = np.linspace(0.0, 2.0, les_resolution)
 
     if l2_file.exists():
         f_l2 = np.load(l2_file)
-        projected_fields[f"$L^2$ ({les_resolution} nodes)"] = (z_les, f_l2)
+        projected_f_fields[f"$L^2$ ({les_resolution} nodes)"] = (z_les, f_l2)
         print(f"Loaded {l2_file.name}")
 
     if h10_file.exists():
         f_h10 = np.load(h10_file)
-        projected_fields[f"$H^1_0$ ({les_resolution} nodes)"] = (z_les, f_h10)
+        projected_f_fields[f"$H^1_0$ ({les_resolution} nodes)"] = (z_les, f_h10)
         print(f"Loaded {h10_file.name}")
 
-    if not projected_fields:
+    if not projected_f_fields:
         raise FileNotFoundError(
-            f"No filtered files found in {FILTERED_DIR}. Run filter_forcing first."
+            f"No projected files found in {FILTERED_DIR}. Run filter_forcing first."
         )
+
+    projected_w_fields = {}
+    w_linear_file = FILTERED_DIR / f"w_linear_{les_resolution}.npy"
+    if w_linear_file.exists():
+        w_linear = np.load(w_linear_file)
+        projected_w_fields[f"Nodal projected w ({les_resolution} nodes)"] = (
+            z_les,
+            w_linear,
+        )
+        print(f"Loaded {w_linear_file.name}")
 
     # 3. Animate Overlaid Comparison
     animate_forcing_comparison(
         z_dns=z_dns,
         f_dns=f_dns,
-        projected_fields=projected_fields,
+        projected_fields=projected_f_fields,
         interval=1,
     )
+
+    animate_w_field_comparison(z_dns, w_dns, projected_w_fields, interval=1)
 
     # 4. Plot Mean Velocity Statistics after Animation
     print("=== Plotting Velocity Mean Statistics <w> ===")

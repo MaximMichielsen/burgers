@@ -139,6 +139,7 @@ class SolverBase:
         self.time: float = t_start
         self.time_elapsed: float = 0.0
         self.prev_elapsed = 0.0
+        self.simulation_done: bool = False
 
         self.domain_timespan: float = problem.domain_timespan
         self._dt: float = (
@@ -277,6 +278,9 @@ class SolverBase:
 
         self.prev_elapsed = self.time_elapsed
         self.current_time_step += 1
+
+        if self.time_elapsed >= self.domain_timespan:
+            self.simulation_done = True  # Flag for external use
 
     def nr_iteration(self, solution: NDArray, solution_prev: NDArray) -> NDArray:
         """Newton–Raphson iteration; returns U^{n+1}."""

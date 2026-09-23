@@ -13,7 +13,7 @@ STAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_stat"
 
 FORCING_PATH = DAT_PARSED_DIR / "f_forcing.npy"
 W_FIELD_PATH = DAT_PARSED_DIR / "w_field.npy"
-FILTERED_PATH = PROJECT_ROOT / "dns_data" / "filtered"
+FILTERED_PATH = PROJECT_ROOT / "dns_data" / "projected"
 
 
 def filter_forcing(
@@ -115,8 +115,17 @@ def filter_ic(ic_dns: NDArray, mesh_les: NDArray, mesh_dns: NDArray) -> NDArray:
     return np.interp(mesh_les, mesh_dns, ic_dns)
 
 
+def nodal_project(
+    fields_dns: NDArray,
+    mesh_les: NDArray,
+    mesh_dns: NDArray,
+) -> NDArray:
+    """Project an array DNS fields onto the LES grid using 1D nodal interpolation."""
+    return np.asarray([np.interp(mesh_les, mesh_dns, field) for field in fields_dns])
+
+
 if __name__ == "__main__":
-    n_nodes_les = 65
+    n_nodes_les = 33
     if FORCING_PATH.exists():
         forcing_dns = np.load(FORCING_PATH)
 
@@ -141,12 +150,15 @@ if __name__ == "__main__":
         print(f"Forcing file not found at {FORCING_PATH}")
 
     if W_FIELD_PATH.exists():
-        ic_dns = np.load(W_FIELD_PATH)[0]
+        w_dns = np.load(W_FIELD_PATH)
+
         mesh_dns = np.linspace(0.0, 2.0, 513)
         mesh_les = np.linspace(0.0, 2.0, n_nodes_les)
 
-        ic_les = filter_ic(ic_dns, mesh_les=mesh_les, mesh_dns=mesh_dns)
+        w_projected = nodal_project(w_dns, mesh_les, mesh_dns)
+        ic_projected = w_projected[0]
 
-        np.save(FILTERED_PATH / f"ic_linear_{n_nodes_les}.npy", ic_les)
+        np.save(FILTERED_PATH / f"w_linear_{n_nodes_les}.npy", w_projected)
+        np.save(FILTERED_PATH / f"ic_linear_{n_nodes_les}.npy", ic_projected)
     else:
         print("no w field")

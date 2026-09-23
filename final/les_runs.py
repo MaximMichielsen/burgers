@@ -8,7 +8,7 @@ from solvers.solver_base import SolverBase, SimulationMode, TauModel
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CURRENT_DIR = Path(__file__).parent.resolve()
-FILTERED_DIR = PROJECT_ROOT / "dns_data" / "filtered"
+FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 
 n_nodes_les = 33
 z_length = 2.0

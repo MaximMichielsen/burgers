@@ -184,7 +184,7 @@ def plot_solutions_from_run_id_animated(
     interval: int = 100,
     repeat: bool = True,
 ) -> FuncAnimation:
-    """Animate SGSP solution vs. the projected (filtered-DNS) reference for run_id."""
+    """Animate SGSP solution vs. the projected (projected-DNS) reference for run_id."""
     sgsp_directory = ROOT / run_id / RESULTS_ROOT
     projection_directory = ROOT / run_id / PROJECTION_ROOT
 
@@ -209,7 +209,7 @@ def plot_solutions_from_run_id_animated(
     sgsp_times = np.array(sgsp_times_list)
     sgsp_solutions = list(sgsp_solutions_list)
 
-    # --- Projected (filtered-DNS) reference ---
+    # --- Projected (projected-DNS) reference ---
     projection_times = np.load(projection_directory / "times.npy")
     projection_solutions = np.load(projection_directory / "solutions_projection.npy")
 

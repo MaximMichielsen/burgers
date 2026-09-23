@@ -100,7 +100,7 @@ def create_velocity_plot_configs(
 
     Loads DNS and projection solutions if paths are available, constructs
     the standard set of LES comparison configs, and appends any optional
-    extra_configs. Configurations with non-existent data paths are filtered out.
+    extra_configs. Configurations with non-existent data paths are projected out.
     """
     if paths.dns_data is None or not paths.dns_data.exists():
         raise ValueError("No viable DNS path found! Cannot plot velocity profile.")
