@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from final.ann_coupling.reference_scheduler import ReferenceSchedule
+from final.ann_coupling.reference_scheduler import ReferenceTrajectory
 from ml.tau_ann import TauANNConfig
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
@@ -23,7 +23,7 @@ class EnvironmentForcingDNS:
         disc_config: DiscretizationConfig,
         ann_config: TauANNConfig,
         master_path: Path,
-        reference_schedule: ReferenceSchedule,
+        reference_schedule: ReferenceTrajectory,
     ) -> None:
         self.problem = problem
         self.disc_config = disc_config
@@ -61,9 +61,8 @@ class EnvironmentForcingDNS:
         self._total_les_steps = 0
         self.total_reward_history.clear()
         self.distance_error_history.clear()
-
+        self.reference_schedule.reset()
         self.running_mean_solution = self.solver.solution.copy()
-
         return self.solver.create_input_stencil()
 
     def step(self, action: NDArray) -> tuple[NDArray, float, bool]:
@@ -81,6 +80,8 @@ class EnvironmentForcingDNS:
 
                 if self.solver.simulation_done:
                     break
+
+            self.reference_schedule.set_step_index(self._total_les_steps)
 
             reward_val = self.compute_reward(action)
             done_flag = (
