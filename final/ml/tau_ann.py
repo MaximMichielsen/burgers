@@ -7,6 +7,7 @@ import torch
 from numpy.typing import NDArray
 from torch import nn, Tensor
 
+from final.ml.hyperparameters import TauANNHyperparameters, TD3Hyperparameters
 from setup.config_discretization import DiscretizationConfig
 from solvers.solver_base import TauModel
 
@@ -29,9 +30,6 @@ class TauANNConfig:
 
     n_local_action_groups: int | None = None
     local_stencil_size: int | None = None
-
-    max_action: float = 1.0
-    min_action: float = (0.0 + 1e-3) / 2
 
     group_map: NDArray = field(init=False, repr=False)
 
@@ -125,12 +123,14 @@ class TauANN(nn.Module):
     def __init__(
         self,
         config: TauANNConfig,
+        hyperparams: TauANNHyperparameters | TD3Hyperparameters,
     ):
         super().__init__()
 
         self.config = config
-        self.max_action = config.max_action
-        self.min_action = config.min_action
+        self.hyperparameters = hyperparams
+        self.max_action = hyperparams.max_action
+        self.min_action = hyperparams.min_action
         self.state_dim = config.state_dimension
         self.action_dim = config.action_dimension
         self.hidden_dim = config.hidden_dimension
@@ -164,6 +164,7 @@ def save_tau_ann(model: TauANN, save_path: Path) -> None:
         {
             "model_state_dict": model.state_dict(),
             "config": model.config,
+            "hyperparameters": model.hyperparameters,
         },
         save_path,
     )
@@ -174,6 +175,7 @@ def load_tau_ann(model_path: Path) -> TauANN:
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
     model = TauANN(
         config=checkpoint["config"],
+        hyperparams=checkpoint["hyperparameters"],
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()

@@ -6,12 +6,16 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from final.ann_coupling.reference_scheduler import ReferenceTrajectory
-from ml_old_old_old.tau_ann import TauANNConfig
+from final.ann_training import TD3Hyperparameters
+from final.ml.reference_scheduler import ReferenceTrajectory
+from final.ml.tau_ann import TauANNConfig, TauANNHyperparameters
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode
 from solvers.solver_coupled import SolverCoupled
+
+
+CRASH_PENALTY = -100
 
 
 class EnvironmentForcingDNS:
@@ -22,19 +26,20 @@ class EnvironmentForcingDNS:
         problem: Problem,
         disc_config: DiscretizationConfig,
         ann_config: TauANNConfig,
+        hyperparameters: TauANNHyperparameters | TD3Hyperparameters,
+        reference_trajectory: ReferenceTrajectory,
         master_path: Path,
-        reference_schedule: ReferenceTrajectory,
     ) -> None:
         self.problem = problem
         self.disc_config = disc_config
         self.ann_config = ann_config
+        self.hp = hyperparameters
         self.master_path = master_path
-        self.reference_schedule = reference_schedule
+        self.reference_trajectory = reference_trajectory
 
         self.solver: SolverCoupled | None = None
         self.running_mean_solution: NDArray | None = None
 
-        # TODO: Move _max_les_steps into DiscretizationConfig
         self._max_les_steps: int = self.disc_config.n_timesteps
         self._total_les_steps: int = 0
 
@@ -61,7 +66,7 @@ class EnvironmentForcingDNS:
         self._total_les_steps = 0
         self.total_reward_history.clear()
         self.distance_error_history.clear()
-        self.reference_schedule.reset()
+        self.reference_trajectory.reset()
         self.running_mean_solution = self.solver.solution.copy()
         return self.solver.create_input_stencil(mean_profile=self.running_mean_solution)
 
@@ -83,7 +88,7 @@ class EnvironmentForcingDNS:
                 if self.solver.simulation_done:
                     break
 
-            self.reference_schedule.set_step_index(self._total_les_steps)
+            self.reference_trajectory.set_step_index(self._total_les_steps)
 
             reward_val = self.compute_reward(action)
             done_flag = (
@@ -101,7 +106,7 @@ class EnvironmentForcingDNS:
 
         except (FloatingPointError, ZeroDivisionError, ArithmeticError):
             # Catch solver divergence, apply soft crash penalty, return sanitized state
-            reward_val = -100.0
+            reward_val = CRASH_PENALTY
             done_flag = True
 
             fallback_state = np.nan_to_num(
@@ -115,28 +120,19 @@ class EnvironmentForcingDNS:
         if self.solver is None or self.running_mean_solution is None:
             raise RuntimeError("Solver or running mean solution is not initialized.")
 
-        # --- Hyperparameters ---
-        smoothing_factor = 0.002
-        burn_in_steps = 300
-        weight_improvement = 1e3
-        weight_absolute_error = 1.0
-        weight_spectral = 1.0
-        weight_action = 0.1
-        gamma = 5.0 / 3.0
-
         # --- 1. EWMA Running Profile Update & Distance Computation ---
         self.running_mean_solution = (
-            1.0 - smoothing_factor
-        ) * self.running_mean_solution + smoothing_factor * self.solver.solution
+            1.0 - self.hp.smoothing_factor
+        ) * self.running_mean_solution + self.hp.smoothing_factor * self.solver.solution
 
-        target_profile = self.reference_schedule.target_profile
+        target_profile = self.reference_trajectory.target_profile
 
         # Retrieve previous raw distance error
         raw_prev_distance_error = (
             self.distance_error_history[-1] if self.distance_error_history else 0.0
         )
 
-        if self._total_les_steps > burn_in_steps:
+        if self._total_les_steps > self.hp.burn_in_steps:
             raw_distance_error = self.compute_distance_error(
                 self.running_mean_solution, target_profile
             )
@@ -150,7 +146,7 @@ class EnvironmentForcingDNS:
         _, spectrum_les = self.solver.compute_energy_spectrum_(self.solver.solution)
         spectrum_k = spectrum_les.astype(np.float64)
 
-        projected_solution_field = self.reference_schedule.projected_solution
+        projected_solution_field = self.reference_trajectory.projected_solution
         _, spectrum_proj = self.solver.compute_energy_spectrum_(
             projected_solution_field
         )
@@ -169,7 +165,7 @@ class EnvironmentForcingDNS:
         norm_factor = np.sum(np.abs(proj_spectrum_k)) + 1e-12
 
         spectral_error = ((spectrum_k - proj_spectrum_k) ** 2) / norm_factor
-        unweighted_spectral_error = (wavenumber_indices**gamma) * spectral_error
+        unweighted_spectral_error = (wavenumber_indices**self.hp.gamma) * spectral_error
         raw_spectral_error = float(np.sum(unweighted_spectral_error))
 
         # --- 3. Action Regularization Metric ---
@@ -183,10 +179,12 @@ class EnvironmentForcingDNS:
         self.action_penalty_history.append(raw_action_deviation)
 
         # --- 5. Apply Reward Weights for TD3 Agent ---
-        reward_improvement = weight_improvement * raw_improvement
-        penalty_absolute_distance = weight_absolute_error * (raw_distance_error**2)
-        penalty_spectral = weight_spectral * raw_spectral_error
-        penalty_action = weight_action * raw_action_deviation
+        reward_improvement = self.hp.weight_improvement * raw_improvement
+        penalty_absolute_distance = self.hp.weight_absolute_error * (
+            raw_distance_error**2
+        )
+        penalty_spectral = self.hp.weight_spectral * raw_spectral_error
+        penalty_action = self.hp.weight_action * raw_action_deviation
 
         # Assemble composite rewards
         total_penalty = penalty_absolute_distance + penalty_spectral + penalty_action

@@ -3,15 +3,11 @@ import torch
 from numpy.typing import NDArray
 from torch import nn, Tensor
 
-from ml_old_old_old.tau_ann import N_HIDDEN_UNITS
-
 
 class TwinQCritic(nn.Module):
     """Twin Q-Networks sized to match the TauANN hidden layer dimension."""
 
-    def __init__(
-        self, state_dim: int, action_dim: int, hidden_dim: int = N_HIDDEN_UNITS
-    ):
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int):
         super().__init__()
 
         input_dim = state_dim + action_dim
