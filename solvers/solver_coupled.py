@@ -17,7 +17,7 @@ import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-from ml_old_old_old.tau_ann import load_tau_ann, TauANN, TauANNConfig, Scope
+from final.ml.tau_ann import TauANNConfig, TauANN, load_tau_ann, Scope
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
@@ -60,7 +60,7 @@ class SolverCoupled(SolverBase):
         self.training_mode = training_mode
         self.ann_config: TauANNConfig = ann_config
 
-        self.n_local_stencil_points = ann_config.n_local_stencil_points
+        self.n_local_stencil_points = ann_config.local_stencil_size
 
         self.n_correction_coefficients = tau_model.output_dimensions
         self.correction_coefficients: NDArray | None = None
@@ -319,7 +319,7 @@ class SolverCoupled(SolverBase):
             # Compute effective total coefficients for 4 local groups
             c_effective = np.clip(
                 c_global + c_residuals,
-                self.ann_config.min_action,
+                self.ann_config.hp.min_action,
                 self.ann_config.max_action,
             )
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from final.ann_training import TD3Hyperparameters
+from final.ml.hyperparameters import TD3Hyperparameters
 from final.ml.reference_scheduler import ReferenceTrajectory
 from final.ml.tau_ann import TauANNConfig, TauANNHyperparameters
 from setup.config_discretization import DiscretizationConfig
@@ -136,8 +136,15 @@ class EnvironmentForcingDNS:
             raw_distance_error = self.compute_distance_error(
                 self.running_mean_solution, target_profile
             )
+            if self._total_les_steps == self.hp.burn_in_steps + 1:
+                raw_prev_distance_error = raw_distance_error
+            else:
+                raw_prev_distance_error = (
+                    self.distance_error_history[-1] if self.distance_error_history else 0.0
+                )
         else:
             raw_distance_error = 0.0
+            raw_prev_distance_error = 0.0
 
         # Raw physical delta improvement (unweighted)
         raw_improvement = raw_prev_distance_error - raw_distance_error
@@ -162,10 +169,11 @@ class EnvironmentForcingDNS:
             raise FloatingPointError("NaN/Inf detected in energy spectrum.")
 
         wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
-        norm_factor = np.sum(np.abs(proj_spectrum_k)) + 1e-12
+        normalized_k = wavenumber_indices / len(spectrum_k)
+        norm_factor = (np.sum(np.abs(proj_spectrum_k)) ** 2) + 1e-12
 
         spectral_error = ((spectrum_k - proj_spectrum_k) ** 2) / norm_factor
-        unweighted_spectral_error = (wavenumber_indices**self.hp.gamma) * spectral_error
+        unweighted_spectral_error = (normalized_k**self.hp.gamma) * spectral_error
         raw_spectral_error = float(np.sum(unweighted_spectral_error))
 
         # --- 3. Action Regularization Metric ---

@@ -1,19 +1,24 @@
 from dataclasses import dataclass
 
+MAX_ACTION = 1.0
+MIN_ACTION = 0.9
+
 
 @dataclass
 class TauANNHyperparameters:
     """Hyperparameters tied directly to the ANN, regardless of training mechanism."""
 
-    max_action: float = 1.0
-    min_action: float = (0.0 + 1e-3) / 2
+    max_action: float = MAX_ACTION
+    min_action: float = MIN_ACTION + 1e-3
 
     smoothing_factor = 0.002
-    burn_in_steps = 300
-    weight_improvement = 1e3
+    burn_in_steps = 100
+
+    weight_improvement = 0.1
     weight_absolute_error = 1.0
-    weight_spectral = 1.0
+    weight_spectral = 1e-4
     weight_action = 0.1
+
     gamma = 5.0 / 3.0
 
 

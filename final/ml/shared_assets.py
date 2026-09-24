@@ -10,11 +10,13 @@ class TwinQCritic(nn.Module):
     def __init__(self, state_dim: int, action_dim: int, hidden_dim: int):
         super().__init__()
 
-        input_dim = state_dim + action_dim
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.hidden_dim = hidden_dim
 
         # Q1 architecture
         self.q1_net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
+            nn.Linear(state_dim + action_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -23,7 +25,7 @@ class TwinQCritic(nn.Module):
 
         # Q2 architecture
         self.q2_net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
+            nn.Linear(state_dim + action_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),

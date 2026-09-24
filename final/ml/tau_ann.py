@@ -7,7 +7,12 @@ import torch
 from numpy.typing import NDArray
 from torch import nn, Tensor
 
-from final.ml.hyperparameters import TauANNHyperparameters, TD3Hyperparameters
+from final.ml.hyperparameters import (
+    TauANNHyperparameters,
+    TD3Hyperparameters,
+    MAX_ACTION,
+    MIN_ACTION,
+)
 from setup.config_discretization import DiscretizationConfig
 from solvers.solver_base import TauModel
 
@@ -28,10 +33,15 @@ class TauANNConfig:
     output_scope: Scope
     input_scope: Scope
 
+    max_action: float = MAX_ACTION
+    min_action: float = MIN_ACTION
+
     n_local_action_groups: int | None = None
     local_stencil_size: int | None = None
 
     group_map: NDArray = field(init=False, repr=False)
+
+    n_training_episodes: int = 1
 
     @property
     def n_elements(self) -> int:
