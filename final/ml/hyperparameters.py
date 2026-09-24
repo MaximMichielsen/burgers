@@ -34,3 +34,4 @@ class TD3Hyperparameters(TauANNHyperparameters):
     batch_size: int = 64
     expl_noise: float = 0.1
     replay_buffer_max_size: int = int(1e5)
+    stochastic_timesteps = 100

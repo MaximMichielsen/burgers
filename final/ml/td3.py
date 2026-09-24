@@ -7,6 +7,7 @@ import torch
 from numpy.typing import NDArray
 import torch.nn.functional as functional
 
+from final.ml.environment import EnvironmentForcingDNS
 from final.ml.hyperparameters import TD3Hyperparameters
 from final.ml.reference_scheduler import ReferenceTrajectory
 from final.ml.shared_assets import TwinQCritic, ReplayBuffer
@@ -18,9 +19,9 @@ from setup.problems import Problem
 class TD3Agent:
     """Twin Delayed Deep Deterministic Policy Gradient Agent."""
 
-    def __init__(self,
-                 ann_config: TauANNConfig,
-                 hp: TD3Hyperparameters = TD3Hyperparameters()):
+    def __init__(
+        self, ann_config: TauANNConfig, hp: TD3Hyperparameters = TD3Hyperparameters()
+    ):
 
         self.hp = hp
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -122,19 +123,21 @@ class TD3Agent:
 class TD3Trainer:
     """Training wrapper for the TD3 training pipeline."""
 
-    def __init__(self,
-                 problem:Problem,
-                 disc_config:DiscretizationConfig,
-                 ann_config:TauANNConfig,
-                 master_path: Path,
-                 reference_trajectory: ReferenceTrajectory,
-                 hp: TD3Hyperparameters = TD3Hyperparameters()):
+    def __init__(
+        self,
+        problem: Problem,
+        disc_config: DiscretizationConfig,
+        ann_config: TauANNConfig,
+        master_path: Path,
+        reference_trajectory: ReferenceTrajectory,
+        hp: TD3Hyperparameters = TD3Hyperparameters(),
+    ):
 
         self.problem = problem
         self.disc_config = disc_config
         self.ann_config = ann_config
         self.master_path = master_path
-        self.proj_ref_schedule = reference_trajectory
+        self.reference_trajectory = reference_trajectory
         self.hp = hp
 
         self.baseline_reward: float | None = None
@@ -144,3 +147,58 @@ class TD3Trainer:
         self.best_historical_reward = -np.inf
         self.best_action_sequence: list = []
 
+    def run_training(self) -> TauANN:
+        """Main training loop connecting the environment and TD3 agent."""
+
+        # 1. Initialize environment
+        env = EnvironmentForcingDNS(
+            problem=self.problem,
+            disc_config=self.disc_config,
+            ann_config=self.ann_config,
+            hyperparameters=self.hp,
+            reference_trajectory=self.reference_trajectory,
+            master_path=self.master_path,
+        )
+
+        # Instantiate agent & replay buffer
+        agent = TD3Agent(
+            ann_config=self.ann_config,
+            hp=self.hp,
+        )
+
+        replay_buffer = ReplayBuffer(
+            state_dim=self.ann_config.state_dimension,
+            action_dim=self.ann_config.action_dimension,
+            max_size=self.hp.replay_buffer_max_size,
+        )
+
+        print(
+            f"Architecture Actor: {agent.actor.state_dimension} -> {agent.actor.hidden_dimension} x 3 -> {agent.actor.action_dimension}"
+        )
+        print(
+            f"Architecture Critic: {agent.critic.state_dimension} -> {agent.critic.hidden_dimension} x 3 -> {agent.critic.action_dimension}"
+        )
+
+        total_steps = 0
+        for episode in range(self.hp.total_episodes):
+            state = env.reset()
+            episode_reward = 0.0
+            done = False
+            episode_steps = 0
+            actions = []
+
+            while not done:
+                total_steps += 1
+                episode_steps += 1
+
+                if total_steps < self.hp.stochastic_timesteps:
+                    action = np.random.uniform(
+                        self.hp.min_action,
+                        self.hp.max_action,
+                        size=self.ann_config.action_dimension,
+                    )
+
+                else:
+                    action = agent.select_action(state, noise_std=self.hp.expl_noise)
+
+            actions.append(action)
