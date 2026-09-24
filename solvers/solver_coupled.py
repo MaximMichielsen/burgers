@@ -16,6 +16,7 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
+from scipy.ndimage import gaussian_filter1d, uniform_filter1d
 
 from final.ml.tau_ann import TauANNConfig, TauANN, load_tau_ann, Scope
 from setup.config_discretization import DiscretizationConfig
@@ -47,7 +48,6 @@ class SolverCoupled(SolverBase):
             master_path,
             tau_model,
             snapshot_factor,
-            t_start,
         )
 
         self._COEFFICIENT_NAMES: dict[str, tuple[str, ...]] = {
@@ -80,15 +80,12 @@ class SolverCoupled(SolverBase):
         self._n_wavenumber_bins: int = (self.n_nodes + 1) // 2
 
     def advance_time_step(self) -> None:
-        """Advance the solution by one time step: U^{n+1} ← U^n.
-
-        Previous solutions are stored for BDF2 time-marching."""
+        """Advance the solution by one time step: U^{n+1} ← U^n."""
         self.resolve_current_forcing()
 
         if self.prescribed_action_trajectory is not None:
             action = self.prescribed_action_trajectory[self.current_time_step]
             self.correction_coefficients = np.asarray(action, dtype=np.float64)
-
         elif not self.training_mode:
             self.correction_coefficients = self.get_ann_coefficients()
 
@@ -96,10 +93,26 @@ class SolverCoupled(SolverBase):
         self.solution_previous = self.solution
         self.solution = new_solution
 
+        # 1. ALWAYS extract state snapshot so calculate_mean_profile() has data
+        self._extract_snapshot()
+
         self.energy_history.append(self.compute_energy_(self.solution))
         self.dissipation_history.append(self.compute_dissipation_(self.solution))
         self.correction_coefficients_history.append(self.correction_coefficients)
+
         self.time += self.dt
+        self.time_elapsed += self.dt
+
+        # 2. Compute mean profile using populated snapshots
+        if int(self.time_elapsed) > int(self.prev_elapsed):
+            self.mean_solution = self.calculate_mean_profile()
+            self.write_mean_solution_to_csv()
+
+        self.prev_elapsed = self.time_elapsed
+        self.current_time_step += 1
+
+        if self.time_elapsed >= self.domain_timespan:
+            self.simulation_done = True
 
     def get_ann_coefficients(self) -> NDArray:
         """Call ANN and receive correction coefficients."""
@@ -472,9 +485,11 @@ class SolverCoupled(SolverBase):
         history_time: NDArray,
         history_coefficients: NDArray,
         style: str = "lines",
+        ma_window: int = 50,
+        heatmap_bins: int = 500,
         show_plot: bool = False,
     ) -> None:
-        """Plots the temporal evolution of coefficients over time."""
+        """Plots the temporal evolution of coefficients over time with boundary-aware smoothing."""
         if style not in ("lines", "heatmap", "both"):
             raise ValueError(
                 f"Invalid style: {style!r}. Choose 'lines', 'heatmap', or 'both'."
@@ -512,15 +527,41 @@ class SolverCoupled(SolverBase):
                         is_global = (
                             self.ann_config.output_scope == Scope.HYBRID and ch == 0
                         )
-                        ax.plot(
+                        raw_signal = history_coefficients[:, ch, c_idx]
+
+                        # 1. Plot raw signal transparently in background
+                        line_raw = ax.plot(
                             history_time,
-                            history_coefficients[:, ch, c_idx],
-                            label=group_labels[ch],
+                            raw_signal,
                             linestyle="--" if is_global else "-",
                             color="black" if is_global else None,
-                            linewidth=2.2 if is_global else 1.8,
-                            zorder=5 if is_global else 3,
+                            linewidth=0.8,
+                            alpha=0.25,
+                            zorder=2,
                         )
+
+                        # 2. Compute boundary-safe moving average (mode='nearest' prevents 0-dips)
+                        if ma_window > 1 and len(raw_signal) >= ma_window:
+                            smoothed_signal = uniform_filter1d(
+                                raw_signal, size=ma_window, mode="nearest"
+                            )
+                            line_color = line_raw[0].get_color()
+
+                            ax.plot(
+                                history_time,
+                                smoothed_signal,
+                                label=f"{group_labels[ch]} (MA)"
+                                if c_idx == 0
+                                else None,
+                                linestyle="--" if is_global else "-",
+                                color=line_color,
+                                linewidth=2.2 if is_global else 1.8,
+                                zorder=5 if is_global else 3,
+                            )
+                        else:
+                            line_raw[0].set_alpha(1.0)
+                            line_raw[0].set_label(group_labels[ch])
+
                     ax.set_title(name, fontsize=11, fontweight="bold")
                     ax.set_ylabel("Coefficient Value")
                     ax.grid(True, linestyle=":", alpha=0.6)
@@ -552,12 +593,26 @@ class SolverCoupled(SolverBase):
 
                 for c_idx, name in enumerate(param_names):
                     ax = axes_list[c_idx]
-                    data = history_coefficients[
-                        :, :, c_idx
-                    ].T  # Shape: (total_channels, n_steps)
+                    raw_data = history_coefficients[:, :, c_idx].T  # (channels, steps)
+
+                    # 3. Downsample dense time dimension into temporal bins using average pooling
+                    if n_steps > heatmap_bins:
+                        bin_size = n_steps // heatmap_bins
+                        trimmed_steps = bin_size * heatmap_bins
+                        data_reshaped = raw_data[:, :trimmed_steps].reshape(
+                            total_channels, heatmap_bins, bin_size
+                        )
+                        binned_data = data_reshaped.mean(axis=2)
+                    else:
+                        binned_data = raw_data
+
+                    # 4. Apply 1D temporal Gaussian smoothing across time axis
+                    smoothed_heatmap = gaussian_filter1d(
+                        binned_data, sigma=1.5, axis=1, mode="nearest"
+                    )
 
                     im = ax.imshow(
-                        data,
+                        smoothed_heatmap,
                         aspect="auto",
                         origin="lower",
                         extent=[
@@ -567,6 +622,7 @@ class SolverCoupled(SolverBase):
                             total_channels - 0.5,
                         ],
                         cmap="magma",
+                        interpolation="none",  # Clean pixel rendering post-downsampling
                         vmin=self.ann_config.min_action,
                         vmax=self.ann_config.max_action,
                     )
@@ -575,7 +631,6 @@ class SolverCoupled(SolverBase):
                     ax.set_yticklabels(group_labels)
 
                     for g_line in range(total_channels - 1):
-                        # Draw a distinct boundary line above the Global Base row
                         line_color = (
                             "cyan"
                             if (
@@ -604,12 +659,10 @@ class SolverCoupled(SolverBase):
                     fontweight="bold",
                 )
 
-            save_path = (
-                self.master_path
-                / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{current_style}.png"
-            )
+            filename = f"post_plotting_{self.ann_config.output_scope.value}_corrections_{current_style}.png"
+            save_path = self.master_path / filename
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
-            print(f"Evolution plot ({current_style}) saved to: {save_path}")
+            print(f"  * Saved evolution plot ({current_style:<7s}) -> {filename}")
 
             if show_plot:
                 plt.show()

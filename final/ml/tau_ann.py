@@ -33,6 +33,8 @@ class TauANNConfig:
     output_scope: Scope
     input_scope: Scope
 
+    n_training_episodes: int
+
     max_action: float = MAX_ACTION
     min_action: float = MIN_ACTION
 
@@ -40,8 +42,6 @@ class TauANNConfig:
     local_stencil_size: int | None = None
 
     group_map: NDArray = field(init=False, repr=False)
-
-    n_training_episodes: int = 1
 
     @property
     def n_elements(self) -> int:

@@ -19,7 +19,7 @@ RUN_DIR = PROJECT_ROOT / "final" / "solver_data" / "training_demo"
 n_nodes_les = 65
 n_nodes_dns = 513
 z_length = 2.0
-dt = 1e-4
+dt = 1e-3
 
 t_start = 308.0101
 t_end = 309.0100
@@ -49,6 +49,7 @@ problem = Problem(
     forcing_is_steady=False,
     boundary_condition_type="fixed",
     boundary_condition_value=0.0,
+    t_start=t_start,
 )
 
 disc_config = DiscretizationConfig(
@@ -67,6 +68,7 @@ ann_config = TauANNConfig(
     n_skip_steps=1,
     output_scope=Scope.GLOBAL,
     input_scope=Scope.GLOBAL,
+    n_training_episodes=2,
 )
 
 reference_trajectory = ReferenceTrajectory(

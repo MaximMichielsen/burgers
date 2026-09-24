@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 MAX_ACTION = 1.0
-MIN_ACTION = 0.9
+MIN_ACTION = 0.5
 
 
 @dataclass
@@ -14,10 +14,10 @@ class TauANNHyperparameters:
     smoothing_factor = 0.002
     burn_in_steps = 100
 
-    weight_improvement = 0.1
-    weight_absolute_error = 1.0
-    weight_spectral = 1e-4
-    weight_action = 0.1
+    weight_improvement = 100
+    weight_absolute_error = 1e-3
+    weight_spectral = 1e-3
+    weight_action = 1.0
 
     gamma = 5.0 / 3.0
 
@@ -35,7 +35,6 @@ class TD3Hyperparameters(TauANNHyperparameters):
     policy_freq: int = 2
 
     # Training / Environment Setup Params
-    total_episodes: int = 100
     batch_size: int = 64
     expl_noise: float = 0.1
     replay_buffer_max_size: int = int(1e5)

@@ -30,6 +30,7 @@ class Problem:
     boundary_condition_value: float | int | tuple[float | int, float | int] | None = (
         None
     )
+    t_start: float = 0.0
 
     @property
     def viscosity(self) -> float:

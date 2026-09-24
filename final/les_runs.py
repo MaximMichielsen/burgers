@@ -40,6 +40,7 @@ problem = Problem(
     forcing_is_steady=False,
     boundary_condition_type="fixed",
     boundary_condition_value=0.0,
+    t_start=t_start,
 )
 
 disc_config = DiscretizationConfig(
@@ -60,7 +61,6 @@ solver_les = SolverBase(
     / "solver_data"
     / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}",
     tau_model=tau_model,
-    t_start=t_start,
 )
 solver_les.run_simulation()
 solver_les.post_plotting()

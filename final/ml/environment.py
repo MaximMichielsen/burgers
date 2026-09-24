@@ -43,11 +43,20 @@ class EnvironmentForcingDNS:
         self._max_les_steps: int = self.disc_config.n_timesteps
         self._total_les_steps: int = 0
 
-        self.total_reward_history: list[float] = []
-        self.distance_improvement_history: list[float] = []
-        self.distance_error_history: list[float] = []
-        self.spectral_penalty_history: list[float] = []
-        self.action_penalty_history: list[float] = []
+        self.distance_history: list[float] = []
+
+        self.total_reward_history_unscaled: list[float] = []
+        self.total_reward_history_scaled: list[float] = []
+
+        self.distance_improvement_history_raw: list[float] = []
+        self.distance_error_history_raw: list[float] = []
+        self.spectral_penalty_history_raw: list[float] = []
+        self.action_penalty_history_raw: list[float] = []
+
+        self.distance_improvement_history_weighted: list[float] = []
+        self.distance_error_history_weighted: list[float] = []
+        self.spectral_penalty_history_weighted: list[float] = []
+        self.action_penalty_history_weighted: list[float] = []
 
     def reset(self) -> NDArray:
         """Instantiate a fresh solver and return initial state s₀."""
@@ -64,8 +73,26 @@ class EnvironmentForcingDNS:
             ann_path=None,
         )
         self._total_les_steps = 0
-        self.total_reward_history.clear()
-        self.distance_error_history.clear()
+
+        # --- Clear State Tracking Histories ---
+        self.distance_history.clear()
+
+        # --- Clear Reward Totals ---
+        self.total_reward_history_unscaled.clear()
+        self.total_reward_history_scaled.clear()
+
+        # --- Clear Raw Diagnostic Histories ---
+        self.distance_improvement_history_raw.clear()
+        self.distance_error_history_raw.clear()
+        self.spectral_penalty_history_raw.clear()
+        self.action_penalty_history_raw.clear()
+
+        # --- Clear Weighted Diagnostic Histories ---
+        self.distance_improvement_history_weighted.clear()
+        self.distance_error_history_weighted.clear()
+        self.spectral_penalty_history_weighted.clear()
+        self.action_penalty_history_weighted.clear()
+
         self.reference_trajectory.reset()
         self.running_mean_solution = self.solver.solution.copy()
         return self.solver.create_input_stencil(mean_profile=self.running_mean_solution)
@@ -112,7 +139,7 @@ class EnvironmentForcingDNS:
             fallback_state = np.nan_to_num(
                 last_valid_state, nan=0.0, posinf=1.0, neginf=-1.0
             )
-            self.total_reward_history.append(reward_val)
+            self.total_reward_history_unscaled.append(reward_val)
             return fallback_state, reward_val, done_flag
 
     def compute_reward(self, action: NDArray) -> float:
@@ -127,27 +154,24 @@ class EnvironmentForcingDNS:
 
         target_profile = self.reference_trajectory.target_profile
 
-        # Retrieve previous raw distance error
-        raw_prev_distance_error = (
-            self.distance_error_history[-1] if self.distance_error_history else 0.0
-        )
-
         if self._total_les_steps > self.hp.burn_in_steps:
-            raw_distance_error = self.compute_distance_error(
+            distance = self.compute_distance_error(
                 self.running_mean_solution, target_profile
             )
             if self._total_les_steps == self.hp.burn_in_steps + 1:
-                raw_prev_distance_error = raw_distance_error
+                prev_distance = distance
             else:
-                raw_prev_distance_error = (
-                    self.distance_error_history[-1] if self.distance_error_history else 0.0
+                prev_distance = (
+                    self.distance_history[-1] if self.distance_history else 0.0
                 )
         else:
-            raw_distance_error = 0.0
-            raw_prev_distance_error = 0.0
+            distance = 0.0
+            prev_distance = 0.0
 
         # Raw physical delta improvement (unweighted)
-        raw_improvement = raw_prev_distance_error - raw_distance_error
+        raw_improvement = prev_distance - distance
+
+        raw_distance_error = distance**2
 
         # --- 2. Instantaneous Energy Spectrum Metrics ---
         _, spectrum_les = self.solver.compute_energy_spectrum_(self.solver.solution)
@@ -181,16 +205,15 @@ class EnvironmentForcingDNS:
         raw_action_deviation = self.compute_distance_error(action, a_ref)
 
         # --- 4. Log Unweighted Physical Metrics (for Diagnostics / Plots) ---
-        self.distance_error_history.append(raw_distance_error)
-        self.distance_improvement_history.append(raw_improvement)
-        self.spectral_penalty_history.append(raw_spectral_error)
-        self.action_penalty_history.append(raw_action_deviation)
+        self.distance_history.append(distance)
+        self.distance_improvement_history_raw.append(raw_improvement)
+        self.distance_error_history_raw.append(raw_distance_error)
+        self.spectral_penalty_history_raw.append(raw_spectral_error)
+        self.action_penalty_history_raw.append(raw_action_deviation)
 
         # --- 5. Apply Reward Weights for TD3 Agent ---
         reward_improvement = self.hp.weight_improvement * raw_improvement
-        penalty_absolute_distance = self.hp.weight_absolute_error * (
-            raw_distance_error**2
-        )
+        penalty_absolute_distance = self.hp.weight_absolute_error * (distance**2)
         penalty_spectral = self.hp.weight_spectral * raw_spectral_error
         penalty_action = self.hp.weight_action * raw_action_deviation
 
@@ -200,7 +223,15 @@ class EnvironmentForcingDNS:
 
         # Scaled reward for policy backpropagation
         scaled_reward = reward_improvement - np.log1p(total_penalty)
-        self.total_reward_history.append(reward_total)
+
+        # --- 6. Log Weighted Physical Metrics (for Diagnostics / Plots) ---
+        self.distance_improvement_history_weighted.append(reward_improvement)
+        self.distance_error_history_weighted.append(penalty_absolute_distance)
+        self.spectral_penalty_history_weighted.append(penalty_spectral)
+        self.action_penalty_history_weighted.append(penalty_action)
+
+        self.total_reward_history_unscaled.append(reward_total)
+        self.total_reward_history_scaled.append(scaled_reward)
 
         return float(scaled_reward)
 

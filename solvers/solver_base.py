@@ -87,7 +87,6 @@ class SolverBase:
         master_path: Path,
         tau_model: TauModel | None = None,
         snapshot_factor: int = 1,
-        t_start: float = 0.0,
     ) -> None:
 
         try:
@@ -135,8 +134,8 @@ class SolverBase:
         self.convergence_tol_residual = TOLERANCE_UPDATE
 
         # time
-        self.t_start = t_start
-        self.time: float = t_start
+        self.t_start = problem.t_start
+        self.time: float = problem.t_start
         self.time_elapsed: float = 0.0
         self.prev_elapsed = 0.0
         self.simulation_done: bool = False
@@ -1095,9 +1094,8 @@ class SolverBase:
             dpi=300,
             bbox_inches="tight",
         )
-        print(
-            f"Post-simulation plot saved to: {self.master_path / f'post_plotting_{self.simulation_mode}.png'}"
-        )
+        filename = f"post_plotting_{self.simulation_mode}.png"
+        print(f"  * Saved post-simulation plot        -> {filename}")
         if show_plot:
             plt.show()
         else:
