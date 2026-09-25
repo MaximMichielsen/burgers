@@ -1,9 +1,2 @@
-/runs/
-/data/
-/test_suite/
-/dns_cache/
-/execution/dns_cache/
-/execution/runs/
-__pycache__/
 /dns_data/
-/final/solver_data/
+/solver_data/

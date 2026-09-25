@@ -18,14 +18,14 @@ from numpy.typing import NDArray
 matplotlib.use("TkAgg")
 
 # Project Directories
-PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 PARSED_DATA_DIR = PROJECT_ROOT / "dns_data" / "curated"
-DAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_dat"
-STAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_stat"
+DAT_PARSED_DIR = PARSED_DATA_DIR / "dat"
+STAT_PARSED_DIR = PARSED_DATA_DIR / "stat"
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 
-W_FIELD_PATH = DAT_PARSED_DIR / "w_field.npy"
-FORCING_PATH = DAT_PARSED_DIR / "f_forcing.npy"
+W_FIELD_PATH = DAT_PARSED_DIR / "w.npy"
+FORCING_PATH = DAT_PARSED_DIR / "f.npy"
 
 
 def animate_forcing_comparison(
@@ -239,7 +239,7 @@ def plot_mean_statistics(
         Timestamps for statistical frames (N_frames,).
     w_mean_data : NDArray
         Spatial mean profiles across time (N_frames, N_nodes).
-    field_title : str, default=r"Mean Velocity"
+    field_title : str, default="Mean Velocity"
         Latex title formatted string for headers.
     """
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), dpi=120)
@@ -284,7 +284,7 @@ def main():
     z_dns = np.linspace(0.0, 2.0, n_dns_nodes)  # Matches domain z ∈ [0, 2]
 
     # 2. Search for saved L2 and H10 projected arrays
-    les_resolution = 33
+    les_resolution = 17
     l2_file = FILTERED_DIR / f"forcing_l2_{les_resolution}.npy"
     h10_file = FILTERED_DIR / f"forcing_h10_{les_resolution}.npy"
 
@@ -329,8 +329,8 @@ def main():
     # 4. Plot Mean Velocity Statistics after Animation
     print("=== Plotting Velocity Mean Statistics <w> ===")
 
-    w_stat_path = STAT_PARSED_DIR / "stat_mean_w.npy"
-    w_dat_path = DAT_PARSED_DIR / "w_field.npy"
+    w_stat_path = STAT_PARSED_DIR / "mean_w.npy"
+    w_dat_path = DAT_PARSED_DIR / "w.npy"
 
     if w_stat_path.exists():
         w_data = np.load(w_stat_path)
@@ -346,7 +346,7 @@ def main():
     sample_indices = np.arange(len(w_data))
     w_sampled_profiles = w_data[sample_indices]
 
-    time_path = STAT_PARSED_DIR / "t_stat.npy"
+    time_path = STAT_PARSED_DIR / "times.npy"
     if time_path.exists():
         stat_times = np.load(time_path)[sample_indices]
     else:

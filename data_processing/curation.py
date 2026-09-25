@@ -3,6 +3,7 @@ File to read DNS data (.crd, .dat, .stat).
 Parses, saves binary files/metadata, and visualizes mesh, solution evolution, and statistics.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -14,15 +15,12 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 RAW_DATA_DIR = PROJECT_ROOT / "dns_data" / "raw"
 PARSED_DATA_DIR = PROJECT_ROOT / "dns_data" / "curated"
-DAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_dat"
-STAT_PARSED_DIR = PARSED_DATA_DIR / "parsed_stat"
+DAT_PARSED_DIR = PARSED_DATA_DIR / "dat"
+STAT_PARSED_DIR = PARSED_DATA_DIR / "stat"
 
 CRD_PATH = RAW_DATA_DIR / "burgers_1D.crd"
 DAT_PATH = RAW_DATA_DIR / "burgers_1D.dat"
 STAT_PATH = RAW_DATA_DIR / "burgers_1D.stat"
-
-
-# TODO: rename saving path files of the reynolds terms to actually reflect the reynolds stuff, not var!
 
 
 # Data Parsers
@@ -58,7 +56,7 @@ def read_crd_file(file_path: Path) -> tuple[dict, NDArray]:
     return metadata, np.array(coordinates)
 
 
-def parse_dns_forcing_file(
+def parse_dat_file(
     file_path: Path,
 ) -> tuple[NDArray, NDArray, NDArray, NDArray, dict]:
     """
@@ -189,3 +187,49 @@ def parse_stat_file(file_path: Path):
         np.array(mean_fz_list),
         np.array(mean_reynolds_fz_list),
     )
+
+
+if __name__ == "__main__":
+    # Define directories
+    DAT_PARSED_DIR = PARSED_DATA_DIR / "dat"
+    STAT_PARSED_DIR = PARSED_DATA_DIR / "stat"
+
+    # Key schemas matching return tuples
+    DAT_KEYS = ("times", "w", "f", "dt", "metadata_dat")
+    STAT_KEYS = (
+        "times",
+        "steps",
+        "samples",
+        "mean_w",
+        "mean_reynolds_w",
+        "mean_fz",
+        "mean_reynolds_fz",
+    )
+
+    # Extract data directly from function calls
+    dat_data = dict(zip(DAT_KEYS, parse_dat_file(DAT_PATH)))
+    stat_data = dict(zip(STAT_KEYS, parse_stat_file(STAT_PATH)))
+
+    # Pop metadata out of the dict so it isn't saved as a .npy array
+    metadata = dat_data.pop("metadata_dat", None)
+
+    # Save metadata as a text file (handles str, dict, or standard text)
+    if metadata is not None:
+        DAT_PARSED_DIR.mkdir(parents=True, exist_ok=True)
+        meta_path = DAT_PARSED_DIR / "metadata_dat.txt"
+
+        if isinstance(metadata, dict):
+            # Save nicely formatted JSON if metadata is a dictionary
+            meta_path.write_text(json.dumps(metadata, indent=4))
+        else:
+            # Save as raw string otherwise
+            meta_path.write_text(str(metadata))
+
+    # Save remaining numeric arrays to .npy
+    for directory, data_dict in [
+        (DAT_PARSED_DIR, dat_data),
+        (STAT_PARSED_DIR, stat_data),
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+        for key, array in data_dict.items():
+            np.save(directory / f"{key}.npy", array)

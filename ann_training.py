@@ -2,9 +2,6 @@ from pathlib import Path
 
 import numpy as np
 
-from final.ml.reference_scheduler import ReferenceTrajectory
-from final.ml.tau_ann import TauANNConfig, Scope
-from final.ml.td3 import TD3Trainer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, TauModel

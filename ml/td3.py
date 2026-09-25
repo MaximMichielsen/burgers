@@ -157,7 +157,9 @@ class TD3Trainer:
     def print_section(self, title: str, width: int = 70) -> None:
         print(f"\n+- {title} " + "-" * (width - len(title) - 3) + "+")
 
-    def print_row(self, label: str, value: Any, width: int = 70, include_brackets: bool = True) -> None:
+    def print_row(
+        self, label: str, value: Any, width: int = 70, include_brackets: bool = True
+    ) -> None:
         val_str = str(value)
         # 28 chars label + 3 chars ': ' + 36 chars value = 67 content chars (+ 3 border chars = 70 total)
         if include_brackets:
@@ -175,7 +177,7 @@ class TD3Trainer:
 
         w = 70
 
-        self.print_row("Master Path", self.master_path, include_brackets= False)
+        self.print_row("Master Path", self.master_path, include_brackets=False)
 
         # 1. Neural Network Architectures
         self.print_section("Neural Network Architectures", w)
@@ -216,7 +218,9 @@ class TD3Trainer:
         if hasattr(self.ann_config, "output_scope") and str(
             self.ann_config.output_scope
         ) in ("Scope.HYBRID", "Scope.LOCAL"):
-            self.print_row("Local Action Groups", self.ann_config.n_local_action_groups, w)
+            self.print_row(
+                "Local Action Groups", self.ann_config.n_local_action_groups, w
+            )
             self.print_row("Local Stencil Size", self.ann_config.local_stencil_size, w)
 
         self.print_footer(w)
@@ -402,7 +406,9 @@ class TD3Trainer:
             self.print_title("Training Summary")
 
             self.print_section("Overall Execution")
-            self.print_row("Total Episodes Completed", self.ann_config.n_training_episodes)
+            self.print_row(
+                "Total Episodes Completed", self.ann_config.n_training_episodes
+            )
             self.print_row("Total Steps Simulated", total_steps)
             self.print_row("Total Elapsed Time", f"{total_duration:.2f}s")
             self.print_row(
@@ -419,8 +425,13 @@ class TD3Trainer:
             self.print_footer()
 
             self.print_section("Reward Improvement Metrics")
-            self.print_row("Initial -> Best Delta", f"{raw_delta_best:+.4f} ({pct_imp_best:+.2f}%)")
-            self.print_row("Initial -> Final Delta", f"{raw_delta_final:+.4f} ({pct_imp_final:+.2f}%)")
+            self.print_row(
+                "Initial -> Best Delta", f"{raw_delta_best:+.4f} ({pct_imp_best:+.2f}%)"
+            )
+            self.print_row(
+                "Initial -> Final Delta",
+                f"{raw_delta_final:+.4f} ({pct_imp_final:+.2f}%)",
+            )
             self.print_footer()
 
             assert self.ann_config.ann_path is not None
