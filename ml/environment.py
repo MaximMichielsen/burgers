@@ -6,9 +6,8 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from final.ml.hyperparameters import TD3Hyperparameters
-from final.ml.reference_scheduler import ReferenceTrajectory
-from final.ml.tau_ann import TauANNConfig, TauANNHyperparameters
+from ml.reference_scheduler import ReferenceTrajectory
+from ml.tau_ann import TauANNConfig, TauANNHyperparameters, TD3Hyperparameters
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode
@@ -61,16 +60,16 @@ class EnvironmentForcingDNS:
     def reset(self) -> NDArray:
         """Instantiate a fresh solver and return initial state s₀."""
         self.solver = SolverCoupled(
-            training_mode=True,
             problem=self.problem,
             disc_config=dataclasses.replace(
                 self.disc_config, suppress_file_logging=True
             ),
-            ann_config=self.ann_config,
+            ann_config=dataclasses.replace(
+                self.ann_config, training_mode=True, ann_path=None,
+            ),
             master_path=self.master_path,
             simulation_mode=SimulationMode.TAU_BASED,
             tau_model=self.ann_config.tau_model,
-            ann_path=None,
         )
         self._total_les_steps = 0
 

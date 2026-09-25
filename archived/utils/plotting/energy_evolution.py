@@ -9,14 +9,14 @@ from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
 from numpy.typing import NDArray
 
-from utils.diagnostics import (
+from archived.utils.diagnostics import (
     compute_energy,
     compute_dissipation,
     compute_energy_spectrum,
 )
-from utils.io_utils import read_data
-from utils.pipeline_utils import RunPaths
-from utils.plotting.configs import PlotConfig, plotting_configs
+from archived.io_utils import read_data
+from archived.utils.pipeline_utils import RunPaths
+from archived.utils.plotting.configs import PlotConfig, plotting_configs
 
 
 # ---------------------------------------------------------------------------

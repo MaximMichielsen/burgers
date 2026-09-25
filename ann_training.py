@@ -2,24 +2,30 @@ from pathlib import Path
 
 import numpy as np
 
+from ml.reference_scheduler import ReferenceTrajectory
+from ml.tau_ann import Scope, TauANNConfig
+from ml.td3 import TD3Trainer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, TauModel
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CURRENT_DIR = Path(__file__).parent.resolve()
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
-TRAINING_DIR = PROJECT_ROOT / "dns_data" / "training" / "training"
-RUN_DIR = PROJECT_ROOT / "final" / "solver_data" / "training_demo"
+TRAINING_DIR = PROJECT_ROOT / "dns_data" / "training"
 
-n_nodes_les = 65
+
+n_nodes_les = 33
 n_nodes_dns = 513
 z_length = 2.0
 dt = 1e-3
 
 t_start = 308.0101
 t_end = 309.0100
+
+n_episodes = 2
+
+RUN_DIR = PROJECT_ROOT / "solver_data" / f"run_e{n_episodes}"
 
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS
@@ -33,8 +39,10 @@ if t_end is not None:
     timespan = t_end - t_start
 
 ann_path = RUN_DIR / "ann_model.pt"
-target_profile_path = TRAINING_DIR / "stat_mean_w.npy"
-w_field_path = TRAINING_DIR / f"w_field_{n_nodes_les}.npy"
+target_profile_path = TRAINING_DIR / f"n{n_nodes_les}" / "training" / "stat_mean_w.npy"
+w_field_path = (
+    TRAINING_DIR / f"n{n_nodes_les}" / "training" / f"w_field_{n_nodes_les}.npy"
+)
 
 problem = Problem(
     name="tcf_1d",
@@ -65,7 +73,8 @@ ann_config = TauANNConfig(
     n_skip_steps=1,
     output_scope=Scope.GLOBAL,
     input_scope=Scope.GLOBAL,
-    n_training_episodes=2,
+    n_training_episodes=n_episodes,
+    training_mode=True,
 )
 
 reference_trajectory = ReferenceTrajectory(
@@ -84,3 +93,4 @@ trainer = TD3Trainer(
 )
 
 trainer.run_training()
+trainer.plot_reward_evolution()

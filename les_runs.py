@@ -6,11 +6,11 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CURRENT_DIR = Path(__file__).parent.resolve()
+PROJECT_ROOT = Path(__file__).resolve().parent
+
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 
-n_nodes_les = 33
+n_nodes_les = 65
 z_length = 2.0
 dt = 1e-4
 t_start = 308.0101
@@ -45,19 +45,19 @@ problem = Problem(
 
 disc_config = DiscretizationConfig(
     n_nodes_les=n_nodes_les,
+    n_nodes_dns=513,
+    domain_timespan=1,
     temporal_refinement=1,
     courant_les=1,
     domain_length=z_length,
+    set_dt_les=dt,
 )
-disc_config.dt_les = dt
-disc_config.n_nodes_dns = 513
 
 solver_les = SolverBase(
     problem=problem,
     disc_config=disc_config,
     simulation_mode=simulation_mode,
     master_path=PROJECT_ROOT
-    / "final"
     / "solver_data"
     / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}",
     tau_model=tau_model,

@@ -29,9 +29,9 @@ def filter_forcing(
     z_dns = np.linspace(z_min, z_max, dns_res)
     z_les = np.linspace(z_min, z_max, les_resolution)
 
-    l = z_max - z_min
-    h_les = l / (les_resolution - 1)
-    dz_dns = l / (dns_res - 1)
+    length = z_max - z_min
+    h_les = length / (les_resolution - 1)
+    dz_dns = length / (dns_res - 1)
 
     # 1. Assemble Matrix M
     diag_main_m = np.full(les_resolution, 2.0 * h_les / 3.0)

@@ -5,20 +5,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Directory Setup
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PARSED_STAT_DIR = PROJECT_ROOT / "dns_data" / "curated" / "parsed_stat"
-CURRENT_DIR = Path(__file__).parent.resolve()
+PROJECT_ROOT = Path(__file__).resolve().parent
+PARSED_STAT_DIR = PROJECT_ROOT / "dns_data" / "curated" / "stat"
 
-n_nodes_les = 33
+n_nodes_les = 65
 tau_params = 2
 
 # Load DNS profiles array
-mean_w_profiles = np.load(PARSED_STAT_DIR / "stat_mean_w.npy")
+mean_w_profiles = np.load(PARSED_STAT_DIR / "mean_w.npy")
 
 # Resolve target directory for LES profiles
 
 profiles_dir = (
-    CURRENT_DIR / "solver_data" / f"les_n{n_nodes_les}_p{tau_params}" / "mean_profiles"
+    PROJECT_ROOT / "solver_data" / f"les_n{n_nodes_les}_p{tau_params}" / "mean_profiles"
 )
 
 # Automatically locate all .npy LES profiles sorted by timestamp

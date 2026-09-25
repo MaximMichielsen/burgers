@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 
-from utils.dns_caching import (
+from archived.dns_caching import (
     DNSCacheKey,
     resolve_dns_cache,
     DNSCacheStatus,
@@ -114,7 +114,7 @@ def run_data_generator(
     append_mode: bool = False,
 ) -> None:
     """Run DNS and assemble SGSP training data."""
-    from solvers.solver_projection import BurgersDataGenerator
+    from archived.solver_projection import BurgersDataGenerator
 
     solver = BurgersDataGenerator(
         problem=problem,

@@ -7,8 +7,8 @@ from typing import Optional
 from numpy.typing import NDArray
 
 from setup.config_discretization import DiscretizationConfig
-from utils.io_utils import read_data
-from utils.pipeline_utils import RunPaths
+from archived.io_utils import read_data
+from archived.utils.pipeline_utils import RunPaths
 
 
 @dataclass(frozen=True)

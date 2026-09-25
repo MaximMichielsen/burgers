@@ -8,10 +8,10 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem, Problems
 from solvers.solver_base import SimulationMode, SolverBase, TauModel
 from solvers.solver_coupled import SolverCoupled
-from utils.pipeline_utils import resolve_pathing, run_dns
-from utils.plotting.configs import create_velocity_plot_configs
-from utils.plotting.energy_evolution import plot_energy_comparison
-from utils.plotting.velocity_comparison import plot_solution_comparison
+from archived.utils.pipeline_utils import resolve_pathing, run_dns
+from archived.utils.plotting.configs import create_velocity_plot_configs
+from archived.utils.plotting.energy_evolution import plot_energy_comparison
+from archived.utils.plotting.velocity_comparison import plot_solution_comparison
 
 
 # -------------------- Problem and pipeline configuration ------------------------------ #

@@ -18,7 +18,7 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d, uniform_filter1d
 
-from final.ml.tau_ann import TauANNConfig, TauANN, load_tau_ann, Scope
+from ml.tau_ann import TauANNConfig, load_tau_ann, TauANN, Scope
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
@@ -35,10 +35,7 @@ class SolverCoupled(SolverBase):
         tau_model: TauModel,
         ann_config: TauANNConfig,
         simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
-        ann_path: Path | None = None,
         snapshot_factor: int = 1,
-        t_start: float = 0.0,
-        training_mode: bool = False,
         prescribed_action_trajectory: list | None = None,
     ):
         super().__init__(
@@ -57,7 +54,7 @@ class SolverCoupled(SolverBase):
         }
 
         self.tau_model = tau_model
-        self.training_mode = training_mode
+        self.training_mode = ann_config.training_mode
         self.ann_config: TauANNConfig = ann_config
 
         self.n_local_stencil_points = ann_config.local_stencil_size
@@ -71,11 +68,11 @@ class SolverCoupled(SolverBase):
         # Load ANN only during inference/solver mode
         self.ann: TauANN | None = None
         if not self.training_mode:
-            if ann_path is None:
+            if ann_config.ann_path is None:
                 raise ValueError(
                     "ann_path must be provided when training_mode is False."
                 )
-            self.ann = load_tau_ann(ann_path)
+            self.ann = load_tau_ann(ann_config.ann_path)
 
         self._n_wavenumber_bins: int = (self.n_nodes + 1) // 2
 
@@ -202,15 +199,7 @@ class SolverCoupled(SolverBase):
         if self.ann_config.input_scope == Scope.LOCAL:
             local_stencils = []
             for node in self.nodes:
-                local_stencil = None
-                if self.ann_config.input_scope_mode == "spectral":
-                    _, local_spectrum = self.compute_local_energy_spectrum(node)
-                    local_spectrum_32 = local_spectrum.astype(np.float32)
-                    local_total_energy = float(local_spectrum_32.sum())
-                    local_stencil = local_spectrum_32 / max(local_total_energy, 1e-12)
-
-                elif self.ann_config.input_scope_mode == "spatial":
-                    local_stencil = self.compute_local_spatial_input_stencil(node)
+                local_stencil = self.compute_local_spatial_input_stencil(node)
 
                 assert local_stencil is not None, "Local stencil is of type None!"
                 local_stencils.append(local_stencil)
@@ -242,39 +231,6 @@ class SolverCoupled(SolverBase):
         u_x_local = np.gradient(u_local, self.element_size)
 
         return np.concatenate([u_local, u_x_local])
-
-    def compute_local_energy_spectrum(
-        self, node: int, positive_only: bool = True
-    ) -> tuple[NDArray, NDArray]:
-        """Compute local energy spectrum across an n-node stencil around a target node."""
-        n_points = self.n_local_stencil_points
-        half_stencil = (n_points - 1) // 2
-        start_idx = node - half_stencil
-        target_indices = np.arange(start_idx, start_idx + n_points, dtype=int)
-        total_nodes = len(self.solution)
-        valid_mask = (target_indices >= 0) & (target_indices < total_nodes)
-
-        if not np.any(valid_mask):
-            return np.array([]), np.array([])
-
-        # Zero-pad out-of-bounds nodes outside domain boundaries
-        u_local = np.zeros(n_points, dtype=np.float64)
-        u_local[valid_mask] = self.solution[target_indices[valid_mask]]
-
-        # Compute 1D FFT
-        u_hat_local = np.fft.fft(u_local)
-
-        # Wavenumbers using exact grid spacing d = element_size (dx)
-        wavenumbers = np.fft.fftfreq(n_points, d=self.element_size) * 2.0 * np.pi
-
-        # Spectrum matching global energy normalization (0.5 * |u_hat|^2 / N)
-        spectrum = 0.5 * (np.abs(u_hat_local) ** 2) / n_points
-
-        if positive_only:
-            mask = wavenumbers > 0
-            return wavenumbers[mask], spectrum[mask]
-
-        return wavenumbers, spectrum
 
     # ------------------------------------------------------------------ #
     #  Tau models

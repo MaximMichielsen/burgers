@@ -8,8 +8,8 @@ from numpy.typing import NDArray
 
 import re
 
-from utils.io_utils import read_data
-from utils.plotting.configs import VelocityPlotConfig
+from archived.io_utils import read_data
+from archived.utils.plotting.configs import VelocityPlotConfig
 
 
 def _read_snapshot_at_time(directory: Path, target_time: float) -> NDArray:

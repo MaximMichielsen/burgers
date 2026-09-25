@@ -28,13 +28,13 @@ from tqdm import tqdm
 from enum import Enum
 
 from setup.config_discretization import DiscretizationConfig
-from utils.diagnostics import (
+from archived.utils.diagnostics import (
     compute_energy,
     compute_dissipation,
     compute_energy_spectrum,
 )
 from setup.problems import Problem
-from utils.pipeline_utils import RunPaths
+from archived.utils.pipeline_utils import RunPaths
 
 TOLERANCE_RESIDUAL: float = 1e-6
 TOLERANCE_UPDATE: float = 1e-6
@@ -122,8 +122,6 @@ class SolverBase:
         self.tau_model = TauModel(tau_model) if tau_model else None
 
         self.domain_length: float = problem.domain_length
-
-        self.current_time_step: int = 0
         self.viscosity: float = problem.viscosity
         self.max_iterations: int = (
             MAXIMUM_ITERATIONS_DNS
@@ -138,8 +136,8 @@ class SolverBase:
         self.time: float = problem.t_start
         self.time_elapsed: float = 0.0
         self.prev_elapsed = 0.0
+        self.current_time_step: int = 0
         self.simulation_done: bool = False
-
         self.domain_timespan: float = problem.domain_timespan
         self._dt: float = (
             disc_config.dt_dns if simulation_mode == "dns" else disc_config.dt_les

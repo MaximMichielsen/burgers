@@ -4,12 +4,12 @@ from pathlib import Path
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem, Problems
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
-from utils.pipeline_utils import run_dns, resolve_pathing
-from utils.plotting.configs import (
+from archived.utils.pipeline_utils import run_dns, resolve_pathing
+from archived.utils.plotting.configs import (
     create_velocity_plot_configs,
 )
-from utils.plotting.energy_evolution import plot_energy_comparison
-from utils.plotting.velocity_comparison import plot_solution_comparison
+from archived.utils.plotting.energy_evolution import plot_energy_comparison
+from archived.utils.plotting.velocity_comparison import plot_solution_comparison
 
 # -------------------- Problem and pipeline configuration ------------------------------ #
 CURRENT_DIR = Path(__file__).parent.resolve()

@@ -6,11 +6,16 @@
       <w>SGSP</w>
       <w>acvl</w>
       <w>avcl</w>
+      <w>coeffs</w>
       <w>coords</w>
       <w>forcings</w>
       <w>jacobians</w>
+      <w>langle</w>
       <w>lightgreen</w>
+      <w>mathrm</w>
       <w>preds</w>
+      <w>rangle</w>
+      <w>robijns</w>
       <w>skahib</w>
     </words>
   </dictionary>

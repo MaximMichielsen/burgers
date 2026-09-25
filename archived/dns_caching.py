@@ -9,7 +9,7 @@ from typing import Callable
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 
-from utils.io_utils import read_data
+from archived.io_utils import read_data
 
 
 @dataclass(frozen=True)
@@ -118,7 +118,7 @@ def extend_dns_run(
         append_mode=True,
     )
 
-    from solvers.solver_projection import BurgersDataGenerator
+    from archived.solver_projection import BurgersDataGenerator
 
     projector = BurgersDataGenerator(
         problem=dataclasses.replace(problem, domain_timespan=requested_timespan),

@@ -24,7 +24,7 @@ class Problem:
     domain_timespan: float
     reynolds: float
     initial_condition: Callable | NDArray
-    forcing: Callable | None
+    forcing: Callable | NDArray | None
     forcing_is_steady: bool
     boundary_condition_type: str
     boundary_condition_value: float | int | tuple[float | int, float | int] | None = (

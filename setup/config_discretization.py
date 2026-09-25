@@ -28,6 +28,9 @@ class DiscretizationConfig:
     suppress_file_logging: bool = False
 
     def __post_init__(self) -> None:
+        if self.courant_les and self.set_dt_les is None:
+            raise TypeError("Courant LES and set_dt_les cannot both be None!")
+
         self.n_elements_les: int = self.n_nodes_les - 1
         self.n_elements_dns: int = self.n_nodes_dns - 1
 
