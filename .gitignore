@@ -1,2 +1,3 @@
-/dns_data/
+/dns_data/raw/
+/dns_data/curated/
 /solver_data/
