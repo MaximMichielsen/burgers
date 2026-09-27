@@ -78,7 +78,7 @@ class TauANNConfig:
     max_action: float = MAX_ACTION
     min_action: float = MIN_ACTION
 
-    n_total_allowed_episodes = 100
+    n_total_allowed_episodes = 300
 
     n_local_action_groups: int | None = None
     local_stencil_size: int | None = None
