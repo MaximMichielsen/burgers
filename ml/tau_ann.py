@@ -28,6 +28,11 @@ class TauANNHyperparameters:
     max_action: float = MAX_ACTION
     min_action: float = MIN_ACTION + 1e-6
 
+    init_factor_stochastic: float = 0.05
+
+    init_max_action: float = 1 + (MAX_ACTION * init_factor_stochastic)
+    init_min_action: float = 1 - (MIN_ACTION * init_factor_stochastic)
+
     smoothing_factor = 0.002
     burn_in_steps = 0
 
@@ -73,6 +78,8 @@ class TauANNConfig:
     max_action: float = MAX_ACTION
     min_action: float = MIN_ACTION
 
+    n_total_allowed_episodes = 100
+
     n_local_action_groups: int | None = None
     local_stencil_size: int | None = None
 
@@ -83,6 +90,12 @@ class TauANNConfig:
         return self.disc_config.n_nodes_les - 1
 
     def __post_init__(self):
+        if self.n_training_episodes > self.n_total_allowed_episodes:
+            raise ValueError(
+                f"Amount of training episodes ({self.n_training_episodes}) is higher than maximum allowable value ({self.n_total_allowed_episodes})!"
+                f"\nSet the amount of training episodes lower or increase maximum allowed amount."
+            )
+
         self.n_coefficients = self.tau_model.output_dimensions
 
         if self.output_scope == Scope.GLOBAL:

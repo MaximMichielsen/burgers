@@ -186,6 +186,8 @@ class TD3Trainer:
         self.reference_trajectory = reference_trajectory
         self.hp = hp
 
+        self.episodes_ran = 0
+
         self.baseline_reward: float | None = None
         self.end_of_random_episode: int | None = None
         self.episode_reward_history: list = []
@@ -219,12 +221,25 @@ class TD3Trainer:
         with open(self.log_file_path, "a", encoding="utf-8") as f:
             f.write(message + end)
 
+    def get_action_bounds(self, steps: int) -> tuple[float, float]:
+        """Compute action bounds on stochastic action selection, follows linearly varying profile."""
+        if steps > self.hp.stochastic_timesteps:
+            return self.hp.min_action, self.hp.max_action
+
+        progress = steps / max(1, self.hp.stochastic_timesteps)
+        current_min = self.hp.init_min_action + progress * (
+            self.hp.min_action - self.hp.init_min_action
+        )
+        current_max = self.hp.init_max_action + progress * (
+            self.hp.max_action - self.hp.init_max_action
+        )
+        return current_min, current_max
+
     def run_training(self) -> TauANN:
         """Main training loop connecting the environment and TD3 agent."""
 
         self.print_title("Initializing Training Procedure")
 
-        # 1. Initialize environment
         env = EnvironmentForcingDNS(
             problem=self.problem,
             disc_config=self.disc_config,
@@ -234,166 +249,121 @@ class TD3Trainer:
             master_path=self.master_path,
         )
 
-        # Instantiate agent & replay buffer
-        agent = TD3Agent(
-            ann_config=self.ann_config,
-            hp=self.hp,
-        )
-
+        agent = TD3Agent(ann_config=self.ann_config, hp=self.hp)
         replay_buffer = ReplayBuffer(
             state_dim=self.ann_config.state_dimension,
             action_dim=self.ann_config.action_dimension,
             max_size=self.hp.replay_buffer_max_size,
         )
 
-        # PART 1: Print & log initial configuration
         self.print_configurations(agent)
-
         self.print_title("Starting Training Loop")
 
         total_steps = 0
         max_steps_per_ep = getattr(env, "_max_les_steps", 1000)
         training_start_time = time.time()
 
-        # PART 2: In-Episode Training Loop
-        for episode in range(self.ann_config.n_training_episodes):
+        episode = 0
+        stop_training = False
+
+        while episode < self.ann_config.n_training_episodes and not stop_training:
             ep_start_time = time.time()
             state = env.reset()
             episode_reward = 0.0
             done = False
             episode_steps = 0
             actions = []
+            skip_episode = False
 
-            # Header for in-episode step logging
-            phase_str = (
-                "EXPLORATION"
-                if total_steps < self.hp.stochastic_timesteps
-                else "POLICY TRAINING"
-            )
-            self._log(
-                f"\n>>> Episode {episode + 1}/{self.ann_config.n_training_episodes} "
-                f"[{phase_str}]"
-            )
-            self._log("-" * 75)
+            self._log_episode_header(episode, total_steps)
 
             while not done:
                 total_steps += 1
                 episode_steps += 1
 
+                # Action selection
                 if total_steps < self.hp.stochastic_timesteps:
+                    min_action, max_action = self.get_action_bounds(steps=total_steps)
                     action = np.random.uniform(
-                        self.hp.min_action,
-                        self.hp.max_action,
+                        min_action,
+                        max_action,
                         size=self.ann_config.action_dimension,
                     )
                 else:
                     action = agent.select_action(state, noise_std=self.hp.expl_noise)
 
                 actions.append(action)
-                next_state, reward, done = env.step(action=action)
-                episode_reward += reward
-                replay_buffer.add(state, action, next_state, reward, done)
 
-                # In-Episode Step Progress Logging
+                # Execution & numeric safety checks
+                try:
+                    with np.errstate(over="raise", invalid="raise", divide="raise"):
+                        next_state, reward, done, info = env.step(action=action)
+
+                    if hasattr(env, "solver") and not np.all(
+                        np.isfinite(env.solver.solution)
+                    ):
+                        raise FloatingPointError(
+                            "Non-finite values found in solver solution"
+                        )
+
+                except (FloatingPointError, ZeroDivisionError, ArithmeticError) as e:
+                    stop_training = self._handle_episode_abort(
+                        f"Unhandled FloatingPointError ({e})"
+                    )
+                    skip_episode = True
+                    break
+
+                if info.get("crashed", False):
+                    reason = info.get("crash_reason", "Solver Divergence")
+                    stop_training = self._handle_episode_abort(
+                        f"Episode {episode + 1} aborted: {reason}"
+                    )
+                    skip_episode = True
+                    break
+
+                # Buffer & training updates
+                replay_buffer.add(state, action, next_state, reward, done)
+                state = next_state
+                episode_reward += reward
+
+                # Step progress logging
                 if episode_steps % 100 == 0 or done:
-                    pct = (episode_steps / max_steps_per_ep) * 100
-                    sim_t = env.solver.time_elapsed if hasattr(env, "solver") else 0.0
-                    self._log(
-                        f"  Step {episode_steps:>4d}/{max_steps_per_ep} ({pct:>5.1f}%) | "
-                        f"Step Rwd: {reward:>8.4f} | "
-                        f"Ep Rwd: {episode_reward:>8.2f} | "
-                        f"Sim Time: {sim_t:.4f}s"
+                    self._log_step_progress(
+                        episode_steps, max_steps_per_ep, reward, episode_reward, env
                     )
 
                 if total_steps >= self.hp.stochastic_timesteps:
                     agent.train(replay_buffer, self.hp.batch_size)
 
-                state = next_state
+            if skip_episode:
+                episode += 1
+                continue
 
+            # Post-processing & logging
             clipped_reward = np.clip(
-                episode_reward,
-                a_min=EPISODE_PENALTY_CLIP,
-                a_max=None,
+                episode_reward, a_min=EPISODE_PENALTY_CLIP, a_max=None
             )
             self.episode_reward_history.append(clipped_reward)
 
-            # Execution of Post-Processing & Plots
-            self._log("-" * 75)
-            self._log("  [POST-PROCESSING & PLOTTING ARTIFACTS]")
-
-            self.plot_history_breakdown(env=env, show_plot=False)
-            self.plot_profile_comparison(env=env, episode=episode + 1, show_plot=False)
-
-            if hasattr(env, "solver"):
-                env.solver.post_processing()
-
-            # End of Episode Summary Box
-            ep_duration = time.time() - ep_start_time
-            mean_action = np.mean(actions) if len(actions) > 0 else 0.0
-
-            self._log("-" * 75)
-            self._log(
-                f"  [EPISODE {episode + 1} SUMMARY]\n"
-                f"  Duration      : {ep_duration:.2f}s\n"
-                f"  Total Steps   : {total_steps} (Ep Steps: {episode_steps})\n"
-                f"  Reward        : {clipped_reward:.4f} (Raw: {episode_reward:.4f})\n"
-                f"  Mean Action   : {mean_action:.4f}\n"
-                f"  Replay Buffer : {replay_buffer.size}/{self.hp.replay_buffer_max_size}"
+            self._execute_post_processing(env, episode + 1)
+            self._log_episode_summary(
+                episode,
+                time.time() - ep_start_time,
+                total_steps,
+                episode_steps,
+                clipped_reward,
+                episode_reward,
+                actions,
+                replay_buffer,
             )
-            self._log("=" * 75)
 
-        # PART 3: Post-Training Summary Dashboard
-        total_duration = time.time() - training_start_time
-        rewards = np.array(self.episode_reward_history)
+            episode += 1
+            self.episodes_ran += 1
 
-        first_ep_reward = rewards[0]
-        best_ep_reward = rewards.max()
-        final_ep_reward = rewards[-1]
-
-        # Calculate Improvement Metrics
-        raw_delta_best = best_ep_reward - first_ep_reward
-        pct_imp_best = (
-            (raw_delta_best / abs(first_ep_reward)) * 100.0
-            if first_ep_reward != 0
-            else 0.0
+        # Post-training summary dashboard
+        self._log_training_summary(
+            time.time() - training_start_time, total_steps, episode
         )
-
-        raw_delta_final = final_ep_reward - first_ep_reward
-        pct_imp_final = (
-            (raw_delta_final / abs(first_ep_reward)) * 100.0
-            if first_ep_reward != 0
-            else 0.0
-        )
-
-        # Print Post-Training Summary Sections
-        self.print_title("Training Summary")
-
-        self.print_section("Overall Execution")
-        self.print_row("Total Episodes Completed", self.ann_config.n_training_episodes)
-        self.print_row("Total Steps Simulated", total_steps)
-        self.print_row("Total Elapsed Time", f"{total_duration:.2f}s")
-        self.print_row(
-            "Avg Time per Episode",
-            f"{total_duration / max(1, self.ann_config.n_training_episodes):.2f}s",
-        )
-        self.print_footer()
-
-        self.print_section("Reward Performance")
-        self.print_row("Initial Episode Reward", f"{first_ep_reward:.4f}")
-        self.print_row("Best Episode Reward", f"{best_ep_reward:.4f}")
-        self.print_row("Final Episode Reward", f"{final_ep_reward:.4f}")
-        self.print_row("Mean Reward (All Ep)", f"{rewards.mean():.4f}")
-        self.print_footer()
-
-        self.print_section("Reward Improvement Metrics")
-        self.print_row(
-            "Initial -> Best Delta", f"{raw_delta_best:+.4f} ({pct_imp_best:+.2f}%)"
-        )
-        self.print_row(
-            "Initial -> Final Delta",
-            f"{raw_delta_final:+.4f} ({pct_imp_final:+.2f}%)",
-        )
-        self.print_footer()
 
         assert self.ann_config.ann_path is not None
         save_tau_ann(model=agent.actor, save_path=self.ann_config.ann_path)
@@ -402,6 +372,143 @@ class TD3Trainer:
         )
 
         return agent.actor
+
+    def _log_episode_header(self, episode: int, total_steps: int) -> None:
+        """Logs phase and episode start header."""
+        phase_str = (
+            "EXPLORATION"
+            if total_steps < self.hp.stochastic_timesteps
+            else "POLICY TRAINING"
+        )
+        self._log(
+            f"\n>>> Episode {episode + 1}/{self.ann_config.n_training_episodes} "
+            f"[{phase_str}]"
+        )
+        self._log("-" * 75)
+
+    def _log_step_progress(
+        self,
+        episode_steps: int,
+        max_steps: int,
+        reward: float,
+        ep_reward: float,
+        env: Any,
+    ) -> None:
+        """Logs individual in-episode step diagnostics."""
+        pct = (episode_steps / max_steps) * 100
+        sim_t = (
+            getattr(env.solver, "time_elapsed", 0.0) if hasattr(env, "solver") else 0.0
+        )
+        self._log(
+            f"  Step {episode_steps:>4d}/{max_steps} ({pct:>5.1f}%) | "
+            f"Step Rwd: {reward:>8.4f} | "
+            f"Ep Rwd: {ep_reward:>8.2f} | "
+            f"Sim Time: {sim_t:.4f}s"
+        )
+
+    def _execute_post_processing(self, env: Any, episode: int) -> None:
+        """Triggers plotting routines and solver post-processing."""
+        self._log("-" * 75)
+        self._log("  [POST-PROCESSING & PLOTTING ARTIFACTS]")
+        self.plot_history_breakdown(env=env, show_plot=False)
+        self.plot_profile_comparison(env=env, episode=episode, show_plot=False)
+        if hasattr(env, "solver"):
+            env.solver.post_processing()
+
+    def _log_episode_summary(
+        self,
+        episode: int,
+        ep_duration: float,
+        total_steps: int,
+        episode_steps: int,
+        reward: float,
+        raw_reward: float,
+        actions: list,
+        replay_buffer: Any,
+    ) -> None:
+        """Logs end-of-episode summary block."""
+        mean_action = np.mean(actions) if actions else 0.0
+        self._log("-" * 75)
+        self._log(
+            f"  [EPISODE {episode + 1} SUMMARY]\n"
+            f"  Duration      : {ep_duration:.2f}s\n"
+            f"  Total Steps   : {total_steps} (Ep Steps: {episode_steps})\n"
+            f"  Reward        : {reward:.4f} (Raw: {raw_reward:.4f})\n"
+            f"  Mean Action   : {mean_action:.4f}\n"
+            f"  Replay Buffer : {replay_buffer.size}/{self.hp.replay_buffer_max_size}"
+        )
+        self._log("=" * 75)
+
+    def _log_training_summary(
+        self, total_duration: float, total_steps: int, episode_count: int
+    ) -> None:
+        """Computes and prints final post-training statistics dashboard."""
+        rewards = np.array(self.episode_reward_history)
+        if len(rewards) == 0:
+            return
+
+        first_rwd, best_rwd, final_rwd = rewards[0], rewards.max(), rewards[-1]
+
+        raw_delta_best = best_rwd - first_rwd
+        pct_imp_best = (
+            (raw_delta_best / abs(first_rwd) * 100.0) if first_rwd != 0 else 0.0
+        )
+
+        raw_delta_final = final_rwd - first_rwd
+        pct_imp_final = (
+            (raw_delta_final / abs(first_rwd) * 100.0) if first_rwd != 0 else 0.0
+        )
+
+        self.print_title("Training Summary")
+
+        self.print_section("Overall Execution")
+        self.print_row("Total Episodes Completed", episode_count)
+        self.print_row("Total Steps Simulated", total_steps)
+        self.print_row("Total Elapsed Time", f"{total_duration:.2f}s")
+        self.print_row(
+            "Avg Time per Episode", f"{total_duration / max(1, episode_count):.2f}s"
+        )
+        self.print_footer()
+
+        self.print_section("Reward Performance")
+        self.print_row("Initial Episode Reward", f"{first_rwd:.4f}")
+        self.print_row("Best Episode Reward", f"{best_rwd:.4f}")
+        self.print_row("Final Episode Reward", f"{final_rwd:.4f}")
+        self.print_row("Mean Reward (All Ep)", f"{rewards.mean():.4f}")
+        self.print_footer()
+
+        self.print_section("Reward Improvement Metrics")
+        self.print_row(
+            "Initial -> Best Delta", f"{raw_delta_best:+.4f} ({pct_imp_best:+.2f}%)"
+        )
+        self.print_row(
+            "Initial -> Final Delta", f"{raw_delta_final:+.4f} ({pct_imp_final:+.2f}%)"
+        )
+        self.print_footer()
+
+    def _handle_episode_abort(self, reason: str) -> bool:
+        """Helper to handle episode aborts, increment retries, or enforce safety caps.
+
+        Returns:
+            bool: True if training should terminate completely, False to just skip episode.
+        """
+        self._log(f"\n  [SOLVER ABORT] {reason}. Skipping Post-Processing.")
+
+        if (
+            self.ann_config.n_training_episodes
+            < self.ann_config.n_total_allowed_episodes
+        ):
+            self.ann_config.n_training_episodes += 1
+            self._log(
+                f"  [RETRY QUEUED] Extended target episodes to: {self.ann_config.n_training_episodes}"
+            )
+            return False
+
+        self._log(
+            f"  [MAX ATTEMPTS REACHED] Reached safety cap of {self.ann_config.n_total_allowed_episodes} total episodes. "
+            f"Terminating training early."
+        )
+        return True
 
     def print_section(self, title: str, width: int = 70) -> None:
         self._log(f"\n+- {title} " + "-" * (width - len(title) - 3) + "+")
@@ -497,7 +604,13 @@ class TD3Trainer:
 
     def plot_reward_evolution(self, show_plot: bool = False):
         """Visualize the evolution of episode rewards over training with a clean inset zoom."""
-        episodes = np.arange(self.ann_config.n_training_episodes)
+        if len(self.episode_reward_history) == 0:
+            print(
+                "Skipping reward evolution across episodes. No episode rewards recorded to plot (episode_reward_history is unpopulated)."
+            )
+            return
+
+        episodes = np.arange(self.episodes_ran)
         rewards = np.array(self.episode_reward_history)
 
         fig, ax = plt.subplots(figsize=(10, 6), dpi=300, layout="constrained")

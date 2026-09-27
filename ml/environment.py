@@ -13,8 +13,9 @@ from setup.problems import Problem
 from solvers.solver_base import SimulationMode
 from solvers.solver_coupled import SolverCoupled
 
+REWARD_CLIP = 50
 
-CRASH_PENALTY = -100
+CRASH_PENALTY = -10000
 
 
 class EnvironmentForcingDNS:
@@ -98,8 +99,8 @@ class EnvironmentForcingDNS:
         self.running_mean_solution = self.solver.solution.copy()
         return self.solver.create_input_stencil(mean_profile=self.running_mean_solution)
 
-    def step(self, action: NDArray) -> tuple[NDArray, float, bool]:
-        """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done)."""
+    def step(self, action: NDArray) -> tuple[NDArray, float, bool, dict]:
+        """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done, info)."""
         if self.solver is None:
             raise RuntimeError("Call reset() before step().")
 
@@ -107,18 +108,27 @@ class EnvironmentForcingDNS:
         last_valid_state = self.solver.create_input_stencil(
             mean_profile=self.running_mean_solution
         )
+        info = {"crashed": False}
 
         try:
-            for _ in range(self.ann_config.n_skip_steps):
-                self.solver.advance_time_step()
-                self._total_les_steps += 1
+            with np.errstate(over="raise", invalid="raise", divide="raise"):
+                for _ in range(self.ann_config.n_skip_steps):
+                    self.solver.advance_time_step()
+                    self._total_les_steps += 1
 
-                if self.solver.simulation_done:
-                    break
+                    # 1. Early check for divergence to avoid running extra corrupted steps
+                    current_solution = self.solver.solution  # or relevant state
+                    if not np.all(np.isfinite(current_solution)):
+                        raise FloatingPointError(
+                            "NaN/Inf detected in intermediate solver step."
+                        )
+
+                    if self.solver.simulation_done:
+                        break
 
             self.reference_trajectory.set_step_index(self._total_les_steps)
 
-            reward_val = self.compute_reward(action)
+            reward_val = float(self.compute_reward(action))
             done_flag = (
                 self._total_les_steps >= self._max_les_steps
                 or self.solver.simulation_done
@@ -130,18 +140,23 @@ class EnvironmentForcingDNS:
             if not np.all(np.isfinite(next_state_array)):
                 raise FloatingPointError("NaN/Inf detected in state stencil.")
 
-            return next_state_array, reward_val, done_flag
+            # 2. Append reward history on SUCCESS
+            self.total_reward_history_unscaled.append(reward_val)
+            return next_state_array, reward_val, done_flag, info
 
-        except (FloatingPointError, ZeroDivisionError, ArithmeticError):
-            # Catch solver divergence, apply soft crash penalty, return sanitized state
-            reward_val = CRASH_PENALTY
+        except (FloatingPointError, ZeroDivisionError, ArithmeticError) as e:
+            info["crashed"] = True
+            info["crash_reason"] = str(e)
+
+            reward_val = float(CRASH_PENALTY)
             done_flag = True
 
             fallback_state = np.nan_to_num(
                 last_valid_state, nan=0.0, posinf=1.0, neginf=-1.0
             )
+            # Append reward history on CRASH
             self.total_reward_history_unscaled.append(reward_val)
-            return fallback_state, reward_val, done_flag
+            return fallback_state, reward_val, done_flag, info
 
     def compute_reward(self, action: NDArray) -> float:
         """Compute the scalar RL reward for the current step."""
@@ -219,7 +234,8 @@ class EnvironmentForcingDNS:
         reward_total = reward_improvement - (
             penalty_absolute_distance + penalty_spectral + penalty_action
         )
-        scaled_reward = float(np.clip(reward_total, -20.0, 20.0))
+
+        scaled_reward = float(np.clip(reward_total, -REWARD_CLIP, REWARD_CLIP))
 
         # --- 6. Log Weighted Physical Metrics (for Diagnostics / Plots) ---
         self.distance_improvement_history_weighted.append(reward_improvement)

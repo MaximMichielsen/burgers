@@ -23,7 +23,7 @@ dt = 1e-4
 t_start = 308.0101
 t_end = 309.0100
 
-n_episodes = 100
+n_episodes = 1
 
 RUN_DIR = PROJECT_ROOT / "solver_data" / f"run_e{n_episodes}"
 
@@ -70,7 +70,7 @@ ann_config = TauANNConfig(
     tau_model,
     disc_config,
     ann_path=ann_path,
-    n_skip_steps=20,
+    n_skip_steps=1,
     output_scope=Scope.GLOBAL,
     input_scope=Scope.GLOBAL,
     n_training_episodes=n_episodes,
