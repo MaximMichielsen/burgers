@@ -117,7 +117,7 @@ class TD3Agent:
                 -self.hp.noise_clip, self.hp.noise_clip
             )
             next_action = (self.actor_target(next_state) + noise).clamp(
-                0.0, self.hp.max_action
+                self.hp.min_action, self.hp.max_action
             )
 
             # Clipped double Q-learning
@@ -305,8 +305,10 @@ class TD3Trainer:
                         f"Sim Time: {sim_t:.4f}s"
                     )
 
-            if total_steps >= self.hp.stochastic_timesteps:
-                agent.train(replay_buffer, self.hp.batch_size)
+                if total_steps >= self.hp.stochastic_timesteps:
+                    agent.train(replay_buffer, self.hp.batch_size)
+
+                state = next_state
 
             clipped_reward = np.clip(
                 episode_reward,
@@ -547,7 +549,7 @@ class TD3Trainer:
             moving_avg = np.convolve(
                 rewards, np.ones(window_size) / window_size, mode="valid"
             )
-            ma_episodes = episodes[window_size - 1:]
+            ma_episodes = episodes[window_size - 1 :]
 
             ax.plot(
                 ma_episodes,

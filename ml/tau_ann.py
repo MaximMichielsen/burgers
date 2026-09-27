@@ -11,8 +11,8 @@ from torch import nn, Tensor
 from setup.config_discretization import DiscretizationConfig
 from solvers.solver_base import TauModel
 
-MAX_ACTION = 1.0
-MIN_ACTION = 0.5
+MAX_ACTION = 2.0
+MIN_ACTION = 0.0
 
 
 class Scope(str, Enum):
@@ -26,15 +26,15 @@ class TauANNHyperparameters:
     """Hyperparameters tied directly to the ANN, regardless of training mechanism."""
 
     max_action: float = MAX_ACTION
-    min_action: float = MIN_ACTION + 1e-3
+    min_action: float = MIN_ACTION + 1e-6
 
     smoothing_factor = 0.002
-    burn_in_steps = 100
+    burn_in_steps = 0
 
-    weight_improvement = 100
-    weight_absolute_error = 1e-3
-    weight_spectral = 1e-3
-    weight_action = 1.0
+    weight_improvement = 10
+    weight_absolute_error = 1.0
+    weight_spectral = 1.0
+    weight_action = 0.1
     gamma = 5.0 / 3.0
 
 
@@ -54,7 +54,7 @@ class TD3Hyperparameters(TauANNHyperparameters):
     batch_size: int = 64
     expl_noise: float = 0.1
     replay_buffer_max_size: int = int(1e5)
-    stochastic_timesteps = 100
+    stochastic_timesteps = 10000
 
 
 @dataclass

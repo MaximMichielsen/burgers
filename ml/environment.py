@@ -65,7 +65,9 @@ class EnvironmentForcingDNS:
                 self.disc_config, suppress_file_logging=True
             ),
             ann_config=dataclasses.replace(
-                self.ann_config, training_mode=True, ann_path=None,
+                self.ann_config,
+                training_mode=True,
+                ann_path=None,
             ),
             master_path=self.master_path,
             simulation_mode=SimulationMode.TAU_BASED,
@@ -153,19 +155,16 @@ class EnvironmentForcingDNS:
 
         target_profile = self.reference_trajectory.target_profile
 
-        if self._total_les_steps > self.hp.burn_in_steps:
-            distance = self.compute_distance_error(
-                self.running_mean_solution, target_profile
-            )
-            if self._total_les_steps == self.hp.burn_in_steps + 1:
-                prev_distance = distance
-            else:
-                prev_distance = (
-                    self.distance_history[-1] if self.distance_history else 0.0
-                )
+        # Compute distance unconditionally
+        distance = self.compute_distance_error(
+            self.running_mean_solution, target_profile
+        )
+
+        # Handle initial step initialization cleanly
+        if not self.distance_history:
+            prev_distance = distance
         else:
-            distance = 0.0
-            prev_distance = 0.0
+            prev_distance = self.distance_history[-1]
 
         # Raw physical delta improvement (unweighted)
         raw_improvement = prev_distance - distance
@@ -216,12 +215,11 @@ class EnvironmentForcingDNS:
         penalty_spectral = self.hp.weight_spectral * raw_spectral_error
         penalty_action = self.hp.weight_action * raw_action_deviation
 
-        # Assemble composite rewards
-        total_penalty = penalty_absolute_distance + penalty_spectral + penalty_action
-        reward_total = reward_improvement - total_penalty
-
         # Scaled reward for policy backpropagation
-        scaled_reward = reward_improvement - np.log1p(total_penalty)
+        reward_total = reward_improvement - (
+            penalty_absolute_distance + penalty_spectral + penalty_action
+        )
+        scaled_reward = float(np.clip(reward_total, -20.0, 20.0))
 
         # --- 6. Log Weighted Physical Metrics (for Diagnostics / Plots) ---
         self.distance_improvement_history_weighted.append(reward_improvement)
