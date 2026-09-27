@@ -1,6 +1,6 @@
 import copy
 import time
-from dataclasses import fields
+from dataclasses import fields, replace
 from pathlib import Path
 from typing import Optional, Any
 
@@ -23,6 +23,8 @@ from ml.tau_ann import (
 )
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
+from solvers.solver_base import SimulationMode, SolverBase
+from solvers.solver_coupled import SolverCoupled
 
 EPISODE_PENALTY_CLIP = -10000
 
@@ -195,6 +197,8 @@ class TD3Trainer:
         self.best_historical_reward = -np.inf
         self.best_action_sequence: list = []
 
+        self.solver: SolverCoupled | SolverBase | None = None
+
         # File logging setup
         self.master_path.mkdir(parents=True, exist_ok=True)
         self.log_file_path = self.master_path / "training_log.txt"
@@ -240,6 +244,8 @@ class TD3Trainer:
 
         self.print_title("Initializing Training Procedure")
 
+
+
         env = EnvironmentForcingDNS(
             problem=self.problem,
             disc_config=self.disc_config,
@@ -250,6 +256,7 @@ class TD3Trainer:
         )
 
         agent = TD3Agent(ann_config=self.ann_config, hp=self.hp)
+
         replay_buffer = ReplayBuffer(
             state_dim=self.ann_config.state_dimension,
             action_dim=self.ann_config.action_dimension,
@@ -257,7 +264,15 @@ class TD3Trainer:
         )
 
         self.print_configurations(agent)
+
+        self.print_title("Starting Baseline Evaluation Run")
+
+        self.run_baseline_evaluation()
+
+
         self.print_title("Starting Training Loop")
+
+
 
         total_steps = 0
         max_steps_per_ep = getattr(env, "_max_les_steps", 1000)
@@ -371,7 +386,40 @@ class TD3Trainer:
             f"\n[SUCCESS] Saved trained TauANN model to: {self.ann_config.ann_path}\n"
         )
 
+        self.print_title("Starting Final Evaluation Run")
+
+        self.run_evaluation()
+
         return agent.actor
+
+    def run_baseline_evaluation(self):
+        self.solver = SolverBase(
+            problem=self.problem,
+            disc_config=self.disc_config,
+            master_path=self.master_path / "baseline",
+            tau_model=self.ann_config.tau_model,
+            simulation_mode=SimulationMode.TAU_BASED,
+        )
+
+        self.solver.run_simulation()
+        self.solver.post_processing()
+
+        self.plot_profile_comparison(env=None, solver=self.solver, episode=None, dns_trajectory=self.reference_trajectory.target_profile)
+
+    def run_evaluation(self):
+        self.solver = SolverCoupled(
+            problem=self.problem,
+            disc_config=self.disc_config,
+            ann_config=replace(self.ann_config, training_mode=False),
+            master_path=self.master_path / "evaluation",
+            tau_model=self.ann_config.tau_model,
+            simulation_mode=SimulationMode.TAU_BASED,
+        )
+
+        self.solver.run_simulation()
+        self.solver.post_processing()
+
+        self.plot_profile_comparison(env=None, solver=self.solver, episode=None, dns_trajectory=self.reference_trajectory.target_profile)
 
     def _log_episode_header(self, episode: int, total_steps: int) -> None:
         """Logs phase and episode start header."""
@@ -411,7 +459,7 @@ class TD3Trainer:
         self._log("-" * 75)
         self._log("  [POST-PROCESSING & PLOTTING ARTIFACTS]")
         self.plot_history_breakdown(env=env, show_plot=False)
-        self.plot_profile_comparison(env=env, episode=episode, show_plot=False)
+        self.plot_profile_comparison(env=env, episode=episode, show_plot=False, solver=None)
         if hasattr(env, "solver"):
             env.solver.post_processing()
 
@@ -750,16 +798,29 @@ class TD3Trainer:
             plt.close(fig)
 
     def plot_profile_comparison(
-        self, env: EnvironmentForcingDNS, episode: int, show_plot: bool = False
+        self,
+        env: EnvironmentForcingDNS | None,
+        solver: SolverCoupled | SolverBase | None,
+        episode: int | None,
+        show_plot: bool = False,
+        dns_trajectory:  NDArray | None = None,
     ) -> None:
         """Plot comparison of the mean velocity profile against DNS reference at episode end."""
         try:
-            les_mean = env.solver.calculate_mean_profile()
+            if solver is not None:
+                les_mean = solver.calculate_mean_profile()
+            elif env is not None:
+                les_mean = env.solver.calculate_mean_profile()
+
+
         except ValueError as e:
             self._log(f"[Warning] Skipping profile plot for episode {episode}: {e}")
             return
 
-        mean_profile_dns = env.reference_trajectory.target_profile
+        if env is not None:
+            mean_profile_dns = env.reference_trajectory.target_profile
+        elif dns_trajectory is not None:
+            mean_profile_dns = dns_trajectory
 
         if les_mean.shape != mean_profile_dns.shape:
             raise ValueError(
@@ -805,12 +866,29 @@ class TD3Trainer:
         y_range = y_max - y_min if y_max != y_min else 1.0
         ax.set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
 
-        ax.set_title(
-            r"Mean Velocity Profile Comparison $\langle w \rangle$ "
-            + f"(Episode {episode})",
-            fontsize=13,
-            pad=10,
-        )
+        if env is not None:
+            ax.set_title(
+                r"Mean Velocity Profile Comparison $\langle w \rangle$ "
+                + f"(Episode {episode})",
+                fontsize=13,
+                pad=10,
+            )
+        elif solver is not None and isinstance(solver, SolverCoupled):
+            ax.set_title(
+                r"Mean Velocity Profile Comparison $\langle w \rangle$ "
+                + "Evaluation",
+                fontsize=13,
+                pad=10,
+            )
+
+        elif solver is not None and isinstance(solver, SolverBase):
+            ax.set_title(
+                r"Mean Velocity Profile Comparison $\langle w \rangle$ "
+                + "Baseline",
+                fontsize=13,
+                pad=10,
+            )
+
         ax.set_xlabel(r"Domain Coordinate $z$", fontsize=11)
         ax.set_ylabel(r"Mean Velocity $\langle w \rangle$", fontsize=11)
 
@@ -846,7 +924,17 @@ class TD3Trainer:
 
         out_dir = self.master_path / "profile_comparisons"
         out_dir.mkdir(parents=True, exist_ok=True)
-        output_plot_path = out_dir / f"profile_comparison_ep{episode:03d}.png"
+        if env is not None:
+            output_plot_path = out_dir / f"profile_comparison_ep{episode:03d}.png"
+        elif solver is not None and isinstance(solver, SolverCoupled):
+            output_plot_path = (
+                self.master_path / "evaluation" / "profile_comparison_evaluation.png"
+            )
+        elif solver is not None and isinstance(solver, SolverBase):
+            output_plot_path = (
+                self.master_path / "baseline" / "profile_comparison_baseline.png"
+            )
+
         plt.savefig(output_plot_path, dpi=300)
 
         if show_plot:

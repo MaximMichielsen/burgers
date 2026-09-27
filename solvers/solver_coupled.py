@@ -113,7 +113,12 @@ class SolverCoupled(SolverBase):
 
     def get_ann_coefficients(self) -> NDArray:
         """Call ANN and receive correction coefficients."""
-        state_array = self.create_input_stencil()
+        if self.time <= 100:
+            self.mean_solution = self.solution
+        else:
+            self.mean_solution = self.calculate_mean_profile()
+
+        state_array = self.create_input_stencil(mean_profile=self.mean_solution)
         state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
 
         with torch.no_grad():
