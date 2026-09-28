@@ -11,8 +11,8 @@ from torch import nn, Tensor
 from setup.config_discretization import DiscretizationConfig
 from solvers.solver_base import TauModel
 
-MAX_ACTION = 2.0
-MIN_ACTION = 0.0
+MAX_ACTION = 1.2
+MIN_ACTION = 0.8
 
 SMOOTHING_FACTOR = 0.002
 
