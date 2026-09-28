@@ -79,7 +79,7 @@ class TD3Agent:
     ):
 
         self.hp = hp
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cpu")
 
         # Base TauANN wrapped into TD3 Policy
         self.actor = TauANN(config=ann_config, hyperparams=hp).to(self.device)
