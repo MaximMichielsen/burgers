@@ -82,7 +82,7 @@ class TauANNConfig:
 
     smoothing_factor: float = SMOOTHING_FACTOR
 
-    n_total_allowed_episodes = 300
+    n_total_allowed_episodes = 500
 
     n_local_action_groups: int | None = None
     local_stencil_size: int | None = None
