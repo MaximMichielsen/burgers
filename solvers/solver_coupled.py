@@ -57,6 +57,9 @@ class SolverCoupled(SolverBase):
         self.training_mode = ann_config.training_mode
         self.ann_config: TauANNConfig = ann_config
 
+        self.smoothing_factor = ann_config.smoothing_factor
+        self.mean_solution: NDArray | None = None
+
         self.n_local_stencil_points = ann_config.local_stencil_size
 
         self.n_correction_coefficients = tau_model.output_dimensions
@@ -111,13 +114,21 @@ class SolverCoupled(SolverBase):
         if self.time_elapsed >= self.domain_timespan:
             self.simulation_done = True
 
+    def update_running_mean(self) -> None:
+        """Update running mean profile using Exponential Weighted Moving Average (EWMA)."""
+        if self.mean_solution is None:
+            # Initialize on the first call
+            self.mean_solution = np.copy(self.solution)
+        else:
+            self.mean_solution = (
+                1.0 - self.smoothing_factor
+            ) * self.mean_solution + self.smoothing_factor * self.solution
+
+        return self.mean_solution
+
     def get_ann_coefficients(self) -> NDArray:
         """Call ANN and receive correction coefficients."""
-        if self.time <= 100:
-            self.mean_solution = self.solution
-        else:
-            self.mean_solution = self.calculate_mean_profile()
-
+        self.update_running_mean()
         state_array = self.create_input_stencil(mean_profile=self.mean_solution)
         state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
 

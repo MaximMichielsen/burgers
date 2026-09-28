@@ -15,7 +15,7 @@ FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 TRAINING_DIR = PROJECT_ROOT / "dns_data" / "training"
 
 
-n_nodes_les = 33
+n_nodes_les = 17
 n_nodes_dns = 513
 z_length = 2.0
 dt = 1e-3

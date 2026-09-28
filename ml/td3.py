@@ -199,6 +199,7 @@ class TD3Trainer:
             if baseline_path
             else self.master_path.parent / "baseline"
         )
+        self.baseline_run_dir: Path | None = None
 
         self.episodes_ran = 0
 
@@ -430,6 +431,7 @@ class TD3Trainer:
             self._log(
                 f"[CACHE HIT] Found existing baseline run at: {cache_result.cache_dir}. Skipping simulation."
             )
+            self.baseline_run_dir = cache_result.cache_dir
             return
 
         # CACHE MISS: Execute solver run and cache the baseline
@@ -438,6 +440,7 @@ class TD3Trainer:
         self._log(
             f"[CACHE MISS] Executing baseline run and caching to: {target_cache_dir}"
         )
+        self.baseline_run_dir = target_cache_dir
 
         self.solver = SolverBase(
             problem=self.problem,
@@ -476,6 +479,7 @@ class TD3Trainer:
             solver=self.solver,
             episode=None,
             dns_trajectory=self.reference_trajectory.target_profile,
+            evaluation_mode=True
         )
 
     def _log_episode_header(self, episode: int, total_steps: int) -> None:
@@ -864,8 +868,12 @@ class TD3Trainer:
         show_plot: bool = False,
         dns_trajectory: NDArray | None = None,
         save_dir: Path | None = None,
+        evaluation_mode: bool = False,
     ) -> None:
-        """Plot comparison of the mean velocity profile against DNS reference."""
+        """Plot comparison of the mean velocity profile against DNS reference.
+
+        Evaluation mode: Use baseline data as a comparison."""
+
         # 1. Extract mean profile from active solver or environment
         try:
             if solver is not None:
@@ -932,6 +940,46 @@ class TD3Trainer:
             label=f"LES Model ({len(self.disc_config.mesh_les)} pts)",
             zorder=3,
         )
+
+        if evaluation_mode:
+            mean_profiles_dir = self.baseline_run_dir / "mean_profiles"
+            baseline_file = mean_profiles_dir / f"mean_w_{self.problem.t_end}.npy"
+
+            # Locate baseline file or fallback safely
+            if not baseline_file.exists():
+                npy_files = list(mean_profiles_dir.glob("*.npy"))
+                if not npy_files:
+                    self._log(f"[Warning] Skipping baseline plot: No .npy files found in {mean_profiles_dir}")
+                    baseline_file = None
+                else:
+                    baseline_file = npy_files[0]
+
+            if baseline_file:
+                baseline_mean = np.load(baseline_file)
+                mesh = self.disc_config.mesh_les
+
+                # Validate dimensions before plotting
+                if mesh.shape != baseline_mean.shape:
+                    self._log(
+                        f"[Warning] Skipping baseline plot due to shape mismatch: "
+                        f"mesh {mesh.shape} vs baseline {baseline_mean.shape}."
+                    )
+                else:
+                    ax.plot(
+                        mesh,
+                        baseline_mean,
+                        color="tab:green",
+                        linestyle="--",
+                        linewidth=1.0,
+                        marker="x",
+                        markevery=max(1, len(mesh) // 16),
+                        markersize=4,
+                        markerfacecolor="white",
+                        markeredgewidth=1.2,
+                        label=f"Baseline Model ({len(mesh)} pts)",
+                        zorder=3,
+                        alpha=0.8,
+                    )
 
         all_data = np.concatenate([mean_profile_dns, les_mean])
         y_min, y_max = all_data.min(), all_data.max()

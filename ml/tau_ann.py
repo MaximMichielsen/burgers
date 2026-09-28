@@ -14,6 +14,8 @@ from solvers.solver_base import TauModel
 MAX_ACTION = 2.0
 MIN_ACTION = 0.0
 
+SMOOTHING_FACTOR = 0.002
+
 
 class Scope(str, Enum):
     GLOBAL = "global"
@@ -33,7 +35,7 @@ class TauANNHyperparameters:
     init_max_action: float = 1 + (MAX_ACTION * init_factor_stochastic)
     init_min_action: float = 1 - (MIN_ACTION * init_factor_stochastic)
 
-    smoothing_factor = 0.002
+    smoothing_factor = SMOOTHING_FACTOR
     burn_in_steps = 0
 
     weight_improvement = 10
@@ -77,6 +79,8 @@ class TauANNConfig:
 
     max_action: float = MAX_ACTION
     min_action: float = MIN_ACTION
+
+    smoothing_factor: float = SMOOTHING_FACTOR
 
     n_total_allowed_episodes = 300
 

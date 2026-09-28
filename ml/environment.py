@@ -164,9 +164,7 @@ class EnvironmentForcingDNS:
             raise RuntimeError("Solver or running mean solution is not initialized.")
 
         # --- 1. EWMA Running Profile Update & Distance Computation ---
-        self.running_mean_solution = (
-            1.0 - self.hp.smoothing_factor
-        ) * self.running_mean_solution + self.hp.smoothing_factor * self.solver.solution
+        self.running_mean_solution = self.solver.update_running_mean()
 
         target_profile = self.reference_trajectory.target_profile
 
