@@ -37,6 +37,10 @@ class Problem:
         """Kinematic viscosity derived from Re and domain length."""
         return self.domain_length / self.reynolds
 
+    @property
+    def t_end(self) -> float:
+        return self.t_start + self.domain_timespan
+
 
 pipeline_test = Problem(
     name="pipeline_test",

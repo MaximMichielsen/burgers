@@ -13,6 +13,12 @@ from numpy.typing import NDArray
 from torch import nn, Tensor
 
 from ml.environment import EnvironmentForcingDNS
+from ml.les_caching import (
+    LESCacheKey,
+    resolve_les_baseline_cache,
+    LESCacheStatus,
+    write_les_parameters,
+)
 from ml.reference_scheduler import ReferenceTrajectory
 from ml.tau_ann import (
     TauANNConfig,
@@ -180,6 +186,7 @@ class TD3Trainer:
         master_path: Path,
         reference_trajectory: ReferenceTrajectory,
         hp: TD3Hyperparameters = TD3Hyperparameters(),
+        baseline_path: Path | None = None,
     ):
         self.problem = problem
         self.disc_config = disc_config
@@ -187,6 +194,11 @@ class TD3Trainer:
         self.master_path = Path(master_path)
         self.reference_trajectory = reference_trajectory
         self.hp = hp
+        self.baseline_dir = (
+            Path(baseline_path)
+            if baseline_path
+            else self.master_path.parent / "baseline"
+        )
 
         self.episodes_ran = 0
 
@@ -203,6 +215,21 @@ class TD3Trainer:
         self.master_path.mkdir(parents=True, exist_ok=True)
         self.log_file_path = self.master_path / "training_log.txt"
         self._init_txt_log()
+
+    def _build_les_cache_key(self) -> LESCacheKey:
+        """Construct LESCacheKey from problem and discretization configurations."""
+        return LESCacheKey(
+            problem_name=getattr(self.problem, "name", "unknown_problem"),
+            domain_length=getattr(self.problem, "domain_length", 0.0),
+            viscosity=getattr(self.problem, "viscosity", 0.0),
+            bc_type=getattr(self.problem, "boundary_condition_type", "fixed"),
+            bc_value=getattr(self.problem, "boundary_condition_value", 0),
+            n_nodes=getattr(self.disc_config, "n_nodes_les", 0),
+            dt=getattr(self.disc_config, "dt_les", 0.0),
+            t_start=getattr(self.problem, "t_start", 0.0),
+            t_end=getattr(self.problem, "t_end", 0.0),
+            n_params=getattr(self.ann_config, "n_coefficients", 0),
+        )
 
     def _init_txt_log(self) -> None:
         """Initialize or overwrite the text log file with a session header."""
@@ -244,8 +271,6 @@ class TD3Trainer:
 
         self.print_title("Initializing Training Procedure")
 
-
-
         env = EnvironmentForcingDNS(
             problem=self.problem,
             disc_config=self.disc_config,
@@ -269,10 +294,7 @@ class TD3Trainer:
 
         self.run_baseline_evaluation()
 
-
         self.print_title("Starting Training Loop")
-
-
 
         total_steps = 0
         max_steps_per_ep = getattr(env, "_max_les_steps", 1000)
@@ -392,19 +414,49 @@ class TD3Trainer:
 
         return agent.actor
 
-    def run_baseline_evaluation(self):
+    def run_baseline_evaluation(self) -> None:
+        """Runs baseline evaluation with cache checking logic.
+
+        If CACHE HIT: Does nothing and reuses existing artifacts.
+        If CACHE MISS: Runs SolverBase, saves output to cache dir, and plots baseline profile.
+        """
+        cache_key = self._build_les_cache_key()
+        cache_result = resolve_les_baseline_cache(self.baseline_dir, cache_key)
+
+        if (
+            cache_result.status == LESCacheStatus.HIT
+            and cache_result.cache_dir is not None
+        ):
+            self._log(
+                f"[CACHE HIT] Found existing baseline run at: {cache_result.cache_dir}. Skipping simulation."
+            )
+            return
+
+        # CACHE MISS: Execute solver run and cache the baseline
+        target_cache_dir = self.baseline_dir / cache_key.dir_to_name()
+        target_cache_dir.mkdir(parents=True, exist_ok=True)
+        self._log(
+            f"[CACHE MISS] Executing baseline run and caching to: {target_cache_dir}"
+        )
+
         self.solver = SolverBase(
             problem=self.problem,
             disc_config=self.disc_config,
-            master_path=self.master_path / "baseline",
+            master_path=target_cache_dir,
             tau_model=self.ann_config.tau_model,
             simulation_mode=SimulationMode.TAU_BASED,
         )
-
         self.solver.run_simulation()
         self.solver.post_processing()
+        write_les_parameters(target_cache_dir, cache_key)
 
-        self.plot_profile_comparison(env=None, solver=self.solver, episode=None, dns_trajectory=self.reference_trajectory.target_profile)
+        self.plot_profile_comparison(
+            env=None,
+            solver=self.solver,
+            episode=None,
+            dns_trajectory=self.reference_trajectory.target_profile,
+            save_dir=target_cache_dir,
+        )
 
     def run_evaluation(self):
         self.solver = SolverCoupled(
@@ -419,7 +471,12 @@ class TD3Trainer:
         self.solver.run_simulation()
         self.solver.post_processing()
 
-        self.plot_profile_comparison(env=None, solver=self.solver, episode=None, dns_trajectory=self.reference_trajectory.target_profile)
+        self.plot_profile_comparison(
+            env=None,
+            solver=self.solver,
+            episode=None,
+            dns_trajectory=self.reference_trajectory.target_profile,
+        )
 
     def _log_episode_header(self, episode: int, total_steps: int) -> None:
         """Logs phase and episode start header."""
@@ -459,7 +516,9 @@ class TD3Trainer:
         self._log("-" * 75)
         self._log("  [POST-PROCESSING & PLOTTING ARTIFACTS]")
         self.plot_history_breakdown(env=env, show_plot=False)
-        self.plot_profile_comparison(env=env, episode=episode, show_plot=False, solver=None)
+        self.plot_profile_comparison(
+            env=env, episode=episode, show_plot=False, solver=None
+        )
         if hasattr(env, "solver"):
             env.solver.post_processing()
 
@@ -803,24 +862,35 @@ class TD3Trainer:
         solver: SolverCoupled | SolverBase | None,
         episode: int | None,
         show_plot: bool = False,
-        dns_trajectory:  NDArray | None = None,
+        dns_trajectory: NDArray | None = None,
+        save_dir: Path | None = None,
     ) -> None:
-        """Plot comparison of the mean velocity profile against DNS reference at episode end."""
+        """Plot comparison of the mean velocity profile against DNS reference."""
+        # 1. Extract mean profile from active solver or environment
         try:
             if solver is not None:
                 les_mean = solver.calculate_mean_profile()
             elif env is not None:
                 les_mean = env.solver.calculate_mean_profile()
-
-
+            else:
+                self._log(
+                    "[Error] Skipping profile plot: neither 'solver' nor 'env' was provided."
+                )
+                return
         except ValueError as e:
-            self._log(f"[Warning] Skipping profile plot for episode {episode}: {e}")
+            self._log(f"[Warning] Skipping profile plot: {e}")
             return
 
+        # 2. Extract reference DNS trajectory
         if env is not None:
             mean_profile_dns = env.reference_trajectory.target_profile
         elif dns_trajectory is not None:
             mean_profile_dns = dns_trajectory
+        else:
+            self._log(
+                "[Error] Skipping profile plot: missing reference DNS trajectory."
+            )
+            return
 
         if les_mean.shape != mean_profile_dns.shape:
             raise ValueError(
@@ -828,10 +898,12 @@ class TD3Trainer:
                 f"LES profile shape {les_mean.shape} vs DNS target shape {mean_profile_dns.shape}."
             )
 
+        # 3. Compute error metrics
         l2_error = float(np.linalg.norm(les_mean - mean_profile_dns))
         dns_norm = np.linalg.norm(mean_profile_dns)
         relative_l2_error = (l2_error / (dns_norm + 1e-12)) * 100.0
 
+        # 4. Generate Plot
         fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
 
         ax.axhline(0, color="black", linestyle="--", linewidth=0.8, alpha=0.7, zorder=1)
@@ -866,28 +938,21 @@ class TD3Trainer:
         y_range = y_max - y_min if y_max != y_min else 1.0
         ax.set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
 
+        # Dynamic Title
         if env is not None:
-            ax.set_title(
-                r"Mean Velocity Profile Comparison $\langle w \rangle$ "
-                + f"(Episode {episode})",
-                fontsize=13,
-                pad=10,
-            )
-        elif solver is not None and isinstance(solver, SolverCoupled):
-            ax.set_title(
-                r"Mean Velocity Profile Comparison $\langle w \rangle$ "
-                + "Evaluation",
-                fontsize=13,
-                pad=10,
-            )
+            title_tag = f"(Episode {episode if episode is not None else 0})"
+        elif isinstance(solver, SolverCoupled):
+            title_tag = "Evaluation"
+        elif isinstance(solver, SolverBase):
+            title_tag = "Baseline"
+        else:
+            title_tag = ""
 
-        elif solver is not None and isinstance(solver, SolverBase):
-            ax.set_title(
-                r"Mean Velocity Profile Comparison $\langle w \rangle$ "
-                + "Baseline",
-                fontsize=13,
-                pad=10,
-            )
+        ax.set_title(
+            rf"Mean Velocity Profile Comparison $\langle w \rangle$ {title_tag}".strip(),
+            fontsize=13,
+            pad=10,
+        )
 
         ax.set_xlabel(r"Domain Coordinate $z$", fontsize=11)
         ax.set_ylabel(r"Mean Velocity $\langle w \rangle$", fontsize=11)
@@ -922,18 +987,32 @@ class TD3Trainer:
 
         plt.tight_layout()
 
-        out_dir = self.master_path / "profile_comparisons"
+        # 5. Resolve Output Directory & File Name
+        if save_dir is not None:
+            out_dir = save_dir
+        elif env is not None:
+            out_dir = self.master_path / "profile_comparisons"
+        elif isinstance(solver, SolverCoupled):
+            out_dir = self.master_path / "evaluation"
+        elif isinstance(solver, SolverBase):
+            out_dir = self.master_path / "baseline"
+        else:
+            out_dir = self.master_path
+
         out_dir.mkdir(parents=True, exist_ok=True)
+
         if env is not None:
-            output_plot_path = out_dir / f"profile_comparison_ep{episode:03d}.png"
-        elif solver is not None and isinstance(solver, SolverCoupled):
-            output_plot_path = (
-                self.master_path / "evaluation" / "profile_comparison_evaluation.png"
+            filename = (
+                f"profile_comparison_ep{episode if episode is not None else 0:03d}.png"
             )
-        elif solver is not None and isinstance(solver, SolverBase):
-            output_plot_path = (
-                self.master_path / "baseline" / "profile_comparison_baseline.png"
-            )
+        elif isinstance(solver, SolverCoupled):
+            filename = "profile_comparison_evaluation.png"
+        elif isinstance(solver, SolverBase):
+            filename = "profile_comparison_baseline.png"
+        else:
+            filename = "profile_comparison.png"
+
+        output_plot_path = out_dir / filename
 
         plt.savefig(output_plot_path, dpi=300)
 
@@ -942,7 +1021,7 @@ class TD3Trainer:
         else:
             plt.close(fig)
 
-        self._log(f"  * Saved velocity profile comparison -> {output_plot_path.name}")
+        self._log(f"  * Saved velocity profile comparison -> {output_plot_path}")
 
     def plot_history_breakdown(
         self, env: EnvironmentForcingDNS, show_plot: bool = False

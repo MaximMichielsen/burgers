@@ -18,12 +18,13 @@ TRAINING_DIR = PROJECT_ROOT / "dns_data" / "training"
 n_nodes_les = 33
 n_nodes_dns = 513
 z_length = 2.0
-dt = 1e-4
+dt = 1e-3
 
 t_start = 308.0101
 t_end = 309.0100
 
-n_episodes = 105
+n_episodes = 1
+n_skip_steps = 20
 
 RUN_DIR = PROJECT_ROOT / "solver_data" / f"run_e{n_episodes}"
 
@@ -70,7 +71,7 @@ ann_config = TauANNConfig(
     tau_model,
     disc_config,
     ann_path=ann_path,
-    n_skip_steps=1,
+    n_skip_steps=n_skip_steps,
     output_scope=Scope.GLOBAL,
     input_scope=Scope.GLOBAL,
     n_training_episodes=n_episodes,
