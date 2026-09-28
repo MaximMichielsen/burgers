@@ -7,12 +7,11 @@ from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 
-n_nodes_les = 65
+n_nodes_les = 33
 z_length = 2.0
-dt = 1e-4
+dt = 1e-3
 t_start = 308.0101
 t_end = 309.0100
 
@@ -23,7 +22,10 @@ mesh_dns = np.linspace(0.0, z_length, 513)
 mesh_les = np.linspace(0.0, z_length, n_nodes_les)
 
 ic_les = np.load(FILTERED_DIR / f"ic_linear_{n_nodes_les}.npy")
-forcing_projected = np.load(FILTERED_DIR / f"forcing_l2_{n_nodes_les}.npy")
+forcing_path = PROJECT_ROOT / "dns_data" / "temporal" / "projected" / f"forcing_l2_{n_nodes_les}.npy"
+
+forcing_projected = np.load(forcing_path)
+
 
 n_timesteps, _ = np.shape(forcing_projected)
 timespan = n_timesteps * dt
@@ -59,7 +61,7 @@ solver_les = SolverBase(
     simulation_mode=simulation_mode,
     master_path=PROJECT_ROOT
     / "solver_data"
-    / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}",
+    / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}_dt_{dt}",
     tau_model=tau_model,
 )
 solver_les.run_simulation()

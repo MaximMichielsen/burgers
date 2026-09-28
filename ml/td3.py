@@ -479,7 +479,7 @@ class TD3Trainer:
             solver=self.solver,
             episode=None,
             dns_trajectory=self.reference_trajectory.target_profile,
-            evaluation_mode=True
+            evaluation_mode=True,
         )
 
     def _log_episode_header(self, episode: int, total_steps: int) -> None:
@@ -949,7 +949,9 @@ class TD3Trainer:
             if not baseline_file.exists():
                 npy_files = list(mean_profiles_dir.glob("*.npy"))
                 if not npy_files:
-                    self._log(f"[Warning] Skipping baseline plot: No .npy files found in {mean_profiles_dir}")
+                    self._log(
+                        f"[Warning] Skipping baseline plot: No .npy files found in {mean_profiles_dir}"
+                    )
                     baseline_file = None
                 else:
                     baseline_file = npy_files[0]

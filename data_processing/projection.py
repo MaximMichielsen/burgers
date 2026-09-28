@@ -126,25 +126,34 @@ def nodal_project(
 
 
 if __name__ == "__main__":
+    forcing_path = (
+        PROJECT_ROOT
+        / "dns_data"
+        / "temporal"
+        / "unprojected"
+        / "cache_forcing_f01c9f43049633787bc4f3814e74d3b8.npy"
+    )
+    filtered_path = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
     n_nodes_les = [9, 17, 33, 65]
     forcing_filter = "l2"
-    if FORCING_PATH.exists():
-        forcing_dns = np.load(FORCING_PATH)
+    if forcing_path.exists():
+        forcing_dns = np.load(forcing_path)
         for n_nodes in n_nodes_les:
             l2_data = filter_forcing(
                 forcing_dns,
                 mode=forcing_filter,
                 les_resolution=n_nodes,
-                save_path=FILTERED_PATH,
+                save_path=filtered_path,
                 z_min=0.0,
                 z_max=2.0,
             )
             print(
-                f"Forcing filtering complete ({n_nodes}). Outputs saved to {FILTERED_PATH}"
+                f"Forcing filtering complete ({n_nodes}). Outputs saved to {filtered_path}"
             )
     else:
         print(f"Forcing file not found at {FORCING_PATH}")
 
+    quit()
     if W_FIELD_PATH.exists():
         w_dns = np.load(W_FIELD_PATH)
         mesh_dns_ = np.linspace(0.0, 2.0, 513)

@@ -8,16 +8,15 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parent
 PARSED_STAT_DIR = PROJECT_ROOT / "dns_data" / "curated" / "stat"
 
-n_nodes_les = 65
+n_nodes_les = 33
 tau_params = 2
 
 # Load DNS profiles array
 mean_w_profiles = np.load(PARSED_STAT_DIR / "mean_w.npy")
 
 # Resolve target directory for LES profiles
-
 profiles_dir = (
-    PROJECT_ROOT / "solver_data" / f"les_n{n_nodes_les}_p{tau_params}" / "mean_profiles"
+    PROJECT_ROOT / "solver_data" / f"les_n{n_nodes_les}_p{tau_params}_dt_0.01" / "mean_profiles"
 )
 
 # Automatically locate all .npy LES profiles sorted by timestamp
@@ -43,6 +42,17 @@ for frame_idx, les_path in enumerate(les_files):
     # Spatial Grids
     mesh_dns = np.linspace(z_domain[0], z_domain[1], len(mean_profile_dns))
     mesh_les = np.linspace(z_domain[0], z_domain[1], len(les_mean))
+
+    # Interpolate DNS onto LES mesh if shape mismatch exists for error calculation
+    if len(mean_profile_dns) != len(les_mean):
+        dns_interp = np.interp(mesh_les, mesh_dns, mean_profile_dns)
+    else:
+        dns_interp = mean_profile_dns
+
+    # L2 Error Metrics
+    l2_error = float(np.linalg.norm(les_mean - dns_interp))
+    dns_norm = np.linalg.norm(dns_interp)
+    relative_l2_error = (l2_error / (dns_norm + 1e-12)) * 100.0
 
     # Figure Setup
     fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
@@ -99,6 +109,28 @@ for frame_idx, les_path in enumerate(les_files):
     ax.minorticks_on()
 
     ax.legend(loc="upper right", frameon=True, framealpha=0.9, fontsize=9.5)
+
+    # L2 Error Score Box
+    score_text = (
+        rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}"
+        + f"\nRel. Error: {relative_l2_error:.2f}%"
+    )
+    ax.text(
+        0.03,
+        0.05,
+        score_text,
+        transform=ax.transAxes,
+        fontsize=9.5,
+        verticalalignment="bottom",
+        horizontalalignment="left",
+        bbox=dict(
+            boxstyle="round,pad=0.5",
+            facecolor="white",
+            edgecolor="gray",
+            alpha=0.85,
+        ),
+        zorder=5,
+    )
 
     plt.tight_layout()
 
