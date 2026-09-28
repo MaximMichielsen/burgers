@@ -9,7 +9,7 @@ from solvers.solver_base import SolverBase, SimulationMode, TauModel
 PROJECT_ROOT = Path(__file__).resolve().parent
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 
-n_nodes_les = 33
+n_nodes_les = 17
 z_length = 2.0
 dt = 1e-3
 t_start = 308.0101
@@ -22,7 +22,7 @@ mesh_dns = np.linspace(0.0, z_length, 513)
 mesh_les = np.linspace(0.0, z_length, n_nodes_les)
 
 ic_les = np.load(FILTERED_DIR / f"ic_linear_{n_nodes_les}.npy")
-forcing_path = PROJECT_ROOT / "dns_data" / "temporal" / "projected" / f"forcing_l2_{n_nodes_les}.npy"
+forcing_path = PROJECT_ROOT / "dns_data" / "projected" / f"forcing_l2_{n_nodes_les}.npy"
 
 forcing_projected = np.load(forcing_path)
 
