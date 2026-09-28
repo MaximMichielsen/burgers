@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 
 from ml.reference_scheduler import ReferenceTrajectory
@@ -8,7 +9,7 @@ from ml.td3 import TD3Trainer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, TauModel
-
+matplotlib.use('Agg')
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
