@@ -231,7 +231,6 @@ class EnvironmentForcingDNS:
 
         # --- 4. Log Unweighted Physical Metrics ---
         self.distance_history.append(distance)
-        print(step, raw_improvement, raw_distance_error)
         self.distance_improvement_history_raw.append(raw_improvement)
         self.distance_error_history_raw.append(raw_distance_error)
         self.spectral_penalty_history_raw.append(raw_spectral_error)

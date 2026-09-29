@@ -115,7 +115,6 @@ class SolverCoupled(SolverBase):
         self.prev_elapsed = self.time_elapsed
         self.current_time_step += 1
 
-        print(self.training_mode)
         if not self.training_mode and self.time_elapsed >= self.domain_timespan:
             self.simulation_done = True
 
