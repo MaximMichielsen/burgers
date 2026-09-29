@@ -97,6 +97,12 @@ class TD3Agent:
 
         self.total_it = 0
 
+        self.act_center = 0.5 * (hp.max_action + hp.min_action)
+        self.act_half = 0.5 * (hp.max_action - hp.min_action)
+
+    def _to_norm(self, a):
+        return (a - self.act_center) / self.act_half
+
     def select_action(self, state: NDArray, noise_std: float = 0.0) -> NDArray:
         """Select action with optional Gaussian noise for exploration."""
         state_tensor = torch.as_tensor(
@@ -105,7 +111,7 @@ class TD3Agent:
         action = self.actor(state_tensor).cpu().data.numpy().flatten()
 
         if noise_std > 0.0:
-            noise = np.random.normal(0, noise_std, size=action.shape)
+            noise = np.random.normal(0, noise_std * self.act_half, size=action.shape)
             action = (action + noise).clip(self.hp.min_action, self.hp.max_action)
 
         return action
@@ -121,9 +127,9 @@ class TD3Agent:
 
         with torch.no_grad():
             # Target policy smoothing
-            noise = (torch.randn_like(action) * self.hp.policy_noise).clamp(
-                -self.hp.noise_clip, self.hp.noise_clip
-            )
+            noise = (torch.randn_like(action) * self.hp.policy_noise * self.act_half).clamp(
+                -self.hp.noise_clip * self.act_half, self.hp.noise_clip * self.act_half)
+
             next_action = (self.actor_target(next_state) + noise).clamp(
                 self.hp.min_action, self.hp.max_action
             )
@@ -133,7 +139,7 @@ class TD3Agent:
             target_q = torch.min(target_q1, target_q2)
             target_q = reward + (1.0 - done) * self.hp.discount * target_q
 
-        current_q1, current_q2 = self.critic(state, action)
+        current_q1, current_q2 = self.critic(state, self._to_norm(action))
         critic_loss = functional.smooth_l1_loss(
             current_q1, target_q
         ) + functional.smooth_l1_loss(current_q2, target_q)
@@ -145,7 +151,7 @@ class TD3Agent:
 
         # Delayed Policy Updates
         if self.total_it % self.hp.policy_freq == 0:
-            actor_loss = -self.critic.q1(state, self.actor(state)).mean()
+            actor_loss = -self.critic.q1(state, self._to_norm(self.actor(state))).mean()
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()

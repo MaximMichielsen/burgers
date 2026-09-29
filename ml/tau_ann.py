@@ -41,7 +41,7 @@ class TauANNHyperparameters:
     weight_improvement = 10
     weight_absolute_error = 1.0
     weight_spectral = 1.0
-    weight_action = 0.1
+    weight_action = 0.0
     gamma = 5.0 / 3.0
 
 

@@ -16,7 +16,10 @@ mean_w_profiles = np.load(PARSED_STAT_DIR / "mean_w.npy")
 
 # Resolve target directory for LES profiles
 profiles_dir = (
-    PROJECT_ROOT / "solver_data" / f"les_n{n_nodes_les}_p{tau_params}_dt_0.001" / "mean_profiles"
+    PROJECT_ROOT
+    / "solver_data"
+    / f"les_n{n_nodes_les}_p{tau_params}_dt_0.001"
+    / "mean_profiles"
 )
 
 # Automatically locate all .npy LES profiles sorted by timestamp
