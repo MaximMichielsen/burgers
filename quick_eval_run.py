@@ -14,6 +14,7 @@ matplotlib.use("Agg")
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
+TEMPORAL_DIR = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
 TRAINING_DIR = PROJECT_ROOT / "dns_data" / "training"
 
 n_nodes_les = 33
@@ -27,7 +28,7 @@ t_start = 308.0101
 t_end = 309.0100  # t_end remains unchanged
 
 # --- ADJUSTMENT 2: Reduced episodes for rapid diagnostic evaluation ---
-n_episodes = 10  # Reduced from 150 to 10 for quick execution
+n_episodes = 25  # Reduced from 150 to 10 for quick execution
 n_skip_steps = 20
 
 RUN_DIR = PROJECT_ROOT / "solver_data" / f"run_quick_eval_e{n_episodes}"
@@ -36,7 +37,7 @@ simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS
 
 ic_les = np.load(FILTERED_DIR / f"ic_linear_{n_nodes_les}.npy")
-forcing_projected = np.load(FILTERED_DIR / f"forcing_l2_{n_nodes_les}.npy")
+forcing_projected = np.load(TEMPORAL_DIR / f"forcing_l2_{n_nodes_les}.npy")
 
 n_timesteps, _ = np.shape(forcing_projected)
 

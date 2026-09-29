@@ -11,8 +11,8 @@ from torch import nn, Tensor
 from setup.config_discretization import DiscretizationConfig
 from solvers.solver_base import TauModel
 
-MAX_ACTION = 1.2
-MIN_ACTION = 0.8
+MAX_ACTION = 1.5
+MIN_ACTION = 0.5
 
 SMOOTHING_FACTOR = 0.002
 
@@ -30,17 +30,17 @@ class TauANNHyperparameters:
     max_action: float = MAX_ACTION
     min_action: float = MIN_ACTION + 1e-6
 
-    init_factor_stochastic: float = 0.05
+    init_factor_stochastic: float = 0.2
 
-    init_max_action: float = 1 + (MAX_ACTION * init_factor_stochastic)
-    init_min_action: float = 1 - (MIN_ACTION * init_factor_stochastic)
+    init_max_action: float = 1.0 + (MAX_ACTION - 1.0) * init_factor_stochastic
+    init_min_action: float = 1.0 - (1.0 - MIN_ACTION) * init_factor_stochastic
 
     smoothing_factor = SMOOTHING_FACTOR
     burn_in_steps = 0
 
-    weight_improvement = 10
-    weight_absolute_error = 1.0
-    weight_spectral = 0.01
+    weight_improvement = 100
+    weight_absolute_error = 10.0
+    weight_spectral = 0.0
     weight_action = 0.0
     gamma = 5.0 / 3.0
 
@@ -50,18 +50,18 @@ class TD3Hyperparameters(TauANNHyperparameters):
     """Hyperparameters for TD3 Agent training and environment interactions."""
 
     # Agent / Optimization Params
-    lr: float = 1e-4
+    lr: float = 3e-4
     discount: float = 0.99
     tau_polyak: float = 0.005
-    policy_noise: float = 0.2
-    noise_clip: float = 0.5
+    policy_noise: float = 0.15
+    noise_clip: float = 0.3
     policy_freq: int = 2
 
     # Training / Environment Setup Params
     batch_size: int = 64
     expl_noise: float = 0.1
     replay_buffer_max_size: int = int(1e5)
-    stochastic_timesteps = 100
+    stochastic_timesteps = 1000
 
 
 @dataclass
@@ -179,7 +179,8 @@ class TauANNConfig:
 class TauANN(nn.Module):
     """MLP policy πθ : S → A for the Coefficient Controller.
 
-    Maps state sₙ = (Ê₁...Êₖ, c_...^{n-1}) ∈ ℝ^(K+4) to a coefficient vector.
+    Maps state sₙ to physical action vector a ∈ [min_action, max_action]
+    using a Tanh activation mapped linearly to physical action bounds.
     """
 
     def __init__(
@@ -205,17 +206,23 @@ class TauANN(nn.Module):
             nn.Linear(self.hidden_dim, self.action_dim),
         )
 
+        # Action mapping constants: a = center + half * a_norm
+        self.act_center = 0.5 * (self.max_action + self.min_action)
+        self.act_half = 0.5 * (self.max_action - self.min_action)
+
+        # Zero-initialize the final output layer for clean start near a = 1.0 (baseline)
+        nn.init.zeros_(self.network[-1].weight)
+        nn.init.zeros_(self.network[-1].bias)
+
     def forward(self, state_input: Tensor) -> Tensor:
         """
         Compute the TD3 actor's action output.
 
-        Maps raw network output to the closed range [min_action, max_action]
-        Bounds are enforced implicitly by sigmoid's saturation
+        Maps raw network output to normalized range [-1, 1] via tanh,
+        then scales to physical range [min_action, max_action].
         """
-        raw_output = self.network(state_input)
-        return self.min_action + (self.max_action - self.min_action) * torch.sigmoid(
-            raw_output
-        )
+        a_norm = torch.tanh(self.network(state_input))
+        return self.act_center + self.act_half * a_norm
 
 
 def save_tau_ann(model: TauANN, save_path: Path) -> None:

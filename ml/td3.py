@@ -77,7 +77,6 @@ class TD3Agent:
     def __init__(
         self, ann_config: TauANNConfig, hp: TD3Hyperparameters = TD3Hyperparameters()
     ):
-
         self.hp = hp
         self.device = torch.device("cpu")
 
@@ -97,28 +96,23 @@ class TD3Agent:
 
         self.total_it = 0
 
-        self.act_center = 0.5 * (hp.max_action + hp.min_action)
-        self.act_half = 0.5 * (hp.max_action - hp.min_action)
-
-    def _to_norm(self, a):
-        return (a - self.act_center) / self.act_half
-
     def select_action(self, state: NDArray, noise_std: float = 0.0) -> NDArray:
-        """Select action with optional Gaussian noise for exploration."""
+        """Select physical action with Gaussian exploration noise scaled by action span."""
         state_tensor = torch.as_tensor(
             state.reshape(1, -1), dtype=torch.float32, device=self.device
         )
         action = self.actor(state_tensor).cpu().data.numpy().flatten()
 
         if noise_std > 0.0:
-            noise = np.random.normal(0, noise_std * self.act_half, size=action.shape)
+            act_span = self.hp.max_action - self.hp.min_action
+            noise = np.random.normal(0, noise_std * act_span, size=action.shape)
             action = (action + noise).clip(self.hp.min_action, self.hp.max_action)
 
         return action
 
     def train(
         self, replay_buffer: ReplayBuffer, batch_size: Optional[int] = None
-    ) -> None:
+    ) -> tuple[float, float]:
         if batch_size is None:
             batch_size = self.hp.batch_size
         self.total_it += 1
@@ -126,25 +120,23 @@ class TD3Agent:
         state, action, next_state, reward, done = replay_buffer.sample(batch_size)
 
         with torch.no_grad():
-            # Target policy smoothing
-            noise = (
-                torch.randn_like(action) * self.hp.policy_noise * self.act_half
-            ).clamp(
-                -self.hp.noise_clip * self.act_half, self.hp.noise_clip * self.act_half
+            # Target policy smoothing scaled to physical action span
+            act_span = self.hp.max_action - self.hp.min_action
+            noise = (torch.randn_like(action) * self.hp.policy_noise * act_span).clamp(
+                -self.hp.noise_clip * act_span,
+                self.hp.noise_clip * act_span,
             )
 
             next_action = (self.actor_target(next_state) + noise).clamp(
                 self.hp.min_action, self.hp.max_action
             )
 
-            # Clipped double Q-learning
-            target_q1, target_q2 = self.critic_target(
-                next_state, self._to_norm(next_action)
-            )
+            # Clipped double Q-learning (Critic receives physical actions directly)
+            target_q1, target_q2 = self.critic_target(next_state, next_action)
             target_q = torch.min(target_q1, target_q2)
-            target_q = reward + (1.0 - done) * self.hp.discount * target_q
+            target_q = reward + (1.0 - done.float()) * self.hp.discount * target_q
 
-        current_q1, current_q2 = self.critic(state, self._to_norm(action))
+        current_q1, current_q2 = self.critic(state, action)
         critic_loss = functional.smooth_l1_loss(
             current_q1, target_q
         ) + functional.smooth_l1_loss(current_q2, target_q)
@@ -158,14 +150,14 @@ class TD3Agent:
 
         # Delayed Policy Updates
         if self.total_it % self.hp.policy_freq == 0:
-            actor_loss = -self.critic.q1(state, self._to_norm(self.actor(state))).mean()
+            actor_loss = -self.critic.q1(state, self.actor(state)).mean()
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
             self.actor_optimizer.step()
 
-            actor_loss_val = actor_loss.item()
+            actor_loss_val = float(actor_loss.item())
             self._last_actor_loss = actor_loss_val
 
             # Soft updates (Polyak averaging)
@@ -174,7 +166,7 @@ class TD3Agent:
             ):
                 target_param.data.copy_(
                     self.hp.tau_polyak * param.data
-                    + (1 - self.hp.tau_polyak) * target_param.data
+                    + (1.0 - self.hp.tau_polyak) * target_param.data
                 )
 
             for param, target_param in zip(
@@ -182,22 +174,13 @@ class TD3Agent:
             ):
                 target_param.data.copy_(
                     self.hp.tau_polyak * param.data
-                    + (1 - self.hp.tau_polyak) * target_param.data
+                    + (1.0 - self.hp.tau_polyak) * target_param.data
                 )
 
         return float(critic_loss.item()), actor_loss_val
 
     def evaluate_q_value(self, state: NDArray, action: NDArray) -> float:
-        """
-        Evaluate the Q-value for a given state-action pair using the main critic.
-
-        Args:
-            state: Environment state array.
-            action: Physical action array.
-
-        Returns:
-            The predicted minimum Q-value as a scalar float.
-        """
+        """Evaluate Q-value for physical state-action pair using main critic."""
         with torch.no_grad():
             state_tensor = torch.as_tensor(
                 state.reshape(1, -1), dtype=torch.float32, device=self.device
@@ -1310,17 +1293,13 @@ class TD3Trainer:
             ),
         }
 
-        for ax, (title, (data, color)) in zip(
-            axes_weighted[1:], histories_weighted_components.items()
-        ):
+        for ax, (title, (data, color)) in zip(axes_weighted[1:], histories_weighted_components.items()):
             if not data:
-                ax.text(
-                    0.5, 0.5, f"No data recorded for {title}", ha="center", va="center"
-                )
+                ax.text(0.5, 0.5, f"No data recorded for {title}", ha="center", va="center")
                 continue
 
             data_arr = np.array(data)
-            steps = np.arange(len(data_arr))
+            steps = np.arange(len(data_arr))  # Dynamically generated per array
 
             ax.plot(
                 steps,

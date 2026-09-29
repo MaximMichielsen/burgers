@@ -142,8 +142,6 @@ class EnvironmentForcingDNS:
 
             info["reward_components"] = getattr(self, "last_reward_components", {})
 
-            # 2. Append reward history on SUCCESS
-            self.total_reward_history_unscaled.append(reward_val)
             return next_state_array, reward_val, done_flag, info
 
         except (FloatingPointError, ZeroDivisionError, ArithmeticError) as e:
@@ -156,8 +154,6 @@ class EnvironmentForcingDNS:
             fallback_state = np.nan_to_num(
                 last_valid_state, nan=0.0, posinf=1.0, neginf=-1.0
             )
-            # Append reward history on CRASH
-            self.total_reward_history_unscaled.append(reward_val)
             return fallback_state, reward_val, done_flag, info
 
     def compute_reward(self, action: NDArray) -> float:
@@ -170,7 +166,7 @@ class EnvironmentForcingDNS:
 
         target_profile = self.reference_trajectory.target_profile
 
-        # Compute distance unconditionally
+        # L2 spatial distance error (non-squared Euclidean norm / RMSE for linear gradient response)
         distance = self.compute_distance_error(
             self.running_mean_solution, target_profile
         )
@@ -183,6 +179,8 @@ class EnvironmentForcingDNS:
 
         # Raw physical delta improvement (unweighted)
         raw_improvement = prev_distance - distance
+        raw_improvement = np.clip(prev_distance - distance, -1.0, 1.0)
+
         raw_distance_error = distance
 
         # --- 2. Instantaneous Energy Spectrum Metrics ---
@@ -206,17 +204,18 @@ class EnvironmentForcingDNS:
 
         wavenumber_indices = np.arange(1, len(spectrum_k) + 1, dtype=np.float64)
         normalized_k = wavenumber_indices / len(spectrum_k)
-        norm_factor = (np.sum(np.abs(proj_spectrum_k)) ** 2) + 1e-12
+        norm_factor = np.sum(np.abs(proj_spectrum_k)) + 1e-12
 
-        spectral_error = ((spectrum_k - proj_spectrum_k) ** 2) / norm_factor
-        unweighted_spectral_error = (normalized_k**self.hp.gamma) * spectral_error
+        # Linear high-wavenumber spectral error
+        spectral_error = np.abs(spectrum_k - proj_spectrum_k) / norm_factor
+        unweighted_spectral_error = (normalized_k ** self.hp.gamma) * spectral_error
         raw_spectral_error = float(np.sum(unweighted_spectral_error))
 
         # --- 3. Action Regularization Metric ---
         a_ref = np.ones_like(action)
         raw_action_deviation = self.compute_distance_error(action, a_ref)
 
-        # --- 4. Log Unweighted Physical Metrics (for Diagnostics / Plots) ---
+        # --- 4. Log Unweighted Physical Metrics ---
         self.distance_history.append(distance)
         self.distance_improvement_history_raw.append(raw_improvement)
         self.distance_error_history_raw.append(raw_distance_error)
@@ -229,22 +228,15 @@ class EnvironmentForcingDNS:
         penalty_spectral = self.hp.weight_spectral * raw_spectral_error
         penalty_action = self.hp.weight_action * raw_action_deviation
 
-        # # Scaled reward for policy backpropagation
-        # reward_total = reward_improvement - (
-        #     penalty_absolute_distance + penalty_spectral + penalty_action
-        # )
-        #
-        # scaled_reward = float(np.clip(reward_total, -REWARD_CLIP, REWARD_CLIP))
-
         reward_total = (
-            reward_improvement
-            - penalty_absolute_distance
-            - penalty_spectral
-            - penalty_action
+                reward_improvement
+                - penalty_absolute_distance
+                - penalty_spectral
+                - penalty_action
         )
         scaled_reward = float(np.clip(reward_total, -REWARD_CLIP, REWARD_CLIP))
 
-        # --- 6. Log Weighted Physical Metrics (for Diagnostics / Plots) ---
+        # --- 6. Log Weighted Physical Metrics ---
         self.distance_improvement_history_weighted.append(reward_improvement)
         self.distance_error_history_weighted.append(penalty_absolute_distance)
         self.spectral_penalty_history_weighted.append(penalty_spectral)
@@ -260,14 +252,22 @@ class EnvironmentForcingDNS:
             "spectral_penalty_term": float(penalty_spectral),
         }
 
+        if distance < 1e-3 or raw_improvement > 1.0:
+            print(f"[DEBUG STEP {len(self.distance_history)}] SPIKE DETECTED!")
+            print(f"  -> distance: {distance}")
+            print(f"  -> prev_distance: {prev_distance}")
+            print(f"  -> raw_improvement: {raw_improvement}")
+            print(f"  -> running_mean min/max: {self.running_mean_solution.min()}, {self.running_mean_solution.max()}")
+            print(f"  -> target_profile min/max: {target_profile.min()}, {target_profile.max()}")
+
         return scaled_reward
 
     @staticmethod
     def compute_distance_error(field: NDArray, target: NDArray) -> float:
-        """Compute spatial L2 (MSE) error between field and target vectors."""
+        """Compute spatial L1 or RMS error (non-squared) between field and target vectors."""
         if field.shape != target.shape:
             raise ValueError(
                 f"Shape mismatch: field {field.shape} vs target {target.shape}"
             )
-
-        return float(np.mean((field - target) ** 2))
+        # Root Mean Square Error (RMSE) provides a linear gradient standard
+        return float(np.sqrt(np.mean((field - target) ** 2)))
