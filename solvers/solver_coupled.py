@@ -87,8 +87,10 @@ class SolverCoupled(SolverBase):
             action = self.prescribed_action_trajectory[self.current_time_step]
             self.correction_coefficients = np.asarray(action, dtype=np.float64)
         elif not self.training_mode:
-            if (self.correction_coefficients is None
-                    or self.current_time_step % self.ann_config.n_skip_steps == 0):
+            if (
+                self.correction_coefficients is None
+                or self.current_time_step % self.ann_config.n_skip_steps == 0
+            ):
                 self.correction_coefficients = self.get_ann_coefficients()
 
         new_solution = self.nr_iteration(self.solution, self.solution_previous)

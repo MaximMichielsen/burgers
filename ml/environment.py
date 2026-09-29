@@ -140,6 +140,8 @@ class EnvironmentForcingDNS:
             if not np.all(np.isfinite(next_state_array)):
                 raise FloatingPointError("NaN/Inf detected in state stencil.")
 
+            info["reward_components"] = getattr(self, "last_reward_components", {})
+
             # 2. Append reward history on SUCCESS
             self.total_reward_history_unscaled.append(reward_val)
             return next_state_array, reward_val, done_flag, info
@@ -181,8 +183,7 @@ class EnvironmentForcingDNS:
 
         # Raw physical delta improvement (unweighted)
         raw_improvement = prev_distance - distance
-
-        raw_distance_error = distance**2
+        raw_distance_error = distance
 
         # --- 2. Instantaneous Energy Spectrum Metrics ---
         _, spectrum_les = self.solver.compute_energy_spectrum_(self.solver.solution)
@@ -224,15 +225,23 @@ class EnvironmentForcingDNS:
 
         # --- 5. Apply Reward Weights for TD3 Agent ---
         reward_improvement = self.hp.weight_improvement * raw_improvement
-        penalty_absolute_distance = self.hp.weight_absolute_error * (distance**2)
+        penalty_absolute_distance = self.hp.weight_absolute_error * distance
         penalty_spectral = self.hp.weight_spectral * raw_spectral_error
         penalty_action = self.hp.weight_action * raw_action_deviation
 
-        # Scaled reward for policy backpropagation
-        reward_total = reward_improvement - (
-            penalty_absolute_distance + penalty_spectral + penalty_action
-        )
+        # # Scaled reward for policy backpropagation
+        # reward_total = reward_improvement - (
+        #     penalty_absolute_distance + penalty_spectral + penalty_action
+        # )
+        #
+        # scaled_reward = float(np.clip(reward_total, -REWARD_CLIP, REWARD_CLIP))
 
+        reward_total = (
+            reward_improvement
+            - penalty_absolute_distance
+            - penalty_spectral
+            - penalty_action
+        )
         scaled_reward = float(np.clip(reward_total, -REWARD_CLIP, REWARD_CLIP))
 
         # --- 6. Log Weighted Physical Metrics (for Diagnostics / Plots) ---
@@ -244,7 +253,14 @@ class EnvironmentForcingDNS:
         self.total_reward_history_unscaled.append(reward_total)
         self.total_reward_history_scaled.append(scaled_reward)
 
-        return float(scaled_reward)
+        self.last_reward_components = {
+            "improvement_term": float(reward_improvement),
+            "absolute_distance_term": float(penalty_absolute_distance),
+            "action_penalty_term": float(penalty_action),
+            "spectral_penalty_term": float(penalty_spectral),
+        }
+
+        return scaled_reward
 
     @staticmethod
     def compute_distance_error(field: NDArray, target: NDArray) -> float:

@@ -40,7 +40,7 @@ class TauANNHyperparameters:
 
     weight_improvement = 10
     weight_absolute_error = 1.0
-    weight_spectral = 1.0
+    weight_spectral = 0.01
     weight_action = 0.0
     gamma = 5.0 / 3.0
 
@@ -61,7 +61,7 @@ class TD3Hyperparameters(TauANNHyperparameters):
     batch_size: int = 64
     expl_noise: float = 0.1
     replay_buffer_max_size: int = int(1e5)
-    stochastic_timesteps = 10000
+    stochastic_timesteps = 100
 
 
 @dataclass

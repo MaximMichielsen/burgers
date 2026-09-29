@@ -127,15 +127,20 @@ class TD3Agent:
 
         with torch.no_grad():
             # Target policy smoothing
-            noise = (torch.randn_like(action) * self.hp.policy_noise * self.act_half).clamp(
-                -self.hp.noise_clip * self.act_half, self.hp.noise_clip * self.act_half)
+            noise = (
+                torch.randn_like(action) * self.hp.policy_noise * self.act_half
+            ).clamp(
+                -self.hp.noise_clip * self.act_half, self.hp.noise_clip * self.act_half
+            )
 
             next_action = (self.actor_target(next_state) + noise).clamp(
                 self.hp.min_action, self.hp.max_action
             )
 
             # Clipped double Q-learning
-            target_q1, target_q2 = self.critic_target(next_state, next_action)
+            target_q1, target_q2 = self.critic_target(
+                next_state, self._to_norm(next_action)
+            )
             target_q = torch.min(target_q1, target_q2)
             target_q = reward + (1.0 - done) * self.hp.discount * target_q
 
@@ -149,6 +154,8 @@ class TD3Agent:
         torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=1.0)
         self.critic_optimizer.step()
 
+        actor_loss_val = getattr(self, "_last_actor_loss", 0.0)
+
         # Delayed Policy Updates
         if self.total_it % self.hp.policy_freq == 0:
             actor_loss = -self.critic.q1(state, self._to_norm(self.actor(state))).mean()
@@ -157,6 +164,9 @@ class TD3Agent:
             actor_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
             self.actor_optimizer.step()
+
+            actor_loss_val = actor_loss.item()
+            self._last_actor_loss = actor_loss_val
 
             # Soft updates (Polyak averaging)
             for param, target_param in zip(
@@ -174,6 +184,31 @@ class TD3Agent:
                     self.hp.tau_polyak * param.data
                     + (1 - self.hp.tau_polyak) * target_param.data
                 )
+
+        return float(critic_loss.item()), actor_loss_val
+
+    def evaluate_q_value(self, state: NDArray, action: NDArray) -> float:
+        """
+        Evaluate the Q-value for a given state-action pair using the main critic.
+
+        Args:
+            state: Environment state array.
+            action: Physical action array.
+
+        Returns:
+            The predicted minimum Q-value as a scalar float.
+        """
+        with torch.no_grad():
+            state_tensor = torch.as_tensor(
+                state.reshape(1, -1), dtype=torch.float32, device=self.device
+            )
+            action_tensor = torch.as_tensor(
+                action.reshape(1, -1), dtype=torch.float32, device=self.device
+            )
+            q1, q2 = self.critic(state_tensor, action_tensor)
+            q_val = torch.min(q1, q2).item()
+
+        return float(q_val)
 
 
 # =============================================================================
@@ -222,6 +257,13 @@ class TD3Trainer:
         self.master_path.mkdir(parents=True, exist_ok=True)
         self.log_file_path = self.master_path / "training_log.txt"
         self._init_txt_log()
+
+        self.mean_actions: list[float] = []
+        self.action_deviation_history = []
+        self.action_mean_history = []
+        self.critic_loss_history = []
+        self.actor_loss_history = []
+        self.q_value_gradient_history = []
 
     def _build_les_cache_key(self) -> LESCacheKey:
         """Construct LESCacheKey from problem and discretization configurations."""
@@ -310,9 +352,13 @@ class TD3Trainer:
         episode = 0
         stop_training = False
 
+        if not hasattr(self, "q_sensitivity_history"):
+            self.q_sensitivity_history = []
+
         while episode < self.ann_config.n_training_episodes and not stop_training:
             ep_start_time = time.time()
             state = env.reset()
+            initial_state = state.copy()  # Cache for diagnostic check
             episode_reward = 0.0
             done = False
             episode_steps = 0
@@ -377,19 +423,32 @@ class TD3Trainer:
                     )
 
                 if total_steps >= self.hp.stochastic_timesteps:
-                    agent.train(replay_buffer, self.hp.batch_size)
+                    critic_loss, actor_loss = agent.train(
+                        replay_buffer, self.hp.batch_size
+                    )
+
+                    self.critic_loss_history.append(critic_loss)
+                    self.actor_loss_history.append(actor_loss)
 
             if skip_episode:
                 episode += 1
                 continue
 
             # Post-processing & logging
-            clipped_reward = np.clip(
-                episode_reward, a_min=EPISODE_PENALTY_CLIP, a_max=None
+            clipped_reward = float(
+                np.clip(episode_reward, a_min=EPISODE_PENALTY_CLIP, a_max=None)
             )
             self.episode_reward_history.append(clipped_reward)
 
             self._execute_post_processing(env, episode + 1)
+
+            # Convert action statistics explicitly to float scalars
+            std_actions = float(np.std(actions))
+            mean_actions_val = float(np.mean(actions))
+
+            self.action_deviation_history.append(std_actions)
+            self.mean_actions.append(mean_actions_val)
+
             self._log_episode_summary(
                 episode,
                 time.time() - ep_start_time,
@@ -400,6 +459,23 @@ class TD3Trainer:
                 actions,
                 replay_buffer,
             )
+
+            # Diagnostic critic sensitivity check
+            if total_steps >= self.hp.stochastic_timesteps:
+                a_default = np.ones(self.ann_config.action_dimension, dtype=np.float32)
+                a_perturbed = np.full(
+                    self.ann_config.action_dimension, 1.1, dtype=np.float32
+                )
+
+                q_default = agent.evaluate_q_value(initial_state, a_default)
+                q_perturbed = agent.evaluate_q_value(initial_state, a_perturbed)
+                delta_q = float(abs(q_default - q_perturbed))
+
+                self.q_sensitivity_history.append(delta_q)
+                self._log(
+                    f"  [DIAGNOSTIC] Critic Q(s_0, a=1.0)={q_default:.4f} | "
+                    f"Q(s_0, a=1.1)={q_perturbed:.4f} | Delta Q={delta_q:.4f}"
+                )
 
             episode += 1
             self.episodes_ran += 1
@@ -420,6 +496,15 @@ class TD3Trainer:
         self.run_evaluation()
 
         return agent.actor
+
+    def run_diagnostic_plotting(self, save_path: Path | None = None) -> Path:
+        """Trigger diagnostic plot generation for the trainer instance."""
+        if save_path is None:
+            save_path = self.master_path / "diagnostics"
+
+        save_path.mkdir(parents=True, exist_ok=True)
+        plot_diagnostic_metrics(trainer=self, save_dir=save_path)
+        return save_path
 
     def run_baseline_evaluation(self) -> None:
         """Runs baseline evaluation with cache checking logic.
@@ -544,7 +629,7 @@ class TD3Trainer:
         replay_buffer: Any,
     ) -> None:
         """Logs end-of-episode summary block."""
-        mean_action = np.mean(actions) if actions else 0.0
+        mean_action = float(np.mean(actions)) if len(actions) > 0 else 0.0
         self._log("-" * 75)
         self._log(
             f"  [EPISODE {episode + 1} SUMMARY]\n"
@@ -1288,3 +1373,215 @@ class TD3Trainer:
         else:
             plt.close(fig_raw)
             plt.close(fig_weighted)
+
+
+def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
+    """Plot comprehensive step-level and episode-level diagnostic metrics with empty data safety."""
+    if save_dir is None:
+        save_dir = Path(trainer.master_path) / "diagnostics"
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(3, 2, figsize=(14, 12), sharex=False)
+    fig.suptitle("TD3 Diagnostic Dashboard", fontsize=16, fontweight="bold")
+
+    # Helper function to safely add legends without warnings
+    def safe_legend(ax, loc="upper right"):
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(loc=loc)
+
+    # --- 1. Step-Level Physical Errors (Raw) ---
+    ax = axes[0, 0]
+    has_raw = False
+    if hasattr(trainer, "env") and trainer.env is not None:
+        env = trainer.env
+        if getattr(env, "distance_history", None):
+            ax.plot(
+                env.distance_history, label="Spatial $L_2$ Distance", color="tab:blue"
+            )
+            has_raw = True
+        if getattr(env, "spectral_penalty_history_raw", None):
+            ax.plot(
+                env.spectral_penalty_history_raw,
+                label="Raw Spectral Error",
+                color="tab:orange",
+            )
+            has_raw = True
+        if getattr(env, "action_penalty_history_raw", None):
+            ax.plot(
+                env.action_penalty_history_raw,
+                label="Raw Action Deviation",
+                color="tab:green",
+            )
+            has_raw = True
+
+    if not has_raw:
+        ax.text(
+            0.5,
+            0.5,
+            "No Step History Logged in Active Env",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+    ax.set_title("Raw Step-Level Physical Metrics")
+    ax.set_xlabel("Environment Steps")
+    ax.set_ylabel("Value")
+    ax.grid(True, linestyle="--", alpha=0.6)
+    safe_legend(ax)
+
+    # --- 2. Weighted Reward Components ---
+    ax = axes[0, 1]
+    has_weighted = False
+    if hasattr(trainer, "env") and trainer.env is not None:
+        env = trainer.env
+        if getattr(env, "distance_improvement_history_weighted", None):
+            ax.plot(
+                env.distance_improvement_history_weighted,
+                label="Reward Improvement",
+                color="tab:green",
+            )
+            has_weighted = True
+        if getattr(env, "distance_error_history_weighted", None):
+            ax.plot(
+                env.distance_error_history_weighted,
+                label="Penalty Abs Distance",
+                color="tab:red",
+            )
+            has_weighted = True
+        if getattr(env, "spectral_penalty_history_weighted", None):
+            ax.plot(
+                env.spectral_penalty_history_weighted,
+                label="Penalty Spectral",
+                color="tab:purple",
+            )
+            has_weighted = True
+        if getattr(env, "action_penalty_history_weighted", None):
+            ax.plot(
+                env.action_penalty_history_weighted,
+                label="Penalty Action",
+                color="tab:brown",
+            )
+            has_weighted = True
+
+    if not has_weighted:
+        ax.text(
+            0.5,
+            0.5,
+            "No Weighted History Logged in Active Env",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+    ax.set_title("Weighted Reward Components")
+    ax.set_xlabel("Environment Steps")
+    ax.set_ylabel("Weighted Contribution")
+    ax.grid(True, linestyle="--", alpha=0.6)
+    safe_legend(ax)
+
+    # --- 3. Action Statistics Across Episodes ---
+    ax = axes[1, 0]
+    episodes = np.arange(1, len(getattr(trainer, "mean_actions", [])) + 1)
+    if len(episodes) > 0:
+        mean_a = np.array(trainer.mean_actions)
+        std_a = np.array(trainer.action_deviation_history)
+        ax.plot(
+            episodes, mean_a, label="Mean Action $\\mu_a$", color="navy", linewidth=2
+        )
+        ax.fill_between(
+            episodes,
+            mean_a - std_a,
+            mean_a + std_a,
+            color="navy",
+            alpha=0.2,
+            label="Std Deviation $\\sigma_a$",
+        )
+        ax.axhline(
+            1.0, color="gray", linestyle="--", alpha=0.7, label="Baseline (a=1.0)"
+        )
+    ax.set_title("Policy Action Evolution")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Action Magnitude")
+    ax.grid(True, linestyle="--", alpha=0.6)
+    safe_legend(ax)
+
+    # --- 4. Critic Q-Value Sensitivity Delta Q ---
+    ax = axes[1, 1]
+    q_hist = getattr(trainer, "q_sensitivity_history", [])
+    if q_hist:
+        ax.plot(
+            np.arange(1, len(q_hist) + 1),
+            q_hist,
+            color="darkred",
+            linewidth=2,
+            marker="o",
+            markersize=3,
+        )
+        ax.set_title("Critic Sensitivity: $\\Delta Q = |Q(s_0, 1.1) - Q(s_0, 1.0)|$")
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            "No Q-Sensitivity Data Logged\n(Training steps < stochastic_timesteps)",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+        ax.set_title("Critic Sensitivity $\\Delta Q$")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("$\\Delta Q$")
+    ax.grid(True, linestyle="--", alpha=0.6)
+
+    # --- 5. Critic & Actor Losses ---
+    ax = axes[2, 0]
+    has_loss = False
+    c_loss = getattr(trainer, "critic_loss_history", [])
+    a_loss = getattr(trainer, "actor_loss_history", [])
+    if c_loss:
+        ax.plot(c_loss, label="Critic Loss", color="crimson", alpha=0.8)
+        has_loss = True
+    if a_loss:
+        ax.plot(a_loss, label="Actor Loss", color="teal", alpha=0.8)
+        has_loss = True
+
+    if not has_loss:
+        ax.text(
+            0.5,
+            0.5,
+            "No Gradient Steps Executed Yet",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+    else:
+        ax.set_yscale("log")
+    ax.set_title("TD3 Optimization Losses")
+    ax.set_xlabel("Training Gradient Steps")
+    ax.set_ylabel("Loss")
+    ax.grid(True, linestyle="--", alpha=0.6)
+    safe_legend(ax)
+
+    # --- 6. Total Scaled vs Unscaled Reward ---
+    ax = axes[2, 1]
+    ep_rewards = getattr(trainer, "episode_reward_history", [])
+    if ep_rewards:
+        ax.plot(
+            np.arange(1, len(ep_rewards) + 1),
+            ep_rewards,
+            color="black",
+            linewidth=2,
+            label="Clipped Episode Reward",
+        )
+    ax.set_title("Episode Reward Trajectory")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Reward")
+    ax.grid(True, linestyle="--", alpha=0.6)
+    safe_legend(ax, loc="upper left")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plot_path = save_dir / "diagnostic_dashboard.png"
+    plt.savefig(plot_path, dpi=300)
+    plt.close()
+
+    print(f"[DIAGNOSTICS] Diagnostic dashboard plot saved to: {plot_path}")
+    return save_dir
