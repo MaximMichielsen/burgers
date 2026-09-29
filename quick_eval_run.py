@@ -28,7 +28,7 @@ t_start = 308.0101
 t_end = 309.0100  # t_end remains unchanged
 
 # --- ADJUSTMENT 2: Reduced episodes for rapid diagnostic evaluation ---
-n_episodes = 25  # Reduced from 150 to 10 for quick execution
+n_episodes = 3  # Reduced from 150 to 10 for quick execution
 n_skip_steps = 20
 
 RUN_DIR = PROJECT_ROOT / "solver_data" / f"run_quick_eval_e{n_episodes}"

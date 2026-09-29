@@ -108,14 +108,15 @@ class SolverCoupled(SolverBase):
         self.time_elapsed += self.dt
 
         # 2. Compute mean profile using populated snapshots
-        if int(self.time_elapsed) > int(self.prev_elapsed):
+        if not self.training_mode and int(self.time_elapsed) > int(self.prev_elapsed):
             self.mean_solution = self.calculate_mean_profile()
             self.write_mean_solution_to_csv()
 
         self.prev_elapsed = self.time_elapsed
         self.current_time_step += 1
 
-        if self.time_elapsed >= self.domain_timespan:
+        print(self.training_mode)
+        if not self.training_mode and self.time_elapsed >= self.domain_timespan:
             self.simulation_done = True
 
     def update_running_mean(self) -> None:

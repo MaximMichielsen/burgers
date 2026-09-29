@@ -95,11 +95,25 @@ class EnvironmentForcingDNS:
         self.spectral_penalty_history_weighted.clear()
         self.action_penalty_history_weighted.clear()
 
+        self.distance_history.clear()
+        self.distance_improvement_history_raw.clear()
+        self.distance_error_history_raw.clear()
+        self.spectral_penalty_history_raw.clear()
+        self.action_penalty_history_raw.clear()
+
+        self.distance_improvement_history_weighted.clear()
+        self.distance_error_history_weighted.clear()
+        self.spectral_penalty_history_weighted.clear()
+        self.action_penalty_history_weighted.clear()
+
+        self.total_reward_history_unscaled.clear()
+        self.total_reward_history_scaled.clear()
+
         self.reference_trajectory.reset()
         self.running_mean_solution = self.solver.solution.copy()
         return self.solver.create_input_stencil(mean_profile=self.running_mean_solution)
 
-    def step(self, action: NDArray) -> tuple[NDArray, float, bool, dict]:
+    def step(self, action: NDArray, step) -> tuple[NDArray, float, bool, dict]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done, info)."""
         if self.solver is None:
             raise RuntimeError("Call reset() before step().")
@@ -128,7 +142,7 @@ class EnvironmentForcingDNS:
 
             self.reference_trajectory.set_step_index(self._total_les_steps)
 
-            reward_val = float(self.compute_reward(action))
+            reward_val = float(self.compute_reward(action, step))
             done_flag = (
                 self._total_les_steps >= self._max_les_steps
                 or self.solver.simulation_done
@@ -156,7 +170,7 @@ class EnvironmentForcingDNS:
             )
             return fallback_state, reward_val, done_flag, info
 
-    def compute_reward(self, action: NDArray) -> float:
+    def compute_reward(self, action: NDArray, step) -> float:
         """Compute the scalar RL reward for the current step."""
         if self.solver is None or self.running_mean_solution is None:
             raise RuntimeError("Solver or running mean solution is not initialized.")
@@ -217,6 +231,7 @@ class EnvironmentForcingDNS:
 
         # --- 4. Log Unweighted Physical Metrics ---
         self.distance_history.append(distance)
+        print(step, raw_improvement, raw_distance_error)
         self.distance_improvement_history_raw.append(raw_improvement)
         self.distance_error_history_raw.append(raw_distance_error)
         self.spectral_penalty_history_raw.append(raw_spectral_error)

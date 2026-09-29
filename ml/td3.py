@@ -370,7 +370,7 @@ class TD3Trainer:
                 # Execution & numeric safety checks
                 try:
                     with np.errstate(over="raise", invalid="raise", divide="raise"):
-                        next_state, reward, done, info = env.step(action=action)
+                        next_state, reward, done, info = env.step(action=action, step=total_steps)
 
                     if hasattr(env, "solver") and not np.all(
                         np.isfinite(env.solver.solution)
@@ -423,7 +423,7 @@ class TD3Trainer:
             )
             self.episode_reward_history.append(clipped_reward)
 
-            self._execute_post_processing(env, episode + 1)
+            self._execute_post_processing(env, episode)
 
             # Convert action statistics explicitly to float scalars
             std_actions = float(np.std(actions))
@@ -824,14 +824,14 @@ class TD3Trainer:
                 label=f"Baseline ({self.baseline_reward:.2f})",
             )
 
-        ax.axhline(
-            EPISODE_PENALTY_CLIP,
-            color="black",
-            linestyle="-.",
-            linewidth=1.2,
-            alpha=0.7,
-            label=f"Penalty Clip ({EPISODE_PENALTY_CLIP})",
-        )
+        # ax.axhline(
+        #     EPISODE_PENALTY_CLIP,
+        #     color="black",
+        #     linestyle="-.",
+        #     linewidth=1.2,
+        #     alpha=0.7,
+        #     label=f"Penalty Clip ({EPISODE_PENALTY_CLIP})",
+        # )
 
         ax.plot(
             episodes,
@@ -1148,39 +1148,52 @@ class TD3Trainer:
         self._log(f"  * Saved velocity profile comparison -> {output_plot_path}")
 
     def plot_history_breakdown(
-        self, env: EnvironmentForcingDNS, show_plot: bool = False
+            self, env: EnvironmentForcingDNS, show_plot: bool = False
     ) -> None:
         """Plot the evolution of raw and weighted reward components across environment steps."""
-        window_size = 100
+
+        # 1. Align all history lengths to avoid sharex distortion
+        min_len = len(env.total_reward_history_scaled)
+        if min_len == 0:
+            self._log("No reward history available to plot.")
+            return
+
+        # Adapt moving average window size to the episode length
+        window_size = min(20, max(1, min_len // 4))
         burn_in_steps = getattr(self.hp, "burn_in_steps", 0)
 
+        # Clean array slices up to current episode step count
+        steps = np.arange(min_len)
+
+        # -------------------------------------------------------------
+        # 1. RAW METRICS PLOT
+        # -------------------------------------------------------------
         histories_raw = {
-            "Action Penalty (raw)": (env.action_penalty_history_raw, "tab:red"),
-            "Spectral Penalty (raw)": (env.spectral_penalty_history_raw, "tab:purple"),
-            "Distance Error (raw)": (env.distance_error_history_raw, "tab:blue"),
+            "Action Penalty (raw)": (env.action_penalty_history_raw[:min_len], "tab:red"),
+            "Spectral Penalty (raw)": (env.spectral_penalty_history_raw[:min_len], "tab:purple"),
+            "Distance Error (raw)": (env.distance_error_history_raw[:min_len], "tab:blue"),
             "Distance Improvement (raw)": (
-                env.distance_improvement_history_raw,
+                env.distance_improvement_history_raw[:min_len],
                 "tab:green",
             ),
         }
 
-        # 1. FIGURE 1: RAW METRICS
+        print(env.distance_error_history_raw)
+        print(env.distance_improvement_history_raw)
+
         fig_raw, axes_raw = plt.subplots(
             4, 1, figsize=(10, 10), sharex=True, layout="constrained", dpi=300
         )
 
         for ax, (title, (data, color)) in zip(axes_raw, histories_raw.items()):
-            if not data:
-                ax.text(
-                    0.5, 0.5, f"No data recorded for {title}", ha="center", va="center"
-                )
+            if len(data) == 0:
+                ax.text(0.5, 0.5, f"No data recorded for {title}", ha="center", va="center")
                 continue
 
             data_arr = np.array(data)
-            steps = np.arange(len(data_arr))
 
             ax.plot(
-                steps,
+                steps[:len(data_arr)],
                 data_arr,
                 color=color,
                 alpha=0.35,
@@ -1188,21 +1201,19 @@ class TD3Trainer:
                 label="Raw Step Value",
             )
 
-            if len(data_arr) >= window_size:
+            if len(data_arr) >= window_size and window_size > 1:
                 moving_avg = np.convolve(
                     data_arr, np.ones(window_size) / window_size, mode="valid"
                 )
                 ax.plot(
-                    steps[window_size - 1 :],
+                    steps[window_size - 1: len(data_arr)],
                     moving_avg,
                     color=color,
                     linewidth=1.8,
                     label=f"Moving Avg ({window_size} steps)",
                 )
 
-            if burn_in_steps > 0 and (
-                "Distance Error" in title or "Distance Improvement" in title
-            ):
+            if burn_in_steps > 0 and ("Distance Error" in title or "Distance Improvement" in title):
                 ax.axvline(
                     x=burn_in_steps,
                     color="gray",
@@ -1217,15 +1228,14 @@ class TD3Trainer:
             ax.legend(loc="upper right", fontsize=8, framealpha=0.8)
 
         axes_raw[-1].set_xlabel("Environment Step [-]", fontsize=11)
-        fig_raw.suptitle(
-            "Raw Physical Reward Components", fontsize=14, fontweight="bold"
-        )
+        fig_raw.suptitle("Raw Physical Reward Components", fontsize=14, fontweight="bold")
 
         save_path_raw = self.master_path / "reward_components_raw.png"
         plt.savefig(save_path_raw, dpi=300, bbox_inches="tight")
-        self._log(f"  * Saved raw component metrics     -> {save_path_raw.name}")
 
-        # 2. FIGURE 2: WEIGHTED METRICS & TOTAL REWARDS
+        # -------------------------------------------------------------
+        # 2. WEIGHTED METRICS & TOTAL REWARDS PLOT
+        # -------------------------------------------------------------
         fig_weighted, axes_weighted = plt.subplots(
             5, 1, figsize=(10, 12), sharex=True, layout="constrained", dpi=300
         )
@@ -1233,18 +1243,16 @@ class TD3Trainer:
         ax_total = axes_weighted[0]
 
         if env.total_reward_history_unscaled:
-            unscaled_arr = np.array(env.total_reward_history_unscaled)
-            steps = np.arange(len(unscaled_arr))
-
+            unscaled_arr = np.array(env.total_reward_history_unscaled[:min_len])
             ax_total.plot(
                 steps, unscaled_arr, color="tab:orange", alpha=0.2, linewidth=0.8
             )
-            if len(unscaled_arr) >= window_size:
+            if len(unscaled_arr) >= window_size and window_size > 1:
                 ma_unscaled = np.convolve(
                     unscaled_arr, np.ones(window_size) / window_size, mode="valid"
                 )
                 ax_total.plot(
-                    steps[window_size - 1 :],
+                    steps[window_size - 1:],
                     ma_unscaled,
                     color="tab:orange",
                     linewidth=1.8,
@@ -1252,18 +1260,16 @@ class TD3Trainer:
                 )
 
         if env.total_reward_history_scaled:
-            scaled_arr = np.array(env.total_reward_history_scaled)
-            steps = np.arange(len(scaled_arr))
-
+            scaled_arr = np.array(env.total_reward_history_scaled[:min_len])
             ax_total.plot(
                 steps, scaled_arr, color="royalblue", alpha=0.2, linewidth=0.8
             )
-            if len(scaled_arr) >= window_size:
+            if len(scaled_arr) >= window_size and window_size > 1:
                 ma_scaled = np.convolve(
                     scaled_arr, np.ones(window_size) / window_size, mode="valid"
                 )
                 ax_total.plot(
-                    steps[window_size - 1 :],
+                    steps[window_size - 1:],
                     ma_scaled,
                     color="royalblue",
                     linewidth=1.8,
@@ -1276,33 +1282,32 @@ class TD3Trainer:
 
         histories_weighted_components = {
             "Action Penalty (weighted)": (
-                env.action_penalty_history_weighted,
+                env.action_penalty_history_weighted[:min_len],
                 "tab:red",
             ),
             "Spectral Penalty (weighted)": (
-                env.spectral_penalty_history_weighted,
+                env.spectral_penalty_history_weighted[:min_len],
                 "tab:purple",
             ),
             "Distance Error (weighted)": (
-                env.distance_error_history_weighted,
+                env.distance_error_history_weighted[:min_len],
                 "tab:blue",
             ),
             "Distance Improvement (weighted)": (
-                env.distance_improvement_history_weighted,
+                env.distance_improvement_history_weighted[:min_len],
                 "tab:green",
             ),
         }
 
         for ax, (title, (data, color)) in zip(axes_weighted[1:], histories_weighted_components.items()):
-            if not data:
+            if len(data) == 0:
                 ax.text(0.5, 0.5, f"No data recorded for {title}", ha="center", va="center")
                 continue
 
             data_arr = np.array(data)
-            steps = np.arange(len(data_arr))  # Dynamically generated per array
 
             ax.plot(
-                steps,
+                steps[:len(data_arr)],
                 data_arr,
                 color=color,
                 alpha=0.35,
@@ -1310,21 +1315,19 @@ class TD3Trainer:
                 label="Weighted Step Value",
             )
 
-            if len(data_arr) >= window_size:
+            if len(data_arr) >= window_size and window_size > 1:
                 moving_avg = np.convolve(
                     data_arr, np.ones(window_size) / window_size, mode="valid"
                 )
                 ax.plot(
-                    steps[window_size - 1 :],
+                    steps[window_size - 1: len(data_arr)],
                     moving_avg,
                     color=color,
                     linewidth=1.8,
                     label=f"Moving Avg ({window_size} steps)",
                 )
 
-            if burn_in_steps > 0 and (
-                "Distance Error" in title or "Distance Improvement" in title
-            ):
+            if burn_in_steps > 0 and ("Distance Error" in title or "Distance Improvement" in title):
                 ax.axvline(
                     x=burn_in_steps,
                     color="gray",
@@ -1345,7 +1348,6 @@ class TD3Trainer:
 
         save_path_weighted = self.master_path / "reward_components_weighted.png"
         plt.savefig(save_path_weighted, dpi=300, bbox_inches="tight")
-        self._log(f"  * Saved weighted component metrics -> {save_path_weighted.name}")
 
         if show_plot:
             plt.show()
