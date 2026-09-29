@@ -25,7 +25,7 @@ dt = 1e-4
 t_start = 308.0101
 t_end = 309.0100
 
-n_episodes = 150
+n_episodes = 90
 n_skip_steps = 20
 
 RUN_DIR = PROJECT_ROOT / "solver_data" / f"run_e{n_episodes}"
