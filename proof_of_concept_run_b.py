@@ -27,10 +27,10 @@ t_start = 308.0101
 t_end = 309.0100
 
 # --- ADJUSTMENT 2: Reduced episodes for rapid diagnostic evaluation ---
-n_episodes = 40  # Reduced from 150 to 10 for quick execution
+n_episodes = 6  # Reduced from 150 to 10 for quick execution
 n_skip_steps = 5
 
-RUN_DIR = PROJECT_ROOT / "solver_data" / f"proof_of_concept_b_{n_episodes}"
+RUN_DIR = PROJECT_ROOT / "solver_data" / f"proof_of_concept_b_{n_episodes}_c"
 
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS

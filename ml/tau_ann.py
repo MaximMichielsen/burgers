@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from math import ceil
 from pathlib import Path
 
 import numpy as np
@@ -11,8 +12,8 @@ from torch import nn, Tensor
 from setup.config_discretization import DiscretizationConfig
 from solvers.solver_base import TauModel
 
-MAX_ACTION = 1.5
-MIN_ACTION = 0.5
+MAX_ACTION = 1.4
+MIN_ACTION = 0.6
 
 SMOOTHING_FACTOR = 0.002
 
@@ -97,7 +98,7 @@ class TauANNConfig:
 
     @property
     def n_agent_steps_per_episode(self) -> int:
-        return int(self.disc_config.n_timesteps / self.n_skip_steps)
+        return ceil(self.disc_config.n_timesteps / self.n_skip_steps)
 
     def __post_init__(self):
         if self.n_training_episodes > self.n_total_allowed_episodes:

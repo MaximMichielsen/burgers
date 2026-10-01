@@ -1,6 +1,7 @@
 """Discretization dataclass for DNS/LES pipeline setup."""
 
 from dataclasses import dataclass
+from math import ceil
 
 import numpy as np
 
@@ -49,4 +50,4 @@ class DiscretizationConfig:
 
         self.n_wavenumber_bins: int = (self.n_nodes_les - 1) // 2
 
-        self.n_timesteps = int(self.domain_timespan / self.dt_les)
+        self.n_timesteps = ceil(self.domain_timespan / self.dt_les)

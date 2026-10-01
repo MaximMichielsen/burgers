@@ -331,7 +331,7 @@ class TD3Trainer:
         self.print_title("Starting Training Loop")
 
         total_steps = 0
-        max_steps_per_ep = getattr(env, "_max_les_steps", 1000)
+        max_steps_per_ep = getattr(self.ann_config, "n_agent_steps_per_episode", 1000)
         training_start_time = time.time()
 
         episode = 0
@@ -1487,7 +1487,8 @@ def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
 
         # Target Mean
         if env is not None and getattr(env, "target_actions_proof", None).any():
-            mean_target = float(np.mean(env.target_actions_proof))
+            mean_target = float(np.mean(env.target_actions_proof_history))
+            target_history = np.mean(env.target_actions_proof_history, axis=1)
             ax.axhline(
                 mean_target,
                 color="crimson",
@@ -1496,6 +1497,13 @@ def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
                 alpha=0.8,
                 label=rf"Target Mean ($a={mean_target:.3f}$)",
             )
+            ax.plot(np.linspace(start=0, stop=len(episodes), num=trainer.disc_config.n_timesteps * len(episodes)),
+                    target_history,
+                    color="crimson",
+                    linestyle="--",
+                    linewidth=1.0,
+                    alpha=0.7,
+                    label=f"Target mean perturbated")
 
         # Exploration cut-off (Safely calculated)
         stochastic_steps = getattr(trainer.hp, "stochastic_timesteps", 0)

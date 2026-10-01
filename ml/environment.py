@@ -41,7 +41,9 @@ class EnvironmentForcingDNS:
         self.running_mean_solution: NDArray | None = None
 
         self.target_actions_proof: NDArray | None = None
+        self.target_actions_mean: NDArray | None = None
         self.penalty_action_deviation_proof: list[float] | None = None
+        self.target_actions_proof_history: list[NDArray] | None = None
 
         self._max_les_steps: int = self.disc_config.n_timesteps
         self._total_les_steps: int = 0
@@ -132,6 +134,9 @@ class EnvironmentForcingDNS:
         try:
             with np.errstate(over="raise", invalid="raise", divide="raise"):
                 for _ in range(self.ann_config.n_skip_steps):
+                    if self.ann_config.proof_mode:
+                        self.apply_action_target_perturbation(time=self.solver.time)
+
                     self.solver.advance_time_step()
                     self._total_les_steps += 1
 
@@ -197,6 +202,23 @@ class EnvironmentForcingDNS:
             invalid_mask = (values >= lower_bound) & (values <= upper_bound)
 
         return values
+
+    def apply_action_target_perturbation(self, time: float) -> None:
+        """Apply a change to the action targets for proof of concept."""
+        func = np.sin
+        phase = 0.5
+        omega = 0.8
+        if self.target_actions_mean is None:
+            self.target_actions_mean = self.initialize_randomized_target_action()
+            self.target_actions_proof_history = []
+            self.penalty_action_deviation_proof = []
+
+        perturb_a = func(2 * omega * time) * 0.1
+        perturb_b = func(2 * (time + phase)) * 0.1
+
+        perturbations = np.array([perturb_a, perturb_b])
+        self.target_actions_proof = self.target_actions_mean + perturbations
+        self.target_actions_proof_history.append(self.target_actions_proof)
 
     def compute_reward_proof_b(self, action: NDArray) -> float:
         """
