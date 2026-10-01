@@ -50,7 +50,7 @@ class TD3Hyperparameters(TauANNHyperparameters):
     """Hyperparameters for TD3 Agent training and environment interactions."""
 
     # Agent / Optimization Params
-    lr: float = 3e-4
+    lr: float = 1e-3
     discount: float = 0.99
     tau_polyak: float = 0.005
     policy_noise: float = 0.15
@@ -87,11 +87,17 @@ class TauANNConfig:
     n_local_action_groups: int | None = None
     local_stencil_size: int | None = None
 
+    proof_mode: bool = False
+
     group_map: NDArray = field(init=False, repr=False)
 
     @property
     def n_elements(self) -> int:
         return self.disc_config.n_nodes_les - 1
+
+    @property
+    def n_agent_steps_per_episode(self) -> int:
+        return int(self.disc_config.n_timesteps / self.n_skip_steps)
 
     def __post_init__(self):
         if self.n_training_episodes > self.n_total_allowed_episodes:

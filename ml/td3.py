@@ -225,7 +225,7 @@ class TD3Trainer:
         )
         self.baseline_run_dir: Path | None = None
 
-        self.episodes_ran = 0
+        self.episodes_ran: int = 0
 
         self.baseline_reward: float | None = None
         self.end_of_random_episode: int | None = None
@@ -235,6 +235,7 @@ class TD3Trainer:
         self.best_action_sequence: list = []
 
         self.solver: SolverCoupled | SolverBase | None = None
+        self.env: EnvironmentForcingDNS | None = None
 
         # File logging setup
         self.master_path.mkdir(parents=True, exist_ok=True)
@@ -311,6 +312,7 @@ class TD3Trainer:
             reference_trajectory=self.reference_trajectory,
             master_path=self.master_path,
         )
+        self.env = env
 
         agent = TD3Agent(ann_config=self.ann_config, hp=self.hp)
 
@@ -370,7 +372,10 @@ class TD3Trainer:
                 # Execution & numeric safety checks
                 try:
                     with np.errstate(over="raise", invalid="raise", divide="raise"):
-                        next_state, reward, done, info = env.step(action=action, step=total_steps)
+                        next_state, reward, done, info = env.step(
+                            action=action,
+                            proof_of_concept_mode=self.ann_config.proof_mode,
+                        )
 
                     if hasattr(env, "solver") and not np.all(
                         np.isfinite(env.solver.solution)
@@ -477,6 +482,9 @@ class TD3Trainer:
         self.print_title("Starting Final Evaluation Run")
 
         self.run_evaluation()
+
+        if self.ann_config.proof_mode:
+            self.visualize_action_target(env)
 
         return agent.actor
 
@@ -1148,7 +1156,7 @@ class TD3Trainer:
         self._log(f"  * Saved velocity profile comparison -> {output_plot_path}")
 
     def plot_history_breakdown(
-            self, env: EnvironmentForcingDNS, show_plot: bool = False
+        self, env: EnvironmentForcingDNS, show_plot: bool = False
     ) -> None:
         """Plot the evolution of raw and weighted reward components across environment steps."""
 
@@ -1169,9 +1177,18 @@ class TD3Trainer:
         # 1. RAW METRICS PLOT
         # -------------------------------------------------------------
         histories_raw = {
-            "Action Penalty (raw)": (env.action_penalty_history_raw[:min_len], "tab:red"),
-            "Spectral Penalty (raw)": (env.spectral_penalty_history_raw[:min_len], "tab:purple"),
-            "Distance Error (raw)": (env.distance_error_history_raw[:min_len], "tab:blue"),
+            "Action Penalty (raw)": (
+                env.action_penalty_history_raw[:min_len],
+                "tab:red",
+            ),
+            "Spectral Penalty (raw)": (
+                env.spectral_penalty_history_raw[:min_len],
+                "tab:purple",
+            ),
+            "Distance Error (raw)": (
+                env.distance_error_history_raw[:min_len],
+                "tab:blue",
+            ),
             "Distance Improvement (raw)": (
                 env.distance_improvement_history_raw[:min_len],
                 "tab:green",
@@ -1187,13 +1204,15 @@ class TD3Trainer:
 
         for ax, (title, (data, color)) in zip(axes_raw, histories_raw.items()):
             if len(data) == 0:
-                ax.text(0.5, 0.5, f"No data recorded for {title}", ha="center", va="center")
+                ax.text(
+                    0.5, 0.5, f"No data recorded for {title}", ha="center", va="center"
+                )
                 continue
 
             data_arr = np.array(data)
 
             ax.plot(
-                steps[:len(data_arr)],
+                steps[: len(data_arr)],
                 data_arr,
                 color=color,
                 alpha=0.35,
@@ -1206,14 +1225,16 @@ class TD3Trainer:
                     data_arr, np.ones(window_size) / window_size, mode="valid"
                 )
                 ax.plot(
-                    steps[window_size - 1: len(data_arr)],
+                    steps[window_size - 1 : len(data_arr)],
                     moving_avg,
                     color=color,
                     linewidth=1.8,
                     label=f"Moving Avg ({window_size} steps)",
                 )
 
-            if burn_in_steps > 0 and ("Distance Error" in title or "Distance Improvement" in title):
+            if burn_in_steps > 0 and (
+                "Distance Error" in title or "Distance Improvement" in title
+            ):
                 ax.axvline(
                     x=burn_in_steps,
                     color="gray",
@@ -1228,7 +1249,9 @@ class TD3Trainer:
             ax.legend(loc="upper right", fontsize=8, framealpha=0.8)
 
         axes_raw[-1].set_xlabel("Environment Step [-]", fontsize=11)
-        fig_raw.suptitle("Raw Physical Reward Components", fontsize=14, fontweight="bold")
+        fig_raw.suptitle(
+            "Raw Physical Reward Components", fontsize=14, fontweight="bold"
+        )
 
         save_path_raw = self.master_path / "reward_components_raw.png"
         plt.savefig(save_path_raw, dpi=300, bbox_inches="tight")
@@ -1252,7 +1275,7 @@ class TD3Trainer:
                     unscaled_arr, np.ones(window_size) / window_size, mode="valid"
                 )
                 ax_total.plot(
-                    steps[window_size - 1:],
+                    steps[window_size - 1 :],
                     ma_unscaled,
                     color="tab:orange",
                     linewidth=1.8,
@@ -1269,7 +1292,7 @@ class TD3Trainer:
                     scaled_arr, np.ones(window_size) / window_size, mode="valid"
                 )
                 ax_total.plot(
-                    steps[window_size - 1:],
+                    steps[window_size - 1 :],
                     ma_scaled,
                     color="royalblue",
                     linewidth=1.8,
@@ -1299,15 +1322,19 @@ class TD3Trainer:
             ),
         }
 
-        for ax, (title, (data, color)) in zip(axes_weighted[1:], histories_weighted_components.items()):
+        for ax, (title, (data, color)) in zip(
+            axes_weighted[1:], histories_weighted_components.items()
+        ):
             if len(data) == 0:
-                ax.text(0.5, 0.5, f"No data recorded for {title}", ha="center", va="center")
+                ax.text(
+                    0.5, 0.5, f"No data recorded for {title}", ha="center", va="center"
+                )
                 continue
 
             data_arr = np.array(data)
 
             ax.plot(
-                steps[:len(data_arr)],
+                steps[: len(data_arr)],
                 data_arr,
                 color=color,
                 alpha=0.35,
@@ -1320,14 +1347,16 @@ class TD3Trainer:
                     data_arr, np.ones(window_size) / window_size, mode="valid"
                 )
                 ax.plot(
-                    steps[window_size - 1: len(data_arr)],
+                    steps[window_size - 1 : len(data_arr)],
                     moving_avg,
                     color=color,
                     linewidth=1.8,
                     label=f"Moving Avg ({window_size} steps)",
                 )
 
-            if burn_in_steps > 0 and ("Distance Error" in title or "Distance Improvement" in title):
+            if burn_in_steps > 0 and (
+                "Distance Error" in title or "Distance Improvement" in title
+            ):
                 ax.axvline(
                     x=burn_in_steps,
                     color="gray",
@@ -1355,139 +1384,142 @@ class TD3Trainer:
             plt.close(fig_raw)
             plt.close(fig_weighted)
 
+    def visualize_action_target(self, env, save_dir: Path | None = None):
+        if save_dir is None:
+            save_dir = Path(self.master_path) / "proof"
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        target = env.target_actions_proof
+        history = env.penalty_action_deviation_proof
+
+        fig, axes = plt.subplots(2, 1, figsize=(10, 8))
+        fig.suptitle("TD3 Action Finding Proof", fontsize=16, fontweight="bold", y=0.98)
+
+        # Top Plot: Penalty Action Deviation History
+        ax0 = axes[0]
+        ax0.plot(np.arange(len(history)), history, color="#1f77b4", linewidth=1.5)
+        ax0.set_title(
+            "Penalty Action Deviation History",
+            fontsize=12,
+            fontweight="semibold",
+            pad=12,
+        )
+        ax0.set_ylabel("Deviation Value", fontsize=10)
+        ax0.set_xlabel("Steps", fontsize=10)
+        ax0.grid(True, linestyle="--", alpha=0.6)
+
+        # Bottom Plot: Target Actions
+        ax1 = axes[1]
+        target_arr = np.array(target)
+
+        # If target has 2 or a few static values (action vector dimensions)
+        if len(target_arr) < 10 and target_arr.ndim == 1:
+            x_indices = np.arange(len(target_arr))
+            ax1.scatter(x_indices, target_arr, color="#ff7f0e", s=50, zorder=3)
+
+            # Restrict x-axis limits so points stay close together near center
+            ax1.set_xlim(-1, len(target_arr))
+            ax1.set_xticks(x_indices)
+            ax1.set_xticklabels([f"Dim {i}" for i in range(len(target_arr))])
+        else:
+            ax1.scatter(np.arange(len(target_arr)), target_arr, color="#ff7f0e", s=25)
+            ax1.set_xlabel("Steps / Index", fontsize=10)
+
+        ax1.set_title("Target Actions", fontsize=12, fontweight="semibold", pad=12)
+        ax1.set_ylabel("Target Value", fontsize=10)
+        ax1.grid(True, linestyle="--", alpha=0.6)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+        plot_path = save_dir / "proof_b_action_history.png"
+        plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+        plt.close()
+
 
 def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
-    """Plot comprehensive step-level and episode-level diagnostic metrics with empty data safety."""
+    """Plot comprehensive step-level and episode-level diagnostic metrics with noise visualization."""
     if save_dir is None:
         save_dir = Path(trainer.master_path) / "diagnostics"
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(3, 2, figsize=(14, 12), sharex=False)
+    # Safely bind `env` at the function scope
+    env = getattr(trainer, "env", None)
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9), sharex=False)
     fig.suptitle("TD3 Diagnostic Dashboard", fontsize=16, fontweight="bold")
 
-    # Helper function to safely add legends without warnings
     def safe_legend(ax, loc="upper right"):
         handles, labels = ax.get_legend_handles_labels()
         if handles:
             ax.legend(loc=loc)
 
-    # --- 1. Step-Level Physical Errors (Raw) ---
+    # --- 3. Policy Action Noise & Std Dev Visualization ---
     ax = axes[0, 0]
-    has_raw = False
-    if hasattr(trainer, "env") and trainer.env is not None:
-        env = trainer.env
-        if getattr(env, "distance_history", None):
-            ax.plot(
-                env.distance_history, label="Spatial $L_2$ Distance", color="tab:blue"
-            )
-            has_raw = True
-        if getattr(env, "spectral_penalty_history_raw", None):
-            ax.plot(
-                env.spectral_penalty_history_raw,
-                label="Raw Spectral Error",
-                color="tab:orange",
-            )
-            has_raw = True
-        if getattr(env, "action_penalty_history_raw", None):
-            ax.plot(
-                env.action_penalty_history_raw,
-                label="Raw Action Deviation",
-                color="tab:green",
-            )
-            has_raw = True
-
-    if not has_raw:
-        ax.text(
-            0.5,
-            0.5,
-            "No Step History Logged in Active Env",
-            ha="center",
-            va="center",
-            transform=ax.transAxes,
-        )
-    ax.set_title("Raw Step-Level Physical Metrics")
-    ax.set_xlabel("Environment Steps")
-    ax.set_ylabel("Value")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax)
-
-    # --- 2. Weighted Reward Components ---
-    ax = axes[0, 1]
-    has_weighted = False
-    if hasattr(trainer, "env") and trainer.env is not None:
-        env = trainer.env
-        if getattr(env, "distance_improvement_history_weighted", None):
-            ax.plot(
-                env.distance_improvement_history_weighted,
-                label="Reward Improvement",
-                color="tab:green",
-            )
-            has_weighted = True
-        if getattr(env, "distance_error_history_weighted", None):
-            ax.plot(
-                env.distance_error_history_weighted,
-                label="Penalty Abs Distance",
-                color="tab:red",
-            )
-            has_weighted = True
-        if getattr(env, "spectral_penalty_history_weighted", None):
-            ax.plot(
-                env.spectral_penalty_history_weighted,
-                label="Penalty Spectral",
-                color="tab:purple",
-            )
-            has_weighted = True
-        if getattr(env, "action_penalty_history_weighted", None):
-            ax.plot(
-                env.action_penalty_history_weighted,
-                label="Penalty Action",
-                color="tab:brown",
-            )
-            has_weighted = True
-
-    if not has_weighted:
-        ax.text(
-            0.5,
-            0.5,
-            "No Weighted History Logged in Active Env",
-            ha="center",
-            va="center",
-            transform=ax.transAxes,
-        )
-    ax.set_title("Weighted Reward Components")
-    ax.set_xlabel("Environment Steps")
-    ax.set_ylabel("Weighted Contribution")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax)
-
-    # --- 3. Action Statistics Across Episodes ---
-    ax = axes[1, 0]
     episodes = np.arange(1, len(getattr(trainer, "mean_actions", [])) + 1)
     if len(episodes) > 0:
         mean_a = np.array(trainer.mean_actions)
         std_a = np.array(trainer.action_deviation_history)
+
+        # Plot mean action path
         ax.plot(
-            episodes, mean_a, label="Mean Action $\\mu_a$", color="navy", linewidth=2
+            episodes, mean_a, label=r"Mean Action $\mu_a$", color="navy", linewidth=2
         )
+
+        # Shaded region for standard deviation (action variation)
         ax.fill_between(
             episodes,
             mean_a - std_a,
             mean_a + std_a,
             color="navy",
-            alpha=0.2,
-            label="Std Deviation $\\sigma_a$",
+            alpha=0.25,
+            label=r"Action Noise ($\mu_a \pm 1\sigma_a$)",
         )
+
+        # Baseline
         ax.axhline(
-            1.0, color="gray", linestyle="--", alpha=0.7, label="Baseline (a=1.0)"
+            1.0,
+            color="grey",
+            linestyle="--",
+            linewidth=1.2,
+            alpha=0.8,
+            label=r"Baseline ($a=1.0$)",
         )
-    ax.set_title("Policy Action Evolution")
+
+        # Target Mean
+        if env is not None and getattr(env, "target_actions_proof", None).any():
+            mean_target = float(np.mean(env.target_actions_proof))
+            ax.axhline(
+                mean_target,
+                color="crimson",
+                linestyle="--",
+                linewidth=1.2,
+                alpha=0.8,
+                label=rf"Target Mean ($a={mean_target:.3f}$)",
+            )
+
+        # Exploration cut-off (Safely calculated)
+        stochastic_steps = getattr(trainer.hp, "stochastic_timesteps", 0)
+        cut_off_step = int(
+            stochastic_steps / trainer.ann_config.n_agent_steps_per_episode
+        )
+        if cut_off_step < trainer.episodes_ran and cut_off_step > 0:
+            ax.axvline(
+                cut_off_step,
+                color="grey",
+                linestyle="--",
+                linewidth=1.2,
+                alpha=0.8,
+                label=rf"Exploration Cutoff ($\mathrm{{step}}={cut_off_step:.1f}$)",
+            )
+
+    ax.set_title("Policy Action Evolution & Output Noise")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Action Magnitude")
     ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax)
+    safe_legend(ax, loc="upper left")
 
-    # --- 4. Critic Q-Value Sensitivity Delta Q ---
-    ax = axes[1, 1]
+    # --- 4. Exploration Noise & Critic Q-Value Sensitivity ---
+    ax = axes[0, 1]
     q_hist = getattr(trainer, "q_sensitivity_history", [])
     if q_hist:
         ax.plot(
@@ -1497,24 +1529,26 @@ def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
             linewidth=2,
             marker="o",
             markersize=3,
+            label=r"$\Delta Q = \vert{}Q(s_0, 1.1) - Q(s_0, 1.0)\vert{}$",
         )
-        ax.set_title("Critic Sensitivity: $\\Delta Q = |Q(s_0, 1.1) - Q(s_0, 1.0)|$")
+        ax.set_title(r"Critic Q-Value Sensitivity ($\Delta Q$)")
     else:
         ax.text(
             0.5,
             0.5,
-            "No Q-Sensitivity Data Logged\n(Training steps < stochastic_timesteps)",
+            "No Q-Sensitivity Data Logged\n(Steps < stochastic_timesteps)",
             ha="center",
             va="center",
             transform=ax.transAxes,
         )
-        ax.set_title("Critic Sensitivity $\\Delta Q$")
+        ax.set_title(r"Critic Sensitivity $\Delta Q$")
     ax.set_xlabel("Episode")
-    ax.set_ylabel("$\\Delta Q$")
+    ax.set_ylabel(r"$\Delta Q$")
     ax.grid(True, linestyle="--", alpha=0.6)
+    safe_legend(ax)
 
     # --- 5. Critic & Actor Losses ---
-    ax = axes[2, 0]
+    ax = axes[1, 0]
     has_loss = False
     c_loss = getattr(trainer, "critic_loss_history", [])
     a_loss = getattr(trainer, "actor_loss_history", [])
@@ -1542,8 +1576,8 @@ def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
     ax.grid(True, linestyle="--", alpha=0.6)
     safe_legend(ax)
 
-    # --- 6. Total Scaled vs Unscaled Reward ---
-    ax = axes[2, 1]
+    # --- 6. Total Scaled vs Unscaled Reward Trajectory ---
+    ax = axes[1, 1]
     ep_rewards = getattr(trainer, "episode_reward_history", [])
     if ep_rewards:
         ax.plot(

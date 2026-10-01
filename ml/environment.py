@@ -40,6 +40,9 @@ class EnvironmentForcingDNS:
         self.solver: SolverCoupled | None = None
         self.running_mean_solution: NDArray | None = None
 
+        self.target_actions_proof: NDArray | None = None
+        self.penalty_action_deviation_proof: list[float] | None = None
+
         self._max_les_steps: int = self.disc_config.n_timesteps
         self._total_les_steps: int = 0
 
@@ -113,7 +116,9 @@ class EnvironmentForcingDNS:
         self.running_mean_solution = self.solver.solution.copy()
         return self.solver.create_input_stencil(mean_profile=self.running_mean_solution)
 
-    def step(self, action: NDArray, step) -> tuple[NDArray, float, bool, dict]:
+    def step(
+        self, action: NDArray, proof_of_concept_mode: bool = False
+    ) -> tuple[NDArray, float, bool, dict]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done, info)."""
         if self.solver is None:
             raise RuntimeError("Call reset() before step().")
@@ -142,7 +147,11 @@ class EnvironmentForcingDNS:
 
             self.reference_trajectory.set_step_index(self._total_les_steps)
 
-            reward_val = float(self.compute_reward(action, step))
+            if not proof_of_concept_mode:
+                reward_val = float(self.compute_reward(action))
+            else:
+                reward_val = self.compute_reward_proof_b(action)
+
             done_flag = (
                 self._total_les_steps >= self._max_les_steps
                 or self.solver.simulation_done
@@ -170,7 +179,48 @@ class EnvironmentForcingDNS:
             )
             return fallback_state, reward_val, done_flag, info
 
-    def compute_reward(self, action: NDArray, step) -> float:
+    def initialize_randomized_target_action(self) -> NDArray:
+        """Returns a randomly valued array, the size of the action dimension."""
+        action_dimension = self.ann_config.action_dimension
+        high = 1.3
+        low = 1.1
+        upper_bound = 1.2
+        lower_bound = 1.1
+
+        values = np.random.uniform(low, high, size=action_dimension)
+        invalid_mask = (values >= lower_bound) & (values <= upper_bound)
+
+        while np.any(invalid_mask):
+            values[invalid_mask] = np.random.uniform(
+                low, high, size=np.count_nonzero(invalid_mask)
+            )
+            invalid_mask = (values >= lower_bound) & (values <= upper_bound)
+
+        return values
+
+    def compute_reward_proof_b(self, action: NDArray) -> float:
+        """
+        Compute a scalar RL reward signal.
+
+        This reward signal serves the function of testing whether the agent actually learn anything from its actions.
+        The reward is purely an offset from a randomly initialized action set a_ref_proof (a_1, a_2) where a = {0.8, 1.2}
+         but not "near" 1 (or rather the initialized value).
+        """
+        if self.target_actions_proof is None:
+            self.target_actions_proof = self.initialize_randomized_target_action()
+            self.penalty_action_deviation_proof = []
+
+        assert (
+            self.target_actions_proof is not None
+            and self.penalty_action_deviation_proof is not None
+        )
+        penalty = self.compute_distance_error(
+            field=action, target=self.target_actions_proof
+        )
+        self.penalty_action_deviation_proof.append(penalty)
+        return -penalty
+
+    def compute_reward(self, action: NDArray) -> float:
         """Compute the scalar RL reward for the current step."""
         if self.solver is None or self.running_mean_solution is None:
             raise RuntimeError("Solver or running mean solution is not initialized.")
@@ -222,7 +272,7 @@ class EnvironmentForcingDNS:
 
         # Linear high-wavenumber spectral error
         spectral_error = np.abs(spectrum_k - proj_spectrum_k) / norm_factor
-        unweighted_spectral_error = (normalized_k ** self.hp.gamma) * spectral_error
+        unweighted_spectral_error = (normalized_k**self.hp.gamma) * spectral_error
         raw_spectral_error = float(np.sum(unweighted_spectral_error))
 
         # --- 3. Action Regularization Metric ---
@@ -243,10 +293,10 @@ class EnvironmentForcingDNS:
         penalty_action = self.hp.weight_action * raw_action_deviation
 
         reward_total = (
-                reward_improvement
-                - penalty_absolute_distance
-                - penalty_spectral
-                - penalty_action
+            reward_improvement
+            - penalty_absolute_distance
+            - penalty_spectral
+            - penalty_action
         )
         scaled_reward = float(np.clip(reward_total, -REWARD_CLIP, REWARD_CLIP))
 
@@ -271,8 +321,12 @@ class EnvironmentForcingDNS:
             print(f"  -> distance: {distance}")
             print(f"  -> prev_distance: {prev_distance}")
             print(f"  -> raw_improvement: {raw_improvement}")
-            print(f"  -> running_mean min/max: {self.running_mean_solution.min()}, {self.running_mean_solution.max()}")
-            print(f"  -> target_profile min/max: {target_profile.min()}, {target_profile.max()}")
+            print(
+                f"  -> running_mean min/max: {self.running_mean_solution.min()}, {self.running_mean_solution.max()}"
+            )
+            print(
+                f"  -> target_profile min/max: {target_profile.min()}, {target_profile.max()}"
+            )
 
         return scaled_reward
 
