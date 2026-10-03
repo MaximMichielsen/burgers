@@ -24,6 +24,14 @@ class Scope(str, Enum):
     HYBRID = "hybrid"
 
 
+class ProofMode(str, Enum):
+    a = "a"
+    b = "b"
+    c = "c"
+    d = "d"
+    e = "e"
+
+
 @dataclass
 class TauANNHyperparameters:
     """Hyperparameters tied directly to the ANN, regardless of training mechanism."""
@@ -88,7 +96,9 @@ class TauANNConfig:
     n_local_action_groups: int | None = None
     local_stencil_size: int | None = None
 
-    proof_mode: bool = False
+    proof_of_concept_run: bool = False
+    proof_mode: ProofMode | None = None
+    run_final_evaluation: bool = True
 
     group_map: NDArray = field(init=False, repr=False)
 

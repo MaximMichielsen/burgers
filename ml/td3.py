@@ -374,7 +374,7 @@ class TD3Trainer:
                     with np.errstate(over="raise", invalid="raise", divide="raise"):
                         next_state, reward, done, info = env.step(
                             action=action,
-                            proof_of_concept_mode=self.ann_config.proof_mode,
+                            proof_of_concept_mode=self.ann_config.proof_of_concept_run,
                         )
 
                     if hasattr(env, "solver") and not np.all(
@@ -481,9 +481,10 @@ class TD3Trainer:
 
         self.print_title("Starting Final Evaluation Run")
 
-        self.run_evaluation()
+        if self.ann_config.run_final_evaluation:
+            self.run_evaluation()
 
-        if self.ann_config.proof_mode:
+        if self.ann_config.proof_of_concept_run:
             self.visualize_action_target(env)
 
         return agent.actor
@@ -1456,16 +1457,75 @@ def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
     # --- 3. Policy Action Noise & Std Dev Visualization ---
     ax = axes[0, 0]
     episodes = np.arange(1, len(getattr(trainer, "mean_actions", [])) + 1)
-    if len(episodes) > 0:
+    proof_mode = getattr(trainer.ann_config, "proof_mode", None)
+
+    def moving_average(data, window_size=50):
+        data = np.asarray(data, dtype=np.float64)
+        if len(data) < window_size or window_size <= 1:
+            return data
+        ma = np.convolve(data, np.ones(window_size) / window_size, mode="valid")
+        pad_left = (window_size - 1) // 2
+        pad_right = (window_size - 1) - pad_left
+        return np.pad(
+            ma, (pad_left, pad_right), mode="constant", constant_values=np.nan
+        )
+
+    if proof_mode == "e" and env is not None and len(env.action_mean_history) > 0:
+        action_means = np.asarray(env.action_mean_history)
+        target_mean = np.asarray(env.target_action_mean(), dtype=np.float64)
+        steps_actions = np.linspace(0, max(len(episodes) - 1, 1), num=len(action_means))
+
+        ax.plot(
+            steps_actions,
+            action_means[:, 0],
+            color="tab:blue",
+            alpha=0.35,
+            linewidth=0.8,
+            label="Action mean 1",
+        )
+        ax.plot(
+            steps_actions,
+            moving_average(action_means[:, 0]),
+            color="navy",
+            linewidth=1.5,
+            label="Action mean 1 (trend)",
+        )
+        ax.plot(
+            steps_actions,
+            action_means[:, 1],
+            color="tab:red",
+            alpha=0.35,
+            linewidth=0.8,
+            label="Action mean 2",
+        )
+        ax.plot(
+            steps_actions,
+            moving_average(action_means[:, 1]),
+            color="darkred",
+            linewidth=1.5,
+            label="Action mean 2 (trend)",
+        )
+        ax.axhline(
+            target_mean[0],
+            color="royalblue",
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Target mean 1 ({target_mean[0]:.2f})",
+        )
+        ax.axhline(
+            target_mean[1],
+            color="darkgoldenrod",
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Target mean 2 ({target_mean[1]:.2f})",
+        )
+
+    elif len(episodes) > 0:
         mean_a = np.array(trainer.mean_actions)
         std_a = np.array(trainer.action_deviation_history)
-
-        # Plot mean action path
         ax.plot(
             episodes, mean_a, label=r"Mean Action $\mu_a$", color="navy", linewidth=2
         )
-
-        # Shaded region for standard deviation (action variation)
         ax.fill_between(
             episodes,
             mean_a - std_a,
@@ -1474,8 +1534,6 @@ def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
             alpha=0.25,
             label=r"Action Noise ($\mu_a \pm 1\sigma_a$)",
         )
-
-        # Baseline
         ax.axhline(
             1.0,
             color="grey",
@@ -1485,27 +1543,31 @@ def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
             label=r"Baseline ($a=1.0$)",
         )
 
-        # Target Mean
-        if env is not None and getattr(env, "target_actions_proof", None).any():
-            mean_target = float(np.mean(env.target_actions_proof_history))
-            target_history = np.mean(env.target_actions_proof_history, axis=1)
-            ax.axhline(
-                mean_target,
-                color="crimson",
-                linestyle="--",
-                linewidth=1.2,
-                alpha=0.8,
-                label=rf"Target Mean ($a={mean_target:.3f}$)",
+        if proof_mode in ("b", "c"):
+            target_actions_proof = (
+                getattr(env, "target_actions_proof", None) if env is not None else None
             )
-            ax.plot(np.linspace(start=0, stop=len(episodes), num=trainer.disc_config.n_timesteps * len(episodes)),
+            if target_actions_proof is not None and np.size(target_actions_proof) > 0:
+                mean_target = float(np.mean(env.target_actions_proof_history))
+                target_history = np.mean(env.target_actions_proof_history, axis=1)
+                ax.axhline(
+                    mean_target,
+                    color="crimson",
+                    linestyle="--",
+                    linewidth=1.2,
+                    alpha=0.8,
+                    label=rf"Target Mean ($a={mean_target:.3f}$)",
+                )
+                ax.plot(
+                    np.linspace(0, len(episodes), num=len(target_history)),
                     target_history,
                     color="crimson",
                     linestyle="--",
                     linewidth=1.0,
                     alpha=0.7,
-                    label=f"Target mean perturbated")
+                    label="Target mean perturbated",
+                )
 
-        # Exploration cut-off (Safely calculated)
         stochastic_steps = getattr(trainer.hp, "stochastic_timesteps", 0)
         cut_off_step = int(
             stochastic_steps / trainer.ann_config.n_agent_steps_per_episode
@@ -1520,7 +1582,6 @@ def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
                 label=rf"Exploration Cutoff ($\mathrm{{step}}={cut_off_step:.1f}$)",
             )
 
-    ax.set_title("Policy Action Evolution & Output Noise")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Action Magnitude")
     ax.grid(True, linestyle="--", alpha=0.6)
@@ -1607,4 +1668,213 @@ def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
     plt.close()
 
     print(f"[DIAGNOSTICS] Diagnostic dashboard plot saved to: {plot_path}")
+
+    def moving_average(data, window_size=50):
+        ma = np.convolve(data, np.ones(window_size) / window_size, mode="valid")
+        pad_left = (window_size - 1) // 2
+        pad_right = (window_size - 1) - pad_left
+        return np.pad(
+            ma, (pad_left, pad_right), mode="constant", constant_values=np.nan
+        )
+
+    # Data Extraction
+    if trainer.ann_config.proof_mode in ("b", "c"):
+        target_actions = np.array(trainer.env.target_actions_proof_history)
+        applied_actions = np.array(trainer.env.applied_corrections_history)
+
+        target_action_1, target_action_2 = target_actions[:, 0], target_actions[:, 1]
+        applied_actions_1, applied_actions_2 = (
+            applied_actions[:, 0],
+            applied_actions[:, 1],
+        )
+
+        target_mean_1 = np.mean(target_action_1)
+        target_mean_2 = np.mean(target_action_2)
+
+        steps = np.linspace(start=0, stop=len(episodes), num=len(target_action_1))
+        steps_actions = np.linspace(
+            start=0, stop=len(episodes), num=len(applied_actions_1)
+        )
+
+        # --- Plot Setup ---
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
+
+        # ===== Subplot 1: Action Dimension 1 =====
+        ax1.plot(
+            steps_actions,
+            applied_actions_1,
+            color="tab:blue",
+            alpha=0.35,
+            linewidth=0.8,
+            label="Applied Action 1 (Raw)",
+        )
+        ax1.plot(
+            steps_actions,
+            moving_average(applied_actions_1),
+            color="navy",
+            linewidth=1.5,
+            label="Applied Action 1 (Trend)",
+        )
+        ax1.plot(
+            steps,
+            target_action_1,
+            color="black",
+            linestyle="--",
+            linewidth=1.8,
+            label="Target Action 1",
+        )
+        ax1.axhline(
+            target_mean_1,
+            color="dimgray",
+            linestyle=":",
+            linewidth=1.5,
+            label=f"Target Mean 1 ({target_mean_1:.2f})",
+        )
+
+        ax1.set_ylabel("Action 1 Value", fontweight="bold")
+        ax1.set_title(
+            "Diagnostic Corrections vs Target Actions (Action 1)",
+            fontsize=11,
+            fontweight="bold",
+        )
+        ax1.grid(True, linestyle="--", alpha=0.5)
+        ax1.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
+
+        # ===== Subplot 2: Action Dimension 2 =====
+        ax2.plot(
+            steps_actions,
+            applied_actions_2,
+            color="tab:red",
+            alpha=0.35,
+            linewidth=0.8,
+            label="Applied Action 2 (Raw)",
+        )
+        ax2.plot(
+            steps_actions,
+            moving_average(applied_actions_2),
+            color="darkred",
+            linewidth=1.5,
+            label="Applied Action 2 (Trend)",
+        )
+        ax2.plot(
+            steps,
+            target_action_2,
+            color="tab:orange",
+            linestyle="--",
+            linewidth=1.8,
+            label="Target Action 2",
+        )
+        ax2.axhline(
+            target_mean_2,
+            color="darkgoldenrod",
+            linestyle=":",
+            linewidth=1.5,
+            label=f"Target Mean 2 ({target_mean_2:.2f})",
+        )
+
+        ax2.set_xlabel("Episodes / Steps", fontweight="bold")
+        ax2.set_ylabel("Action 2 Value", fontweight="bold")
+        ax2.set_title(
+            "Diagnostic Corrections vs Target Actions (Action 2)",
+            fontsize=11,
+            fontweight="bold",
+        )
+        ax2.grid(True, linestyle="--", alpha=0.5)
+        ax2.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
+
+        plt.tight_layout()
+
+        # Save
+        plot_path = save_dir / "diagnostic_corrections.png"
+        plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        print(f"[DIAGNOSTICS] Corrections plot saved to: {plot_path}")
+
+    else:
+        target_mean_1, target_mean_2 = trainer.env.target_action_mean()
+        action_means = np.array(trainer.env.action_mean_history)
+        action_mean_1, action_mean_2 = action_means[:, 0], action_means[:, 1]
+
+        steps_actions = np.linspace(start=0, stop=len(episodes), num=len(action_mean_1))
+
+        # --- Plot Setup ---
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
+
+        # ===== Subplot 1: Action Dimension 1 =====
+        ax1.plot(
+            steps_actions,
+            action_mean_1,
+            color="tab:blue",
+            alpha=0.35,
+            linewidth=0.8,
+            label="Applied Action Mean 1 (Raw)",
+        )
+        ax1.plot(
+            steps_actions,
+            moving_average(action_mean_1),
+            color="navy",
+            linewidth=1.5,
+            label="Applied Action 1 Mean (Trend)",
+        )
+        ax1.axhline(
+            target_mean_1,
+            color="royalblue",
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Target Mean 1 ({target_mean_1:.2f})",
+        )
+
+        ax1.set_ylabel("Action 1 Value", fontweight="bold")
+        ax1.set_title(
+            "Diagnostic Correction Mean vs Target Mean (Action 1)",
+            fontsize=11,
+            fontweight="bold",
+        )
+        ax1.grid(True, linestyle="--", alpha=0.5)
+        ax1.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
+
+        # ===== Subplot 2: Action Dimension 2 =====
+        ax2.plot(
+            steps_actions,
+            action_mean_2,
+            color="tab:red",
+            alpha=0.35,
+            linewidth=0.8,
+            label="Applied Action 2 Mean (Raw)",
+        )
+        ax2.plot(
+            steps_actions,
+            moving_average(action_mean_2),
+            color="darkred",
+            linewidth=1.5,
+            label="Applied Action 2 Mean (Trend)",
+        )
+        ax2.axhline(
+            target_mean_2,
+            color="darkgoldenrod",
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Target Mean 2 ({target_mean_2:.2f})",
+        )
+
+        ax2.set_xlabel("Episodes / Steps", fontweight="bold")
+        ax2.set_ylabel("Action 2 Value", fontweight="bold")
+        ax2.set_title(
+            "Diagnostic Correction Mean vs Target Mean (Action 2)",
+            fontsize=11,
+            fontweight="bold",
+        )
+        ax2.grid(True, linestyle="--", alpha=0.5)
+        ax2.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
+
+        plt.tight_layout()
+
+        # Save
+        plot_path = save_dir / "diagnostic_corrections.png"
+        plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        print(f"[DIAGNOSTICS] Corrections plot saved to: {plot_path}")
+
     return save_dir

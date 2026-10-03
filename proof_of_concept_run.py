@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from ml.reference_scheduler import ReferenceTrajectory
-from ml.tau_ann import Scope, TauANNConfig
+from ml.tau_ann import Scope, TauANNConfig, ProofMode
 from ml.td3 import TD3Trainer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
@@ -26,11 +26,16 @@ dt = 1e-3
 t_start = 308.0101
 t_end = 309.0100
 
+run_final_evaluation = False
+
 # --- ADJUSTMENT 2: Reduced episodes for rapid diagnostic evaluation ---
-n_episodes = 6  # Reduced from 150 to 10 for quick execution
+n_episodes = 30  # Reduced from 150 to 10 for quick execution
 n_skip_steps = 5
 
-RUN_DIR = PROJECT_ROOT / "solver_data" / f"proof_of_concept_b_{n_episodes}_c"
+
+proof_mode = ProofMode.e
+
+RUN_DIR = PROJECT_ROOT / "solver_data" / f"proof_of_concept_{n_episodes}_{proof_mode.value}"
 
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS
@@ -80,7 +85,9 @@ ann_config = TauANNConfig(
     input_scope=Scope.GLOBAL,
     n_training_episodes=n_episodes,
     training_mode=True,
-    proof_mode=True,
+    proof_of_concept_run=True,
+    proof_mode=proof_mode,
+    run_final_evaluation=run_final_evaluation,
 )
 
 reference_trajectory = ReferenceTrajectory(

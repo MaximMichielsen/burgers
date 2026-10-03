@@ -30,6 +30,7 @@ class EnvironmentForcingDNS:
         reference_trajectory: ReferenceTrajectory,
         master_path: Path,
     ) -> None:
+
         self.problem = problem
         self.disc_config = disc_config
         self.ann_config = ann_config
@@ -43,7 +44,12 @@ class EnvironmentForcingDNS:
         self.target_actions_proof: NDArray | None = None
         self.target_actions_mean: NDArray | None = None
         self.penalty_action_deviation_proof: list[float] | None = None
+        self.penalty_action_mean_deviation_proof: list[float] = []
         self.target_actions_proof_history: list[NDArray] | None = None
+        self.applied_corrections_history: list[NDArray] | None = None
+        self.improvement_proof_long_horizon_action: list[float] = []
+        self.current_action_mean: NDArray | None = None
+        self.action_mean_history: list[NDArray] = []
 
         self._max_les_steps: int = self.disc_config.n_timesteps
         self._total_les_steps: int = 0
@@ -125,6 +131,12 @@ class EnvironmentForcingDNS:
         if self.solver is None:
             raise RuntimeError("Call reset() before step().")
 
+        if proof_of_concept_mode:
+            if self.applied_corrections_history is None:
+                self.applied_corrections_history = []
+
+            self.applied_corrections_history.append(action)
+
         self.solver.correction_coefficients = action
         last_valid_state = self.solver.create_input_stencil(
             mean_profile=self.running_mean_solution
@@ -134,7 +146,7 @@ class EnvironmentForcingDNS:
         try:
             with np.errstate(over="raise", invalid="raise", divide="raise"):
                 for _ in range(self.ann_config.n_skip_steps):
-                    if self.ann_config.proof_mode:
+                    if self.ann_config.proof_of_concept_run:
                         self.apply_action_target_perturbation(time=self.solver.time)
 
                     self.solver.advance_time_step()
@@ -155,7 +167,7 @@ class EnvironmentForcingDNS:
             if not proof_of_concept_mode:
                 reward_val = float(self.compute_reward(action))
             else:
-                reward_val = self.compute_reward_proof_b(action)
+                reward_val = self.compute_reward_proof(action)
 
             done_flag = (
                 self._total_les_steps >= self._max_les_steps
@@ -220,7 +232,7 @@ class EnvironmentForcingDNS:
         self.target_actions_proof = self.target_actions_mean + perturbations
         self.target_actions_proof_history.append(self.target_actions_proof)
 
-    def compute_reward_proof_b(self, action: NDArray) -> float:
+    def compute_reward_proof(self, action: NDArray) -> float:
         """
         Compute a scalar RL reward signal.
 
@@ -228,19 +240,65 @@ class EnvironmentForcingDNS:
         The reward is purely an offset from a randomly initialized action set a_ref_proof (a_1, a_2) where a = {0.8, 1.2}
          but not "near" 1 (or rather the initialized value).
         """
-        if self.target_actions_proof is None:
-            self.target_actions_proof = self.initialize_randomized_target_action()
-            self.penalty_action_deviation_proof = []
+        if self.ann_config.proof_mode == "e":
+            self.update_running_action_mean(action=action)
+            reward = self.compute_reward_proof_long_horizon()
+            self.penalty_action_mean_deviation_proof.append(reward)
+            return reward
 
-        assert (
-            self.target_actions_proof is not None
-            and self.penalty_action_deviation_proof is not None
+        elif self.ann_config.proof_mode in ("b", "c"):
+            if self.target_actions_proof is None:
+                self.target_actions_proof = self.initialize_randomized_target_action()
+                self.penalty_action_deviation_proof = []
+
+            assert (
+                self.target_actions_proof is not None
+                and self.penalty_action_deviation_proof is not None
+            )
+
+            penalty_action_deviation = self.compute_distance_error(
+                field=action, target=self.target_actions_proof
+            )
+            self.penalty_action_deviation_proof.append(penalty_action_deviation)
+            return penalty_action_deviation
+
+        return None
+
+    def target_action_mean(self):
+        return np.array([1.1, 0.9])
+
+    def update_running_action_mean(self, action: NDArray) -> None:
+        """Update the running action mean with an exponential moving average."""
+        action = np.asarray(action, dtype=np.float64)
+        smoothing_factor = float(
+            getattr(self.ann_config, "smoothing_factor", self.hp.smoothing_factor)
         )
-        penalty = self.compute_distance_error(
-            field=action, target=self.target_actions_proof
+        if self.current_action_mean is None:
+            self.current_action_mean = action.copy()
+        else:
+            self.current_action_mean = (
+                1.0 - smoothing_factor
+            ) * self.current_action_mean + smoothing_factor * action
+        self.action_mean_history.append(self.current_action_mean.copy())
+
+    def compute_reward_proof_long_horizon(self) -> float:
+        """Compute reward signal based on improvement and distance from action mean."""
+        distance = self.compute_distance_error(
+            field=self.current_action_mean, target=self.target_action_mean()
         )
-        self.penalty_action_deviation_proof.append(penalty)
-        return -penalty
+
+        if not self.improvement_proof_long_horizon_action:
+            prev_distance = distance
+        else:
+            prev_distance = self.improvement_proof_long_horizon_action[-1]
+
+        self.improvement_proof_long_horizon_action.append(distance)
+        raw_improvement = float(np.clip(prev_distance - distance, -1.0, 1.0))
+
+        return (
+            self.hp.weight_improvement * raw_improvement
+            - self.hp.weight_absolute_error * distance
+        )
 
     def compute_reward(self, action: NDArray) -> float:
         """Compute the scalar RL reward for the current step."""
