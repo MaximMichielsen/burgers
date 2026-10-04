@@ -4,7 +4,7 @@ import matplotlib
 import numpy as np
 
 from ml.reference_scheduler import ReferenceTrajectory
-from ml.tau_ann import Scope, TauANNConfig
+from ml.ann_config import Scope, TauANNConfig
 from ml.td3 import TD3Trainer
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem

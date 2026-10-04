@@ -18,7 +18,8 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d, uniform_filter1d
 
-from ml.tau_ann import TauANNConfig, load_tau_ann, TauANN, Scope
+from ml.ann import TauANN, load_tau_ann
+from ml.ann_config import TauANNConfig, Scope
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel

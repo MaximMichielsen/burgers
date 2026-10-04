@@ -12,6 +12,9 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 from numpy.typing import NDArray
 from torch import nn, Tensor
 
+from ml.ann import ReplayBuffer, TauANN, save_tau_ann
+from ml.ann_config import TauANNConfig, TD3Hyperparameters
+from ml.diagnostics import plot_diagnostic_metrics
 from ml.environment import EnvironmentForcingDNS
 from ml.les_caching import (
     LESCacheKey,
@@ -20,13 +23,9 @@ from ml.les_caching import (
     write_les_parameters,
 )
 from ml.reference_scheduler import ReferenceTrajectory
-from ml.tau_ann import (
-    TauANNConfig,
-    TD3Hyperparameters,
-    TauANN,
-    ReplayBuffer,
-    save_tau_ann,
-)
+from proofing.ann_config import ANNConfigProof
+from proofing.environment import EnvironmentProof
+from proofing.solver import SolverForProofs
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, SolverBase
@@ -206,7 +205,7 @@ class TD3Trainer:
         self,
         problem: Problem,
         disc_config: DiscretizationConfig,
-        ann_config: TauANNConfig,
+        ann_config: TauANNConfig | ANNConfigProof,
         master_path: Path,
         reference_trajectory: ReferenceTrajectory,
         hp: TD3Hyperparameters = TD3Hyperparameters(),
@@ -214,7 +213,7 @@ class TD3Trainer:
     ):
         self.problem = problem
         self.disc_config = disc_config
-        self.ann_config = ann_config
+        self.ann_config: TauANNConfig | ANNConfigProof = ann_config
         self.master_path = Path(master_path)
         self.reference_trajectory = reference_trajectory
         self.hp = hp
@@ -234,8 +233,8 @@ class TD3Trainer:
         self.best_historical_reward = -np.inf
         self.best_action_sequence: list = []
 
-        self.solver: SolverCoupled | SolverBase | None = None
-        self.env: EnvironmentForcingDNS | None = None
+        self.solver: SolverCoupled | SolverBase | SolverForProofs | None = None
+        self.env: EnvironmentForcingDNS | EnvironmentProof | None = None
 
         # File logging setup
         self.master_path.mkdir(parents=True, exist_ok=True)
@@ -248,72 +247,33 @@ class TD3Trainer:
         self.critic_loss_history = []
         self.actor_loss_history = []
         self.q_value_gradient_history = []
-
-    def _build_les_cache_key(self) -> LESCacheKey:
-        """Construct LESCacheKey from problem and discretization configurations."""
-        return LESCacheKey(
-            problem_name=getattr(self.problem, "name", "unknown_problem"),
-            domain_length=getattr(self.problem, "domain_length", 0.0),
-            viscosity=getattr(self.problem, "viscosity", 0.0),
-            bc_type=getattr(self.problem, "boundary_condition_type", "fixed"),
-            bc_value=getattr(self.problem, "boundary_condition_value", 0),
-            n_nodes=getattr(self.disc_config, "n_nodes_les", 0),
-            dt=getattr(self.disc_config, "dt_les", 0.0),
-            t_start=getattr(self.problem, "t_start", 0.0),
-            t_end=getattr(self.problem, "t_end", 0.0),
-            n_params=getattr(self.ann_config, "n_coefficients", 0),
-        )
-
-    def _init_txt_log(self) -> None:
-        """Initialize or overwrite the text log file with a session header."""
-        with open(self.log_file_path, "w", encoding="utf-8") as f:
-            f.write(
-                "=========================================================================\n"
-            )
-            f.write(
-                "                      TD3 TRAINING PIPELINE LOG                          \n"
-            )
-            f.write(f"  Timestamp : {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"  Directory : {self.master_path.resolve()}\n")
-            f.write(
-                "=========================================================================\n\n"
-            )
-
-    def _log(self, message: str = "", end: str = "\n") -> None:
-        """Helper to print to console and write to the plain-text log file concurrently."""
-        print(message, end=end)
-        with open(self.log_file_path, "a", encoding="utf-8") as f:
-            f.write(message + end)
-
-    def get_action_bounds(self, steps: int) -> tuple[float, float]:
-        """Compute action bounds on stochastic action selection, follows linearly varying profile."""
-        if steps > self.hp.stochastic_timesteps:
-            return self.hp.min_action, self.hp.max_action
-
-        progress = steps / max(1, self.hp.stochastic_timesteps)
-        current_min = self.hp.init_min_action + progress * (
-            self.hp.min_action - self.hp.init_min_action
-        )
-        current_max = self.hp.init_max_action + progress * (
-            self.hp.max_action - self.hp.init_max_action
-        )
-        return current_min, current_max
+        self.q_sensitivity_history = []
 
     def run_training(self) -> TauANN:
         """Main training loop connecting the environment and TD3 agent."""
 
         self.print_title("Initializing Training Procedure")
 
-        env = EnvironmentForcingDNS(
-            problem=self.problem,
-            disc_config=self.disc_config,
-            ann_config=self.ann_config,
-            hyperparameters=self.hp,
-            reference_trajectory=self.reference_trajectory,
-            master_path=self.master_path,
-        )
-        self.env = env
+        if isinstance(self.ann_config, ANNConfigProof):
+            env = EnvironmentProof(
+                problem=self.problem,
+                disc_config=self.disc_config,
+                ann_config=self.ann_config,
+                hyperparameters=self.hp,
+                reference_trajectory=self.reference_trajectory,
+                master_path=self.master_path,
+            )
+        elif isinstance(self.ann_config, TauANNConfig):
+            env = EnvironmentForcingDNS(
+                problem=self.problem,
+                disc_config=self.disc_config,
+                ann_config=self.ann_config,
+                hyperparameters=self.hp,
+                reference_trajectory=self.reference_trajectory,
+                master_path=self.master_path,
+            )
 
+        self.env = env
         agent = TD3Agent(ann_config=self.ann_config, hp=self.hp)
 
         replay_buffer = ReplayBuffer(
@@ -336,9 +296,6 @@ class TD3Trainer:
 
         episode = 0
         stop_training = False
-
-        if not hasattr(self, "q_sensitivity_history"):
-            self.q_sensitivity_history = []
 
         while episode < self.ann_config.n_training_episodes and not stop_training:
             ep_start_time = time.time()
@@ -374,7 +331,6 @@ class TD3Trainer:
                     with np.errstate(over="raise", invalid="raise", divide="raise"):
                         next_state, reward, done, info = env.step(
                             action=action,
-                            proof_of_concept_mode=self.ann_config.proof_of_concept_run,
                         )
 
                     if hasattr(env, "solver") and not np.all(
@@ -484,19 +440,21 @@ class TD3Trainer:
         if self.ann_config.run_final_evaluation:
             self.run_evaluation()
 
-        if self.ann_config.proof_of_concept_run:
-            self.visualize_action_target(env)
-
         return agent.actor
 
-    def run_diagnostic_plotting(self, save_path: Path | None = None) -> Path:
-        """Trigger diagnostic plot generation for the trainer instance."""
-        if save_path is None:
-            save_path = self.master_path / "diagnostics"
+    def get_action_bounds(self, steps: int) -> tuple[float, float]:
+        """Compute action bounds on stochastic action selection, follows linearly varying profile."""
+        if steps > self.hp.stochastic_timesteps:
+            return self.hp.min_action, self.hp.max_action
 
-        save_path.mkdir(parents=True, exist_ok=True)
-        plot_diagnostic_metrics(trainer=self, save_dir=save_path)
-        return save_path
+        progress = steps / max(1, self.hp.stochastic_timesteps)
+        current_min = self.hp.init_min_action + progress * (
+            self.hp.min_action - self.hp.init_min_action
+        )
+        current_max = self.hp.init_max_action + progress * (
+            self.hp.max_action - self.hp.init_max_action
+        )
+        return current_min, current_max
 
     def run_baseline_evaluation(self) -> None:
         """Runs baseline evaluation with cache checking logic.
@@ -564,6 +522,51 @@ class TD3Trainer:
             dns_trajectory=self.reference_trajectory.target_profile,
             evaluation_mode=True,
         )
+
+    def run_diagnostic_plotting(self, save_path: Path | None = None) -> Path:
+        """Trigger diagnostic plot generation for the trainer instance."""
+        if save_path is None:
+            save_path = self.master_path / "diagnostics"
+
+        save_path.mkdir(parents=True, exist_ok=True)
+        plot_diagnostic_metrics(trainer=self, save_dir=save_path)
+        return save_path
+
+    def _build_les_cache_key(self) -> LESCacheKey:
+        """Construct LESCacheKey from problem and discretization configurations."""
+        return LESCacheKey(
+            problem_name=getattr(self.problem, "name", "unknown_problem"),
+            domain_length=getattr(self.problem, "domain_length", 0.0),
+            viscosity=getattr(self.problem, "viscosity", 0.0),
+            bc_type=getattr(self.problem, "boundary_condition_type", "fixed"),
+            bc_value=getattr(self.problem, "boundary_condition_value", 0),
+            n_nodes=getattr(self.disc_config, "n_nodes_les", 0),
+            dt=getattr(self.disc_config, "dt_les", 0.0),
+            t_start=getattr(self.problem, "t_start", 0.0),
+            t_end=getattr(self.problem, "t_end", 0.0),
+            n_params=getattr(self.ann_config, "n_coefficients", 0),
+        )
+
+    def _init_txt_log(self) -> None:
+        """Initialize or overwrite the text log file with a session header."""
+        with open(self.log_file_path, "w", encoding="utf-8") as f:
+            f.write(
+                "=========================================================================\n"
+            )
+            f.write(
+                "                      TD3 TRAINING PIPELINE LOG                          \n"
+            )
+            f.write(f"  Timestamp : {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"  Directory : {self.master_path.resolve()}\n")
+            f.write(
+                "=========================================================================\n\n"
+            )
+
+    def _log(self, message: str = "", end: str = "\n") -> None:
+        """Helper to print to console and write to the plain-text log file concurrently."""
+        print(message, end=end)
+        with open(self.log_file_path, "a", encoding="utf-8") as f:
+            f.write(message + end)
 
     def _log_episode_header(self, episode: int, total_steps: int) -> None:
         """Logs phase and episode start header."""
@@ -1384,497 +1387,3 @@ class TD3Trainer:
         else:
             plt.close(fig_raw)
             plt.close(fig_weighted)
-
-    def visualize_action_target(self, env, save_dir: Path | None = None):
-        if save_dir is None:
-            save_dir = Path(self.master_path) / "proof"
-        save_dir.mkdir(parents=True, exist_ok=True)
-
-        target = env.target_actions_proof
-        history = env.penalty_action_deviation_proof
-
-        fig, axes = plt.subplots(2, 1, figsize=(10, 8))
-        fig.suptitle("TD3 Action Finding Proof", fontsize=16, fontweight="bold", y=0.98)
-
-        # Top Plot: Penalty Action Deviation History
-        ax0 = axes[0]
-        ax0.plot(np.arange(len(history)), history, color="#1f77b4", linewidth=1.5)
-        ax0.set_title(
-            "Penalty Action Deviation History",
-            fontsize=12,
-            fontweight="semibold",
-            pad=12,
-        )
-        ax0.set_ylabel("Deviation Value", fontsize=10)
-        ax0.set_xlabel("Steps", fontsize=10)
-        ax0.grid(True, linestyle="--", alpha=0.6)
-
-        # Bottom Plot: Target Actions
-        ax1 = axes[1]
-        target_arr = np.array(target)
-
-        # If target has 2 or a few static values (action vector dimensions)
-        if len(target_arr) < 10 and target_arr.ndim == 1:
-            x_indices = np.arange(len(target_arr))
-            ax1.scatter(x_indices, target_arr, color="#ff7f0e", s=50, zorder=3)
-
-            # Restrict x-axis limits so points stay close together near center
-            ax1.set_xlim(-1, len(target_arr))
-            ax1.set_xticks(x_indices)
-            ax1.set_xticklabels([f"Dim {i}" for i in range(len(target_arr))])
-        else:
-            ax1.scatter(np.arange(len(target_arr)), target_arr, color="#ff7f0e", s=25)
-            ax1.set_xlabel("Steps / Index", fontsize=10)
-
-        ax1.set_title("Target Actions", fontsize=12, fontweight="semibold", pad=12)
-        ax1.set_ylabel("Target Value", fontsize=10)
-        ax1.grid(True, linestyle="--", alpha=0.6)
-
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
-
-        plot_path = save_dir / "proof_b_action_history.png"
-        plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-        plt.close()
-
-
-def plot_diagnostic_metrics(trainer, save_dir: Path | None = None) -> Path:
-    """Plot comprehensive step-level and episode-level diagnostic metrics with noise visualization."""
-    if save_dir is None:
-        save_dir = Path(trainer.master_path) / "diagnostics"
-    save_dir.mkdir(parents=True, exist_ok=True)
-
-    # Safely bind `env` at the function scope
-    env = getattr(trainer, "env", None)
-
-    fig, axes = plt.subplots(2, 2, figsize=(14, 9), sharex=False)
-    fig.suptitle("TD3 Diagnostic Dashboard", fontsize=16, fontweight="bold")
-
-    def safe_legend(ax, loc="upper right"):
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend(loc=loc)
-
-    # --- 3. Policy Action Noise & Std Dev Visualization ---
-    ax = axes[0, 0]
-    episodes = np.arange(1, len(getattr(trainer, "mean_actions", [])) + 1)
-    proof_mode = getattr(trainer.ann_config, "proof_mode", None)
-
-    def moving_average(data, window_size=50):
-        data = np.asarray(data, dtype=np.float64)
-        if len(data) < window_size or window_size <= 1:
-            return data
-        ma = np.convolve(data, np.ones(window_size) / window_size, mode="valid")
-        pad_left = (window_size - 1) // 2
-        pad_right = (window_size - 1) - pad_left
-        return np.pad(
-            ma, (pad_left, pad_right), mode="constant", constant_values=np.nan
-        )
-
-    if proof_mode == "e" and env is not None and len(env.action_mean_history) > 0:
-        action_means = np.asarray(env.action_mean_history)
-        target_mean = np.asarray(env.target_action_mean(), dtype=np.float64)
-        steps_actions = np.linspace(0, max(len(episodes) - 1, 1), num=len(action_means))
-
-        ax.plot(
-            steps_actions,
-            action_means[:, 0],
-            color="tab:blue",
-            alpha=0.35,
-            linewidth=0.8,
-            label="Action mean 1",
-        )
-        ax.plot(
-            steps_actions,
-            moving_average(action_means[:, 0]),
-            color="navy",
-            linewidth=1.5,
-            label="Action mean 1 (trend)",
-        )
-        ax.plot(
-            steps_actions,
-            action_means[:, 1],
-            color="tab:red",
-            alpha=0.35,
-            linewidth=0.8,
-            label="Action mean 2",
-        )
-        ax.plot(
-            steps_actions,
-            moving_average(action_means[:, 1]),
-            color="darkred",
-            linewidth=1.5,
-            label="Action mean 2 (trend)",
-        )
-        ax.axhline(
-            target_mean[0],
-            color="royalblue",
-            linestyle="--",
-            linewidth=1.5,
-            label=f"Target mean 1 ({target_mean[0]:.2f})",
-        )
-        ax.axhline(
-            target_mean[1],
-            color="darkgoldenrod",
-            linestyle="--",
-            linewidth=1.5,
-            label=f"Target mean 2 ({target_mean[1]:.2f})",
-        )
-
-    elif len(episodes) > 0:
-        mean_a = np.array(trainer.mean_actions)
-        std_a = np.array(trainer.action_deviation_history)
-        ax.plot(
-            episodes, mean_a, label=r"Mean Action $\mu_a$", color="navy", linewidth=2
-        )
-        ax.fill_between(
-            episodes,
-            mean_a - std_a,
-            mean_a + std_a,
-            color="navy",
-            alpha=0.25,
-            label=r"Action Noise ($\mu_a \pm 1\sigma_a$)",
-        )
-        ax.axhline(
-            1.0,
-            color="grey",
-            linestyle="--",
-            linewidth=1.2,
-            alpha=0.8,
-            label=r"Baseline ($a=1.0$)",
-        )
-
-        if proof_mode in ("b", "c"):
-            target_actions_proof = (
-                getattr(env, "target_actions_proof", None) if env is not None else None
-            )
-            if target_actions_proof is not None and np.size(target_actions_proof) > 0:
-                mean_target = float(np.mean(env.target_actions_proof_history))
-                target_history = np.mean(env.target_actions_proof_history, axis=1)
-                ax.axhline(
-                    mean_target,
-                    color="crimson",
-                    linestyle="--",
-                    linewidth=1.2,
-                    alpha=0.8,
-                    label=rf"Target Mean ($a={mean_target:.3f}$)",
-                )
-                ax.plot(
-                    np.linspace(0, len(episodes), num=len(target_history)),
-                    target_history,
-                    color="crimson",
-                    linestyle="--",
-                    linewidth=1.0,
-                    alpha=0.7,
-                    label="Target mean perturbated",
-                )
-
-        stochastic_steps = getattr(trainer.hp, "stochastic_timesteps", 0)
-        cut_off_step = int(
-            stochastic_steps / trainer.ann_config.n_agent_steps_per_episode
-        )
-        if cut_off_step < trainer.episodes_ran and cut_off_step > 0:
-            ax.axvline(
-                cut_off_step,
-                color="grey",
-                linestyle="--",
-                linewidth=1.2,
-                alpha=0.8,
-                label=rf"Exploration Cutoff ($\mathrm{{step}}={cut_off_step:.1f}$)",
-            )
-
-    ax.set_xlabel("Episode")
-    ax.set_ylabel("Action Magnitude")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax, loc="upper left")
-
-    # --- 4. Exploration Noise & Critic Q-Value Sensitivity ---
-    ax = axes[0, 1]
-    q_hist = getattr(trainer, "q_sensitivity_history", [])
-    if q_hist:
-        ax.plot(
-            np.arange(1, len(q_hist) + 1),
-            q_hist,
-            color="darkred",
-            linewidth=2,
-            marker="o",
-            markersize=3,
-            label=r"$\Delta Q = \vert{}Q(s_0, 1.1) - Q(s_0, 1.0)\vert{}$",
-        )
-        ax.set_title(r"Critic Q-Value Sensitivity ($\Delta Q$)")
-    else:
-        ax.text(
-            0.5,
-            0.5,
-            "No Q-Sensitivity Data Logged\n(Steps < stochastic_timesteps)",
-            ha="center",
-            va="center",
-            transform=ax.transAxes,
-        )
-        ax.set_title(r"Critic Sensitivity $\Delta Q$")
-    ax.set_xlabel("Episode")
-    ax.set_ylabel(r"$\Delta Q$")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax)
-
-    # --- 5. Critic & Actor Losses ---
-    ax = axes[1, 0]
-    has_loss = False
-    c_loss = getattr(trainer, "critic_loss_history", [])
-    a_loss = getattr(trainer, "actor_loss_history", [])
-    if c_loss:
-        ax.plot(c_loss, label="Critic Loss", color="crimson", alpha=0.8)
-        has_loss = True
-    if a_loss:
-        ax.plot(a_loss, label="Actor Loss", color="teal", alpha=0.8)
-        has_loss = True
-
-    if not has_loss:
-        ax.text(
-            0.5,
-            0.5,
-            "No Gradient Steps Executed Yet",
-            ha="center",
-            va="center",
-            transform=ax.transAxes,
-        )
-    else:
-        ax.set_yscale("log")
-    ax.set_title("TD3 Optimization Losses")
-    ax.set_xlabel("Training Gradient Steps")
-    ax.set_ylabel("Loss")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax)
-
-    # --- 6. Total Scaled vs Unscaled Reward Trajectory ---
-    ax = axes[1, 1]
-    ep_rewards = getattr(trainer, "episode_reward_history", [])
-    if ep_rewards:
-        ax.plot(
-            np.arange(1, len(ep_rewards) + 1),
-            ep_rewards,
-            color="black",
-            linewidth=2,
-            label="Clipped Episode Reward",
-        )
-    ax.set_title("Episode Reward Trajectory")
-    ax.set_xlabel("Episode")
-    ax.set_ylabel("Reward")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax, loc="upper left")
-
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
-    plot_path = save_dir / "diagnostic_dashboard.png"
-    plt.savefig(plot_path, dpi=300)
-    plt.close()
-
-    print(f"[DIAGNOSTICS] Diagnostic dashboard plot saved to: {plot_path}")
-
-    def moving_average(data, window_size=50):
-        ma = np.convolve(data, np.ones(window_size) / window_size, mode="valid")
-        pad_left = (window_size - 1) // 2
-        pad_right = (window_size - 1) - pad_left
-        return np.pad(
-            ma, (pad_left, pad_right), mode="constant", constant_values=np.nan
-        )
-
-    # Data Extraction
-    if trainer.ann_config.proof_mode in ("b", "c"):
-        target_actions = np.array(trainer.env.target_actions_proof_history)
-        applied_actions = np.array(trainer.env.applied_corrections_history)
-
-        target_action_1, target_action_2 = target_actions[:, 0], target_actions[:, 1]
-        applied_actions_1, applied_actions_2 = (
-            applied_actions[:, 0],
-            applied_actions[:, 1],
-        )
-
-        target_mean_1 = np.mean(target_action_1)
-        target_mean_2 = np.mean(target_action_2)
-
-        steps = np.linspace(start=0, stop=len(episodes), num=len(target_action_1))
-        steps_actions = np.linspace(
-            start=0, stop=len(episodes), num=len(applied_actions_1)
-        )
-
-        # --- Plot Setup ---
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
-
-        # ===== Subplot 1: Action Dimension 1 =====
-        ax1.plot(
-            steps_actions,
-            applied_actions_1,
-            color="tab:blue",
-            alpha=0.35,
-            linewidth=0.8,
-            label="Applied Action 1 (Raw)",
-        )
-        ax1.plot(
-            steps_actions,
-            moving_average(applied_actions_1),
-            color="navy",
-            linewidth=1.5,
-            label="Applied Action 1 (Trend)",
-        )
-        ax1.plot(
-            steps,
-            target_action_1,
-            color="black",
-            linestyle="--",
-            linewidth=1.8,
-            label="Target Action 1",
-        )
-        ax1.axhline(
-            target_mean_1,
-            color="dimgray",
-            linestyle=":",
-            linewidth=1.5,
-            label=f"Target Mean 1 ({target_mean_1:.2f})",
-        )
-
-        ax1.set_ylabel("Action 1 Value", fontweight="bold")
-        ax1.set_title(
-            "Diagnostic Corrections vs Target Actions (Action 1)",
-            fontsize=11,
-            fontweight="bold",
-        )
-        ax1.grid(True, linestyle="--", alpha=0.5)
-        ax1.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
-
-        # ===== Subplot 2: Action Dimension 2 =====
-        ax2.plot(
-            steps_actions,
-            applied_actions_2,
-            color="tab:red",
-            alpha=0.35,
-            linewidth=0.8,
-            label="Applied Action 2 (Raw)",
-        )
-        ax2.plot(
-            steps_actions,
-            moving_average(applied_actions_2),
-            color="darkred",
-            linewidth=1.5,
-            label="Applied Action 2 (Trend)",
-        )
-        ax2.plot(
-            steps,
-            target_action_2,
-            color="tab:orange",
-            linestyle="--",
-            linewidth=1.8,
-            label="Target Action 2",
-        )
-        ax2.axhline(
-            target_mean_2,
-            color="darkgoldenrod",
-            linestyle=":",
-            linewidth=1.5,
-            label=f"Target Mean 2 ({target_mean_2:.2f})",
-        )
-
-        ax2.set_xlabel("Episodes / Steps", fontweight="bold")
-        ax2.set_ylabel("Action 2 Value", fontweight="bold")
-        ax2.set_title(
-            "Diagnostic Corrections vs Target Actions (Action 2)",
-            fontsize=11,
-            fontweight="bold",
-        )
-        ax2.grid(True, linestyle="--", alpha=0.5)
-        ax2.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
-
-        plt.tight_layout()
-
-        # Save
-        plot_path = save_dir / "diagnostic_corrections.png"
-        plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
-
-        print(f"[DIAGNOSTICS] Corrections plot saved to: {plot_path}")
-
-    else:
-        target_mean_1, target_mean_2 = trainer.env.target_action_mean()
-        action_means = np.array(trainer.env.action_mean_history)
-        action_mean_1, action_mean_2 = action_means[:, 0], action_means[:, 1]
-
-        steps_actions = np.linspace(start=0, stop=len(episodes), num=len(action_mean_1))
-
-        # --- Plot Setup ---
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
-
-        # ===== Subplot 1: Action Dimension 1 =====
-        ax1.plot(
-            steps_actions,
-            action_mean_1,
-            color="tab:blue",
-            alpha=0.35,
-            linewidth=0.8,
-            label="Applied Action Mean 1 (Raw)",
-        )
-        ax1.plot(
-            steps_actions,
-            moving_average(action_mean_1),
-            color="navy",
-            linewidth=1.5,
-            label="Applied Action 1 Mean (Trend)",
-        )
-        ax1.axhline(
-            target_mean_1,
-            color="royalblue",
-            linestyle="--",
-            linewidth=1.5,
-            label=f"Target Mean 1 ({target_mean_1:.2f})",
-        )
-
-        ax1.set_ylabel("Action 1 Value", fontweight="bold")
-        ax1.set_title(
-            "Diagnostic Correction Mean vs Target Mean (Action 1)",
-            fontsize=11,
-            fontweight="bold",
-        )
-        ax1.grid(True, linestyle="--", alpha=0.5)
-        ax1.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
-
-        # ===== Subplot 2: Action Dimension 2 =====
-        ax2.plot(
-            steps_actions,
-            action_mean_2,
-            color="tab:red",
-            alpha=0.35,
-            linewidth=0.8,
-            label="Applied Action 2 Mean (Raw)",
-        )
-        ax2.plot(
-            steps_actions,
-            moving_average(action_mean_2),
-            color="darkred",
-            linewidth=1.5,
-            label="Applied Action 2 Mean (Trend)",
-        )
-        ax2.axhline(
-            target_mean_2,
-            color="darkgoldenrod",
-            linestyle="--",
-            linewidth=1.5,
-            label=f"Target Mean 2 ({target_mean_2:.2f})",
-        )
-
-        ax2.set_xlabel("Episodes / Steps", fontweight="bold")
-        ax2.set_ylabel("Action 2 Value", fontweight="bold")
-        ax2.set_title(
-            "Diagnostic Correction Mean vs Target Mean (Action 2)",
-            fontsize=11,
-            fontweight="bold",
-        )
-        ax2.grid(True, linestyle="--", alpha=0.5)
-        ax2.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
-
-        plt.tight_layout()
-
-        # Save
-        plot_path = save_dir / "diagnostic_corrections.png"
-        plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
-
-        print(f"[DIAGNOSTICS] Corrections plot saved to: {plot_path}")
-
-    return save_dir
