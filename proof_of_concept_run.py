@@ -121,7 +121,7 @@ def run_proof_experiment(
 
 if __name__ == "__main__":
     # Proof modes to evaluate sequentially
-    modes_to_run = [ProofMode.b, ProofMode.c, ProofMode.d]
+    modes_to_run = [ProofMode.d]
 
     print(f"Launching proof experiments for modes: {[m.value for m in modes_to_run]}")
 
@@ -129,7 +129,7 @@ if __name__ == "__main__":
         try:
             run_proof_experiment(
                 proof_mode=mode,
-                n_episodes=20,
+                n_episodes=50,
                 run_final_evaluation=False,
             )
         except Exception as err:

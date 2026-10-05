@@ -337,12 +337,28 @@ def _plot_actions_history(
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
 
     if proof_mode in ("b", "c"):
-        target_actions = np.asarray(getattr(env, "target_actions_current_history", []))
         applied_actions = np.asarray(getattr(env, "applied_actions_history", []))
-
-        if len(target_actions) == 0 or len(applied_actions) == 0:
+        if len(applied_actions) == 0:
             plt.close(fig)
+            print('[DIAGNOSTICS] NO APPLIED ACTIONS FOUND')
             return
+
+        # Check for history first (mode 'c'), fall back to static target vector (mode 'b')
+        target_curr_hist = getattr(env, "target_actions_current_history", [])
+        if len(target_curr_hist) > 0:
+            target_actions = np.asarray(target_curr_hist)
+            is_target_static = False
+        else:
+            static_target = getattr(env, "target_actions_current", None)
+            is_target_static = True
+            if static_target is None:
+                plt.close(fig)
+                print('[DIAGNOSTICS] NO TARGET ACTIONS FOUND')
+                return
+
+            target_vec = np.asarray(static_target, dtype=np.float64).ravel()
+            # Broadcast the static target across all step iterations
+            target_actions = np.tile(target_vec, (len(applied_actions), 1))
 
         target_action_1, target_action_2 = target_actions[:, 0], target_actions[:, 1]
         applied_actions_1, applied_actions_2 = (
@@ -366,14 +382,14 @@ def _plot_actions_history(
             color="dodgerblue",
             alpha=0.35,
             linewidth=0.8,
-            label="Applied Action 1 (Raw)",
+            label="Applied Action (Raw)",
         )
         ax1.plot(
             steps_actions,
             moving_average(applied_actions_1),
             color="navy",
             linewidth=1.5,
-            label="Applied Action 1 (Trend)",
+            label="Applied Action (Trend)",
         )
         ax1.plot(
             steps,
@@ -381,18 +397,19 @@ def _plot_actions_history(
             color="royalblue",
             linestyle="--",
             linewidth=1.8,
-            label="Target Action 1",
+            label="Target Action",
         )
-        ax1.axhline(
-            target_mean_1,
-            color="deepskyblue",
-            linestyle=":",
-            linewidth=1.5,
-            label=f"Target Mean 1 ({target_mean_1:.2f})",
-        )
-        ax1.set_ylabel("Action 1 Value", fontweight="bold")
+        if not is_target_static:
+            ax1.axhline(
+                target_mean_1,
+                color="deepskyblue",
+                linestyle=":",
+                linewidth=1.5,
+                label=f"Target Mean ({target_mean_1:.2f})",
+            )
+        ax1.set_ylabel("Value", fontweight="bold")
         ax1.set_title(
-            "Diagnostic Corrections vs Target Actions (Action 1)",
+            "Diagnostic: Corrections vs Target Actions (Action 1)",
             fontsize=11,
             fontweight="bold",
         )
@@ -404,14 +421,14 @@ def _plot_actions_history(
             color="sandybrown",
             alpha=0.4,
             linewidth=0.8,
-            label="Applied Action 2 (Raw)",
+            label="Applied Action (Raw)",
         )
         ax2.plot(
             steps_actions,
             moving_average(applied_actions_2),
             color="chocolate",
             linewidth=1.5,
-            label="Applied Action 2 (Trend)",
+            label="Applied Action (Trend)",
         )
         ax2.plot(
             steps,
@@ -419,62 +436,70 @@ def _plot_actions_history(
             color="darkorange",
             linestyle="--",
             linewidth=1.8,
-            label="Target Action 2",
+            label="Target Action",
         )
-        ax2.axhline(
-            target_mean_2,
-            color="darkamber" if "darkamber" in plt.colormaps() else "goldenrod",
-            linestyle=":",
-            linewidth=1.5,
-            label=f"Target Mean 2 ({target_mean_2:.2f})",
-        )
+        if not is_target_static:
+            ax2.axhline(
+                target_mean_2,
+                color="darkamber" if "darkamber" in plt.colormaps() else "goldenrod",
+                linestyle=":",
+                linewidth=1.5,
+                label=f"Target Mean ({target_mean_2:.2f})",
+            )
         ax2.set_xlabel("Episodes / Steps", fontweight="bold")
-        ax2.set_ylabel("Action 2 Value", fontweight="bold")
+        ax2.set_ylabel("Value", fontweight="bold")
         ax2.set_title(
-            "Diagnostic Corrections vs Target Actions (Action 2)",
+            "Diagnostic: Corrections vs Target Actions (Action 2)",
             fontsize=11,
             fontweight="bold",
         )
-
     elif proof_mode == "d":
         target_mean_func = getattr(env, "target_action_mean", None)
-        action_mean_hist = getattr(env, "action_mean_history", [])
+        moving_action_mean_hist = getattr(env, "action_mean_history", [])
+        action_history = np.asarray(getattr(env, "applied_actions_history", []))
 
-        if target_mean_func is None or len(action_mean_hist) == 0:
+        if target_mean_func is None or len(moving_action_mean_hist) == 0:
             plt.close(fig)
             return
 
         target_mean_1, target_mean_2 = target_mean_func()
-        action_means = np.asarray(action_mean_hist)
-        action_mean_1, action_mean_2 = action_means[:, 0], action_means[:, 1]
-        steps_actions = np.linspace(start=0, stop=len(episodes), num=len(action_mean_1))
+
+        moving_action_means = np.asarray(moving_action_mean_hist)
+        moving_action_mean_1 = moving_action_means[:, 0]
+        moving_action_mean_2 = moving_action_means[:, 1]
+
+        if len(action_history) > 0:
+            true_action_mean = np.mean(action_history, axis=0)
+            true_action_mean_1 = true_action_mean[0]
+            true_action_mean_2 = true_action_mean[1]
+        else:
+            true_action_mean_1, true_action_mean_2 = 0.0, 0.0
+
+        steps_actions = np.linspace(start=0, stop=len(episodes), num=len(moving_action_mean_1))
 
         # --- Subplot 1: Action Dimension 1 ---
         ax1.plot(
             steps_actions,
-            action_mean_1,
+            moving_action_mean_1,
             color="dodgerblue",
-            alpha=0.35,
-            linewidth=0.8,
-            label="Applied Action Mean 1 (Raw)",
+            label="Moving Action Mean",
         )
-        ax1.plot(
-            steps_actions,
-            moving_average(action_mean_1),
-            color="navy",
-            linewidth=1.5,
-            label="Applied Action 1 Mean (Trend)",
+        ax1.axhline(
+            true_action_mean_1,
+            color="darkblue",
+            linestyle="--",
+            label=f"True Action Mean ({true_action_mean_1:.2f})",
         )
         ax1.axhline(
             target_mean_1,
             color="royalblue",
             linestyle="--",
             linewidth=1.5,
-            label=f"Target Mean 1 ({target_mean_1:.2f})",
+            label=f"Target Mean ({target_mean_1:.2f})",
         )
-        ax1.set_ylabel("Action 1 Value", fontweight="bold")
+        ax1.set_ylabel("Value", fontweight="bold")
         ax1.set_title(
-            "Diagnostic Correction Mean vs Target Mean (Action 1)",
+            "Diagnostic: Correction Mean vs Target Mean (Action 1)",
             fontsize=11,
             fontweight="bold",
         )
@@ -482,36 +507,34 @@ def _plot_actions_history(
         # --- Subplot 2: Action Dimension 2 ---
         ax2.plot(
             steps_actions,
-            action_mean_2,
+            moving_action_mean_2,
             color="sandybrown",
-            alpha=0.4,
-            linewidth=0.8,
-            label="Applied Action 2 Mean (Raw)",
+            label="Moving Action Mean",
         )
-        ax2.plot(
-            steps_actions,
-            moving_average(action_mean_2),
-            color="chocolate",
-            linewidth=1.5,
-            label="Applied Action 2 Mean (Trend)",
+        ax2.axhline(
+            true_action_mean_2,
+            color="saddlebrown",
+            linestyle="--",
+            label=f"True Action Mean ({true_action_mean_2:.2f})",
         )
         ax2.axhline(
             target_mean_2,
             color="darkorange",
             linestyle="--",
             linewidth=1.5,
-            label=f"Target Mean 2 ({target_mean_2:.2f})",
+            label=f"Target Mean ({target_mean_2:.2f})",
         )
         ax2.set_xlabel("Episodes / Steps", fontweight="bold")
-        ax2.set_ylabel("Action 2 Value", fontweight="bold")
+        ax2.set_ylabel("Value", fontweight="bold")
         ax2.set_title(
-            "Diagnostic Correction Mean vs Target Mean (Action 2)",
+            "Diagnostic: Correction Mean vs Target Mean (Action 2)",
             fontsize=11,
             fontweight="bold",
         )
 
     for ax in (ax1, ax2):
         ax.grid(True, linestyle="--", alpha=0.5)
+        # Places the legend cleanly outside the plot area
         ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
 
     plt.tight_layout()

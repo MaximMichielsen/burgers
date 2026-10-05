@@ -43,7 +43,11 @@ class SolverForProofs(SolverCoupled):
         self.current_action_mean: NDArray | None = None
         self.action_mean_history: list[NDArray] = []
 
-    def create_input_stencil(self, mean_profile: NDArray) -> NDArray:
+    def create_input_stencil(
+        self,
+        mean_profile: NDArray,
+        running_action_mean: NDArray | None = None,
+    ) -> NDArray:
         """Create input stencil based on the proof mode."""
         previous_coefficients = (
             self.correction_coefficients
@@ -69,15 +73,13 @@ class SolverForProofs(SolverCoupled):
             return np.concatenate([previous_coefficients, phase_input])
 
         elif self.proof_mode == "d":
-            if self.correction_coefficients is None:
-                self.update_running_action_mean(
-                    action=np.ones(self.ann_config.action_dimension)
-                )
-
+            if running_action_mean is not None:
+                action_mean = running_action_mean
             else:
-                self.update_running_action_mean(action=self.correction_coefficients)
+                self.update_running_action_mean(action=previous_coefficients)
+                action_mean = self.current_action_mean
 
-            return np.concatenate([previous_coefficients, self.current_action_mean])
+            return np.concatenate([previous_coefficients, action_mean])
 
         return super().create_input_stencil(mean_profile=self.mean_solution)
 

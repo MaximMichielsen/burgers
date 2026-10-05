@@ -107,7 +107,8 @@ class EnvironmentProof(EnvironmentForcingDNS):
                 or self.solver.simulation_done
             )
             next_state_array = self.solver.create_input_stencil(
-                mean_profile=self.running_mean_solution
+                mean_profile=self.running_mean_solution,
+                running_action_mean=self.current_action_mean,
             )
 
             if not np.all(np.isfinite(next_state_array)):

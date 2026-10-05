@@ -384,7 +384,10 @@ class TD3Trainer:
             )
             self.episode_reward_history.append(clipped_reward)
 
-            self._execute_post_processing(env, episode)
+            solver_post_processing = False
+            if episode >= self.ann_config.n_training_episodes:
+                solver_post_processing = True
+            self._execute_post_processing(env, episode, do_solver_post_processing=solver_post_processing)
 
             # Convert action statistics explicitly to float scalars
             std_actions = float(np.std(actions))
@@ -601,7 +604,7 @@ class TD3Trainer:
             f"Sim Time: {sim_t:.4f}s"
         )
 
-    def _execute_post_processing(self, env: Any, episode: int) -> None:
+    def _execute_post_processing(self, env: Any, episode: int, do_solver_post_processing: bool = False) -> None:
         """Triggers plotting routines and solver post-processing."""
         self._log("-" * 75)
         self._log("  [POST-PROCESSING & PLOTTING ARTIFACTS]")
@@ -609,7 +612,7 @@ class TD3Trainer:
         self.plot_profile_comparison(
             env=env, episode=episode, show_plot=False, solver=None
         )
-        if hasattr(env, "solver"):
+        if hasattr(env, "solver") and do_solver_post_processing:
             env.solver.post_processing()
 
     def _log_episode_summary(
