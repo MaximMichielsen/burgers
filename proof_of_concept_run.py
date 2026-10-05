@@ -129,7 +129,7 @@ if __name__ == "__main__":
         try:
             run_proof_experiment(
                 proof_mode=mode,
-                n_episodes=3,
+                n_episodes=100,
                 run_final_evaluation=True,
             )
         except Exception as err:
