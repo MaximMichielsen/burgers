@@ -35,7 +35,7 @@ def run_proof_experiment(
     dt = 1e-3
     t_start = 308.0101
     t_end = 309.0100
-    n_skip_steps = 5
+    n_skip_steps = 1
 
     run_dir = (
         PROJECT_ROOT
@@ -129,8 +129,8 @@ if __name__ == "__main__":
         try:
             run_proof_experiment(
                 proof_mode=mode,
-                n_episodes=50,
-                run_final_evaluation=False,
+                n_episodes=3,
+                run_final_evaluation=True,
             )
         except Exception as err:
             print(f"[ERROR] Failed experiment for mode {mode.value}: {err}")

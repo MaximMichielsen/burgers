@@ -387,7 +387,9 @@ class TD3Trainer:
             solver_post_processing = False
             if episode >= self.ann_config.n_training_episodes:
                 solver_post_processing = True
-            self._execute_post_processing(env, episode, do_solver_post_processing=solver_post_processing)
+            self._execute_post_processing(
+                env, episode, do_solver_post_processing=solver_post_processing
+            )
 
             # Convert action statistics explicitly to float scalars
             std_actions = float(np.std(actions))
@@ -604,7 +606,9 @@ class TD3Trainer:
             f"Sim Time: {sim_t:.4f}s"
         )
 
-    def _execute_post_processing(self, env: Any, episode: int, do_solver_post_processing: bool = False) -> None:
+    def _execute_post_processing(
+        self, env: Any, episode: int, do_solver_post_processing: bool = False
+    ) -> None:
         """Triggers plotting routines and solver post-processing."""
         self._log("-" * 75)
         self._log("  [POST-PROCESSING & PLOTTING ARTIFACTS]")

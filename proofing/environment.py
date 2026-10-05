@@ -40,18 +40,19 @@ class EnvironmentProof(EnvironmentForcingDNS):
         self.target_actions_current: NDArray | None = None
         self.target_action_current_fixed: NDArray | None = None
         self.target_actions_mean: NDArray | None = None
+
+        # --- Episode MDP State (Reset on every episode boundary) ---
         self.current_action_mean: NDArray | None = None
-
-        self.action_current_reward_history: list[float] = []
-        self.action_mean_reward_history: list[float] = []
-
         self.distance_history: list[float] = []
 
+        # --- Global Diagnostic Accumulators (Persist across full training run) ---
+        self.action_current_reward_history: list[float] = []
+        self.action_mean_reward_history: list[float] = []
         self.target_actions_current_history: list[NDArray] = []
         self.applied_actions_history: list[NDArray] = []
         self.action_mean_history: list[NDArray] = []
 
-    def reset_solver(self):
+    def reset_solver(self) -> None:
         self.solver = SolverForProofs(
             problem=self.problem,
             disc_config=dataclasses.replace(
@@ -65,6 +66,23 @@ class EnvironmentProof(EnvironmentForcingDNS):
             master_path=self.master_path,
             simulation_mode=SimulationMode.TAU_BASED,
             tau_model=self.ann_config.tau_model,
+        )
+
+    def reset(self) -> NDArray:
+        """Reset environment state variables across episode boundaries while retaining global diagnostic history."""
+        # 1. Initialize EMA to baseline actions (1.0) rather than None
+        self.current_action_mean = np.ones(
+            self.ann_config.action_dimension, dtype=np.float64
+        )
+        self.distance_history.clear()
+
+        # 2. Re-initialize solver & return s_0
+        self.reset_solver()
+        self._total_les_steps = 0
+
+        return self.solver.create_input_stencil(
+            mean_profile=self.running_mean_solution,
+            running_action_mean=self.current_action_mean,
         )
 
     def step(self, action: NDArray) -> tuple[NDArray, float, bool, dict]:
@@ -88,8 +106,8 @@ class EnvironmentProof(EnvironmentForcingDNS):
                     self.solver.advance_time_step()
                     self._total_les_steps += 1
 
-                    # 1. Early check for divergence to avoid running extra corrupted steps
-                    current_solution = self.solver.solution  # or relevant state
+                    # Early check for divergence to avoid running extra corrupted steps
+                    current_solution = self.solver.solution
                     if not np.all(np.isfinite(current_solution)):
                         raise FloatingPointError(
                             "NaN/Inf detected in intermediate solver step."
@@ -159,18 +177,12 @@ class EnvironmentProof(EnvironmentForcingDNS):
         self.target_actions_current = self.target_action_current_fixed + perturbations
         self.target_actions_current_history.append(self.target_actions_current)
 
-    def target_action_mean(self):
+    def target_action_mean(self) -> NDArray:
         """Target mean for concept 'd'."""
         return np.array([self.ann_config.target_mean_1, self.ann_config.target_mean_2])
 
-    def compute_reward(self, action: NDArray) -> float:
-        """
-        Compute a scalar RL reward signal.
-
-        This reward signal serves the function of testing whether the agent actually learn anything from its actions.
-        The reward is purely an offset from a randomly initialized action set a_ref_proof (a_1, a_2) where a = {0.8, 1.2}
-         but not "near" 1 (or rather the initialized value).
-        """
+    def compute_reward(self, action: NDArray) -> float | None:
+        """Compute a scalar RL reward signal."""
         if self.ann_config.proof_mode == "d":
             self.update_running_action_mean(action=action)
             reward = self.compute_reward_long_horizon()

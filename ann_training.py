@@ -14,18 +14,19 @@ matplotlib.use("Agg")
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
+TEMPORAL_DIR = PROJECT_ROOT / "dns_data" / "temporal"
 TRAINING_DIR = PROJECT_ROOT / "dns_data" / "training"
 
 
-n_nodes_les = 33
+n_nodes_les = 17
 n_nodes_dns = 513
 z_length = 2.0
-dt = 1e-4
+dt = 1e-3
 
 t_start = 308.0101
 t_end = 309.0100
 
-n_episodes = 90
+n_episodes = 1
 n_skip_steps = 20
 
 RUN_DIR = PROJECT_ROOT / "solver_data" / f"run_e{n_episodes}"
@@ -34,7 +35,9 @@ simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS
 
 ic_les = np.load(FILTERED_DIR / f"ic_linear_{n_nodes_les}.npy")
-forcing_projected = np.load(FILTERED_DIR / f"forcing_l2_{n_nodes_les}.npy")
+forcing_projected = np.load(
+    TEMPORAL_DIR / "projected" / f"forcing_l2_{n_nodes_les}.npy"
+)
 
 n_timesteps, _ = np.shape(forcing_projected)
 timespan = n_timesteps * dt

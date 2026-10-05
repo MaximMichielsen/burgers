@@ -340,7 +340,7 @@ def _plot_actions_history(
         applied_actions = np.asarray(getattr(env, "applied_actions_history", []))
         if len(applied_actions) == 0:
             plt.close(fig)
-            print('[DIAGNOSTICS] NO APPLIED ACTIONS FOUND')
+            print("[DIAGNOSTICS] NO APPLIED ACTIONS FOUND")
             return
 
         # Check for history first (mode 'c'), fall back to static target vector (mode 'b')
@@ -353,7 +353,7 @@ def _plot_actions_history(
             is_target_static = True
             if static_target is None:
                 plt.close(fig)
-                print('[DIAGNOSTICS] NO TARGET ACTIONS FOUND')
+                print("[DIAGNOSTICS] NO TARGET ACTIONS FOUND")
                 return
 
             target_vec = np.asarray(static_target, dtype=np.float64).ravel()
@@ -475,7 +475,9 @@ def _plot_actions_history(
         else:
             true_action_mean_1, true_action_mean_2 = 0.0, 0.0
 
-        steps_actions = np.linspace(start=0, stop=len(episodes), num=len(moving_action_mean_1))
+        steps_actions = np.linspace(
+            start=0, stop=len(episodes), num=len(moving_action_mean_1)
+        )
 
         # --- Subplot 1: Action Dimension 1 ---
         ax1.plot(
