@@ -130,7 +130,7 @@ if __name__ == "__main__":
             run_proof_experiment(
                 proof_mode=mode,
                 n_episodes=100,
-                run_final_evaluation=True,
+                run_final_evaluation=False,
             )
         except Exception as err:
             print(f"[ERROR] Failed experiment for mode {mode.value}: {err}")
