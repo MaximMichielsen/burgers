@@ -73,13 +73,10 @@ def run_offset_les_simulation(
 
 
 if __name__ == "__main__":
-    coeffs = np.arange(0.5, 2.55, 0.1)
+    coeffs = np.arange(0.9, 2.55, 0.1)
     print(f"\n--- Running Baseline offsets with coefficients: ---\n {coeffs}")
 
     for coeff in coeffs:
         coeff = round(coeff, 1)
-        if np.isclose(coeff, 1.0):
-            continue
-
         print(f"\n--- Running simulation with external coefficient = {coeff} ---")
         run_offset_les_simulation(external_coeff_val=coeff)

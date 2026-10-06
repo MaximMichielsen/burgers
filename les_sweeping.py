@@ -28,7 +28,7 @@ PLOTS_DIR = BASE_TEST_DIR / "comparison_plots"
 def run_offset_les_simulation(
     external_coefficients: tuple[float, float] | list[float] | np.ndarray | float,
     master_path: Path,
-    n_nodes_les: int = 17,
+    n_nodes_les: int = 33,
     z_length: float = 2.0,
     dt: float = 1e-3,
     t_start: float = 308.0101,
@@ -99,7 +99,7 @@ def execute_single_sweep(coeffs: np.ndarray, z_domain: tuple[float, float] = (0.
     for coeff in coeffs:
         coeff = round(float(coeff), 2)
         sim_dir = (
-            SINGLE_SWEEP_DIR / f"les_n17_p2_dt_0.001_coeff_{coeff:.2f}"
+            SINGLE_SWEEP_DIR / f"les_n33_p2_dt_0.001_coeff_{coeff:.2f}"
         )
         print(f"Running simulation with external coefficient = {coeff:.2f}...")
         run_offset_les_simulation(
@@ -118,7 +118,7 @@ def execute_single_sweep(coeffs: np.ndarray, z_domain: tuple[float, float] = (0.
     for coeff in coeffs:
         coeff = round(float(coeff), 2)
         profiles_dir = (
-            SINGLE_SWEEP_DIR / f"les_n17_p2_dt_0.001_coeff_{coeff:.2f}" / "mean_profiles"
+            SINGLE_SWEEP_DIR / f"les_n33_p2_dt_0.001_coeff_{coeff:.2f}" / "mean_profiles"
         )
         if profiles_dir.exists():
             npy_files = sorted(profiles_dir.glob("mean_w_*.npy"))
@@ -235,7 +235,7 @@ def create_heatmap_and_error_plot(
     dns_profile = mean_w_profiles[0]
     mesh_dns = np.linspace(z_domain[0], z_domain[1], len(dns_profile))
 
-    coeff_folders = sorted(sweep_dir.glob("les_n17_p2_dt_0.001_c1_*_c2_*"))
+    coeff_folders = sorted(sweep_dir.glob("les_n33_p2_dt_0.001_c1_*_c2_*"))
 
     parsed_runs = []
     for d in coeff_folders:
@@ -361,7 +361,7 @@ def main():
         print(f"Executing c1 = {c1:.2f}, c2 = {opt_baseline:.2f}")
         sim_dir = (
             VARY_C1_DIR
-            / f"les_n17_p2_dt_0.001_c1_{c1:.2f}_c2_{opt_baseline:.2f}"
+            / f"les_n33_p2_dt_0.001_c1_{c1:.2f}_c2_{opt_baseline:.2f}"
         )
         run_offset_les_simulation(
             external_coefficients=(c1, opt_baseline),
@@ -383,7 +383,7 @@ def main():
         print(f"Executing c1 = {opt_baseline:.2f}, c2 = {c2:.2f}")
         sim_dir = (
             VARY_C2_DIR
-            / f"les_n17_p2_dt_0.001_c1_{opt_baseline:.2f}_c2_{c2:.2f}"
+            / f"les_n33_p2_dt_0.001_c1_{opt_baseline:.2f}_c2_{c2:.2f}"
         )
         run_offset_les_simulation(
             external_coefficients=(opt_baseline, c2),
