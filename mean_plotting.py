@@ -11,14 +11,16 @@ PARSED_STAT_DIR = PROJECT_ROOT / "dns_data" / "curated" / "stat"
 n_nodes_les = 17
 tau_params = 2
 
-# Load DNS profiles array
+# Load target DNS profile explicitly (Frame index 0)
 mean_w_profiles = np.load(PARSED_STAT_DIR / "mean_w.npy")
+mean_profile_dns = mean_w_profiles[0]
 
 # Resolve target directory for LES profiles
 profiles_dir = (
     PROJECT_ROOT
     / "solver_data"
-    / f"les_n{n_nodes_les}_p{tau_params}_dt_0.001"
+    / "les_offset_sweeps_vary_c1"
+    / "les_n17_p2_dt_0.001_c1_4.90_c2_4.90"
     / "mean_profiles"
 )
 
@@ -29,8 +31,7 @@ t_start = 308.01
 z_domain = (0.0, 2.0)
 
 # Iterate through each LES profile file
-for frame_idx, les_path in enumerate(les_files):
-    # Extract end time dynamically from filename (e.g., 'mean_w_309.01.npy' -> 309.01)
+for les_path in les_files:
     match = re.search(r"mean_w_(\d+\.\d+)\.npy$", les_path.name)
     if not match:
         continue
@@ -38,19 +39,15 @@ for frame_idx, les_path in enumerate(les_files):
     t_end = float(match.group(1))
     time_interval_str = f"t ∈ [{t_start:.2f}, {t_end:.2f}] s"
 
-    # Load arrays
-    mean_profile_dns = mean_w_profiles[frame_idx]
+    # Load LES array
     les_mean = np.load(les_path)
 
     # Spatial Grids
     mesh_dns = np.linspace(z_domain[0], z_domain[1], len(mean_profile_dns))
     mesh_les = np.linspace(z_domain[0], z_domain[1], len(les_mean))
 
-    # Interpolate DNS onto LES mesh if shape mismatch exists for error calculation
-    if len(mean_profile_dns) != len(les_mean):
-        dns_interp = np.interp(mesh_les, mesh_dns, mean_profile_dns)
-    else:
-        dns_interp = mean_profile_dns
+    # Interpolate DNS onto LES mesh
+    dns_interp = np.interp(mesh_les, mesh_dns, mean_profile_dns)
 
     # L2 Error Metrics
     l2_error = float(np.linalg.norm(les_mean - dns_interp))
