@@ -1,4 +1,9 @@
 /dns_data/raw/
-/dns_data/curated/
+/dns_data/curated/dat
+/dns_data/curated/stat/mean_fz.npy
+/dns_data/curated/stat/mean_reynolds_fz.npy
+/dns_data/curated/stat/mean_reynolds_w.npy
+/dns_data/curated/stat/samples.npy
+/dns_data/curated/stat/steps.npy
 /solver_data/
 /dns_data/temporal/unprojected/
