@@ -87,6 +87,7 @@ class SolverBase:
         master_path: Path,
         tau_model: TauModel | None = None,
         snapshot_factor: int = 1,
+        external_correction_coefficients: NDArray | None = None,
     ) -> None:
 
         try:
@@ -114,6 +115,8 @@ class SolverBase:
                 f"Unknown boundary_condition_type {problem.boundary_condition_type!r}. "
                 f"Expected one of {self._VALID_BC_TYPES}."
             )
+
+        self.forced_correction_coefficients = external_correction_coefficients
 
         self.problem_name = problem.name
 
@@ -347,7 +350,10 @@ class SolverBase:
 
         tau_e = (
             self.compute_tau(
-                u_k, self.basis_functions_gradient() @ u_k, element=element_idx
+                u_k,
+                self.basis_functions_gradient() @ u_k,
+                element=element_idx,
+                external_coefficients=self.forced_correction_coefficients,
             )
             if self._use_vms
             else None
@@ -503,11 +509,15 @@ class SolverBase:
     # ------------------------------------------------------------------ #
 
     def compute_tau(
-        self, u_e: NDArray, u_x_e: NDArray | None = None, element: int | None = None
+        self,
+        u_e: NDArray,
+        u_x_e: NDArray | None = None,
+        element: int | None = None,
+        external_coefficients: NDArray | None = None,
     ) -> float:
         """Dispatch to the configured tau model. u_e: nodal values for the element (length 2)."""
         if self.tau_model == "2":
-            return self.tau_model_two_params(u_e)
+            return self.tau_model_two_params(u_e, c=external_coefficients)
         elif self.tau_model == "3" and u_x_e is not None:
             return self.tau_model_three_params(u_e, u_x_e)
         elif self.tau_model == "3_dt_augmented" and u_x_e is not None:
@@ -518,7 +528,6 @@ class SolverBase:
         """τ = [ (2⟨ū⟩_e/h)² + (4ν/h²)² ]^(-1/2), ⟨ū⟩_e = element-averaged u."""
         c = c if c is not None else np.ones(2)
         u_bar_e = 0.5 * (u_e[0] + u_e[1])
-
         base_terms = np.array(
             [
                 2.0 * u_bar_e / self.element_size,
