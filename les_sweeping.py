@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 PARSED_STAT_DIR = PROJECT_ROOT / "dns_data" / "curated" / "stat"
 
-BASE_TEST_DIR = PROJECT_ROOT / "solver_data" / "les_offset_tests"
+BASE_TEST_DIR = PROJECT_ROOT / "solver_data" / "les_offset_tests" / "second_profile"
 SINGLE_SWEEP_DIR = BASE_TEST_DIR / "single_sweep"
 VARY_C1_DIR = BASE_TEST_DIR / "vary_c1"
 VARY_C2_DIR = BASE_TEST_DIR / "vary_c2"
@@ -32,7 +32,7 @@ def run_offset_les_simulation(
     z_length: float = 2.0,
     dt: float = 1e-3,
     t_start: float = 308.0101,
-    t_end: float = 309.0100,
+    t_end: float = 310.0100,
     simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
     tau_model: TauModel = TauModel.TWO_PARAMS,
 ):
@@ -109,7 +109,7 @@ def execute_single_sweep(coeffs: np.ndarray, z_domain: tuple[float, float] = (0.
 
     # Process and evaluate profiles against DNS frame 0
     mean_w_profiles = np.load(PARSED_STAT_DIR / "mean_w.npy")
-    dns_profile = mean_w_profiles[0]
+    dns_profile = mean_w_profiles[1]
     mesh_dns = np.linspace(z_domain[0], z_domain[1], len(dns_profile))
 
     l2_errors = []
@@ -232,7 +232,7 @@ def create_heatmap_and_error_plot(
         return
 
     mean_w_profiles = np.load(PARSED_STAT_DIR / "mean_w.npy")
-    dns_profile = mean_w_profiles[0]
+    dns_profile = mean_w_profiles[1]
     mesh_dns = np.linspace(z_domain[0], z_domain[1], len(dns_profile))
 
     coeff_folders = sorted(sweep_dir.glob("les_n33_p2_dt_0.001_c1_*_c2_*"))
