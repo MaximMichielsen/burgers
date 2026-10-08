@@ -6,7 +6,7 @@ from ml.ann_config import Scope
 from ml.reference_scheduler import ReferenceTrajectory
 from ml.td3 import TD3Trainer
 from proofing.action_based.config import ProofMode
-from proofing.single_action_testing.config import ANNSingleActionConfig
+from proofing.contextual_bandit_reformulation.config import ANNBanditConfig
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import TauModel
@@ -26,7 +26,7 @@ dt = 1e-3
 t_start = 308.0101
 t_end = 309.0100
 
-n_episodes = 15
+n_episodes = 9
 proof_mode = ProofMode.a
 
 run_dir = (
@@ -70,7 +70,7 @@ disc_config = DiscretizationConfig(
     domain_timespan=timespan,
 )
 
-ann_config = ANNSingleActionConfig(
+ann_config = ANNBanditConfig(
     tau_model,
     disc_config,
     ann_path=ann_path,

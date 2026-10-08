@@ -26,8 +26,8 @@ from ml.reference_scheduler import ReferenceTrajectory
 from proofing.action_based.config import ANNConfigProof
 from proofing.action_based.environment import EnvironmentProof
 from proofing.action_based.solver import SolverForProofs
-from proofing.single_action_testing.config import ANNSingleActionConfig
-from proofing.single_action_testing.environment import EnvironmentSingleActionTraining
+from proofing.contextual_bandit_reformulation.config import ANNBanditConfig, TD3BanditHyperparameters
+from proofing.contextual_bandit_reformulation.environment import EnvironmentSingleActionTraining
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, SolverBase
@@ -76,7 +76,7 @@ class TD3Agent:
     """Twin Delayed Deep Deterministic Policy Gradient Agent."""
 
     def __init__(
-        self, ann_config: TauANNConfig, hp: TD3Hyperparameters = TD3Hyperparameters()
+        self, ann_config: TauANNConfig, hp: TD3Hyperparameters | TD3BanditHyperparameters = TD3Hyperparameters()
     ):
         self.hp = hp
         self.device = torch.device("cpu")
@@ -138,9 +138,9 @@ class TD3Agent:
             target_q = reward + (1.0 - done.float()) * self.hp.discount * target_q
 
         current_q1, current_q2 = self.critic(state, action)
-        critic_loss = functional.smooth_l1_loss(
-            current_q1, target_q
-        ) + functional.smooth_l1_loss(current_q2, target_q)
+
+        loss_fn = functional.mse_loss if self.hp.critic_mse else functional.smooth_l1_loss
+        critic_loss = loss_fn(current_q1, target_q) + loss_fn(current_q2, target_q)
 
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
@@ -207,20 +207,26 @@ class TD3Trainer:
         self,
         problem: Problem,
         disc_config: DiscretizationConfig,
-        ann_config: TauANNConfig | ANNConfigProof,
+        ann_config: TauANNConfig | ANNConfigProof | ANNBanditConfig,
         master_path: Path,
         reference_trajectory: ReferenceTrajectory,
-        hp: TD3Hyperparameters = TD3Hyperparameters(),
+        hp: TD3Hyperparameters | TD3BanditHyperparameters | None = None,
         baseline_path: Path | None = None,
     ):
+
+        if hp is None:
+            if isinstance(ann_config, ANNBanditConfig):
+                self.hp = TD3BanditHyperparameters()
+            else:
+                self.hp = TD3Hyperparameters()
+
         self.problem = problem
         self.disc_config = disc_config
-        self.ann_config: TauANNConfig | ANNConfigProof | ANNSingleActionConfig = (
+        self.ann_config: TauANNConfig | ANNConfigProof | ANNBanditConfig = (
             ann_config
         )
         self.master_path = Path(master_path)
         self.reference_trajectory = reference_trajectory
-        self.hp = hp
         self.baseline_dir = (
             Path(baseline_path)
             if baseline_path
@@ -267,7 +273,7 @@ class TD3Trainer:
                 reference_trajectory=self.reference_trajectory,
                 master_path=self.master_path,
             )
-        elif isinstance(self.ann_config, ANNSingleActionConfig):
+        elif isinstance(self.ann_config, ANNBanditConfig):
             env = EnvironmentSingleActionTraining(
                 problem=self.problem,
                 disc_config=self.disc_config,
@@ -310,6 +316,13 @@ class TD3Trainer:
         episode = 0
         stop_training = False
 
+        # before the while loop
+        is_bandit = isinstance(self.ann_config, ANNBanditConfig)
+        worst_valid_reward = None
+        if is_bandit:
+            edges = np.linspace(self.hp.min_action, self.hp.max_action, self.ann_config.n_random_episodes + 1)
+            random_values = np.random.permutation(np.random.uniform(edges[:-1], edges[1:]))
+
         if hasattr(self.ann_config, "n_random_episodes"):
             stochastic_steps = self.ann_config.n_random_episodes
         else:
@@ -334,10 +347,9 @@ class TD3Trainer:
                 # Action selection
                 if total_steps < stochastic_steps:
                     min_action, max_action = self.get_action_bounds(steps=total_steps)
-                    if isinstance(self.ann_config, ANNSingleActionConfig):
+                    if isinstance(self.ann_config, ANNBanditConfig):
                         # Sample one random value and broadcast it across all action dimensions
-                        rand_val = np.random.uniform(min_action, max_action)
-                        action = np.full(self.ann_config.action_dimension, rand_val)
+                        action = np.full(self.ann_config.action_dimension, random_values[episode])
                     else:
                         action = np.random.uniform(
                             min_action,
@@ -345,8 +357,13 @@ class TD3Trainer:
                             size=self.ann_config.action_dimension,
                         )
                 else:
+                    for _ in range(self.hp.updates_per_step):
+                        critic_loss, actor_loss = agent.train(replay_buffer, self.hp.batch_size)
+                        self.critic_loss_history.append(critic_loss)
+                        self.actor_loss_history.append(actor_loss)
+
                     action = agent.select_action(state, noise_std=self.hp.expl_noise)
-                    if isinstance(self.ann_config, ANNSingleActionConfig):
+                    if isinstance(self.ann_config, ANNBanditConfig):
                         # Enforce exact identity across actions (if noise introduced minor floating-point differences)
                         action = np.full(self.ann_config.action_dimension, action[0])
 
@@ -373,6 +390,10 @@ class TD3Trainer:
                     break
 
                 if info.get("crashed", False):
+                    if is_bandit:
+                        crash_reward = reward if worst_valid_reward is None else worst_valid_reward
+                        replay_buffer.add(state, action, next_state, crash_reward, True)
+
                     reason = info.get("crash_reason", "Solver Divergence")
                     stop_training = self._handle_episode_abort(
                         f"Episode {episode + 1} aborted: {reason}"
@@ -384,6 +405,7 @@ class TD3Trainer:
                 replay_buffer.add(state, action, next_state, reward, done)
                 state = next_state
                 episode_reward += reward
+                worst_valid_reward = reward if worst_valid_reward is None else min(worst_valid_reward, reward)
 
                 # Step progress logging
                 if episode_steps % 100 == 0 or done:

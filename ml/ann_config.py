@@ -64,6 +64,8 @@ class TD3Hyperparameters(TauANNHyperparameters):
     replay_buffer_max_size: int = int(1e5)
     stochastic_timesteps = 1000
 
+    updates_per_step = 0
+
 
 @dataclass
 class TauANNConfig:

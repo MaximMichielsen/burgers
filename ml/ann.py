@@ -9,7 +9,7 @@ from torch import Tensor, nn
 
 from ml.ann_config import TauANNConfig, TauANNHyperparameters, TD3Hyperparameters
 from proofing.action_based.config import ANNConfigProof
-from proofing.single_action_testing.config import ANNSingleActionConfig
+from proofing.contextual_bandit_reformulation.config import ANNBanditConfig
 
 
 class TauANN(nn.Module):
@@ -21,7 +21,7 @@ class TauANN(nn.Module):
 
     def __init__(
         self,
-        config: TauANNConfig | ANNConfigProof | ANNSingleActionConfig,
+        config: TauANNConfig | ANNConfigProof | ANNBanditConfig,
         hyperparams: TauANNHyperparameters | TD3Hyperparameters,
     ):
         super().__init__()
@@ -59,7 +59,7 @@ class TauANN(nn.Module):
         """
         raw_out = self.network(state_input)
 
-        if isinstance(self.config, ANNSingleActionConfig):
+        if isinstance(self.config, ANNBanditConfig):
             raw_out = raw_out.mean(dim=-1, keepdim=True).expand(-1, self.action_dim)
 
         a_norm = torch.tanh(raw_out)

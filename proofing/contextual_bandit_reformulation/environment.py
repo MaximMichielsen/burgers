@@ -6,7 +6,7 @@ from numpy.typing import NDArray
 from ml.ann_config import TauANNHyperparameters, TD3Hyperparameters
 from ml.environment import EnvironmentForcingDNS, CRASH_PENALTY
 from ml.reference_scheduler import ReferenceTrajectory
-from proofing.single_action_testing.config import ANNSingleActionConfig
+from proofing.contextual_bandit_reformulation.config import ANNBanditConfig
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 
@@ -18,7 +18,7 @@ class EnvironmentSingleActionTraining(EnvironmentForcingDNS):
         self,
         problem: Problem,
         disc_config: DiscretizationConfig,
-        ann_config: ANNSingleActionConfig,
+        ann_config: ANNBanditConfig,
         hyperparameters: TauANNHyperparameters | TD3Hyperparameters,
         reference_trajectory: ReferenceTrajectory,
         master_path: Path,
