@@ -11,7 +11,7 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import TauModel
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent
 CURRENT_DIR = Path(__file__).resolve().parent
 
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
