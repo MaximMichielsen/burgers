@@ -8,7 +8,8 @@ from numpy.typing import NDArray
 from torch import Tensor, nn
 
 from ml.ann_config import TauANNConfig, TauANNHyperparameters, TD3Hyperparameters
-from proofing.ann_config import ANNConfigProof
+from proofing.action_based.config import ANNConfigProof
+from proofing.single_action_testing.config import ANNSingleActionConfig
 
 
 class TauANN(nn.Module):
@@ -20,7 +21,7 @@ class TauANN(nn.Module):
 
     def __init__(
         self,
-        config: TauANNConfig | ANNConfigProof,
+        config: TauANNConfig | ANNConfigProof | ANNSingleActionConfig,
         hyperparams: TauANNHyperparameters | TD3Hyperparameters,
     ):
         super().__init__()
@@ -56,7 +57,12 @@ class TauANN(nn.Module):
         Maps raw network output to normalized range [-1, 1] via tanh,
         then scales to physical range [min_action, max_action].
         """
-        a_norm = torch.tanh(self.network(state_input))
+        raw_out = self.network(state_input)
+
+        if isinstance(self.config, ANNSingleActionConfig):
+            raw_out = raw_out.mean(dim=-1, keepdim=True).expand(-1, self.action_dim)
+
+        a_norm = torch.tanh(raw_out)
         return self.act_center + self.act_half * a_norm
 
 

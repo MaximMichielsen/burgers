@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Directory Setup
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PARSED_STAT_DIR = PROJECT_ROOT / "dns_data" / "curated" / "stat"
 
 n_nodes_les = 17

@@ -78,6 +78,8 @@ class ReferenceTrajectory:
         """Reset episode index to zero."""
         self._current_step_idx = 0
 
+    # todo: source of all problems???
+
     def set_step_index(self, step_idx: int) -> None:
         """Set the active step index."""
         self._current_step_idx = step_idx

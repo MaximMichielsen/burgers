@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ml.ann_config import SMOOTHING_FACTOR
-from proofing.ann_config import ANNConfigProof
+from proofing.action_based.config import ANNConfigProof
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, TauModel

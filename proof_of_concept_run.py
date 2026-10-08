@@ -6,7 +6,7 @@ import numpy as np
 from ml.ann_config import Scope
 from ml.reference_scheduler import ReferenceTrajectory
 from ml.td3 import TD3Trainer
-from proofing.ann_config import ANNConfigProof, ProofMode
+from proofing.action_based.config import ANNConfigProof, ProofMode
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import TauModel

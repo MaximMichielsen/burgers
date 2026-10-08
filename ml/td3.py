@@ -23,9 +23,11 @@ from ml.les_caching import (
     write_les_parameters,
 )
 from ml.reference_scheduler import ReferenceTrajectory
-from proofing.ann_config import ANNConfigProof
-from proofing.environment import EnvironmentProof
-from proofing.solver import SolverForProofs
+from proofing.action_based.config import ANNConfigProof
+from proofing.action_based.environment import EnvironmentProof
+from proofing.action_based.solver import SolverForProofs
+from proofing.single_action_testing.config import ANNSingleActionConfig
+from proofing.single_action_testing.environment import EnvironmentSingleActionTraining
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, SolverBase
@@ -213,7 +215,9 @@ class TD3Trainer:
     ):
         self.problem = problem
         self.disc_config = disc_config
-        self.ann_config: TauANNConfig | ANNConfigProof = ann_config
+        self.ann_config: TauANNConfig | ANNConfigProof | ANNSingleActionConfig = (
+            ann_config
+        )
         self.master_path = Path(master_path)
         self.reference_trajectory = reference_trajectory
         self.hp = hp
@@ -263,6 +267,15 @@ class TD3Trainer:
                 reference_trajectory=self.reference_trajectory,
                 master_path=self.master_path,
             )
+        elif isinstance(self.ann_config, ANNSingleActionConfig):
+            env = EnvironmentSingleActionTraining(
+                problem=self.problem,
+                disc_config=self.disc_config,
+                ann_config=self.ann_config,
+                hyperparameters=self.hp,
+                reference_trajectory=self.reference_trajectory,
+                master_path=self.master_path,
+            )
         elif isinstance(self.ann_config, TauANNConfig):
             env = EnvironmentForcingDNS(
                 problem=self.problem,
@@ -297,6 +310,11 @@ class TD3Trainer:
         episode = 0
         stop_training = False
 
+        if hasattr(self.ann_config, "n_random_episodes"):
+            stochastic_steps = self.ann_config.n_random_episodes
+        else:
+            stochastic_steps = self.hp.stochastic_timesteps
+
         while episode < self.ann_config.n_training_episodes and not stop_training:
             ep_start_time = time.time()
             state = env.reset()
@@ -314,18 +332,25 @@ class TD3Trainer:
                 episode_steps += 1
 
                 # Action selection
-                if total_steps < self.hp.stochastic_timesteps:
+                if total_steps < stochastic_steps:
                     min_action, max_action = self.get_action_bounds(steps=total_steps)
-                    action = np.random.uniform(
-                        min_action,
-                        max_action,
-                        size=self.ann_config.action_dimension,
-                    )
+                    if isinstance(self.ann_config, ANNSingleActionConfig):
+                        # Sample one random value and broadcast it across all action dimensions
+                        rand_val = np.random.uniform(min_action, max_action)
+                        action = np.full(self.ann_config.action_dimension, rand_val)
+                    else:
+                        action = np.random.uniform(
+                            min_action,
+                            max_action,
+                            size=self.ann_config.action_dimension,
+                        )
                 else:
                     action = agent.select_action(state, noise_std=self.hp.expl_noise)
+                    if isinstance(self.ann_config, ANNSingleActionConfig):
+                        # Enforce exact identity across actions (if noise introduced minor floating-point differences)
+                        action = np.full(self.ann_config.action_dimension, action[0])
 
                 actions.append(action)
-
                 # Execution & numeric safety checks
                 try:
                     with np.errstate(over="raise", invalid="raise", divide="raise"):
@@ -366,7 +391,7 @@ class TD3Trainer:
                         episode_steps, max_steps_per_ep, reward, episode_reward, env
                     )
 
-                if total_steps >= self.hp.stochastic_timesteps:
+                if total_steps >= stochastic_steps:
                     critic_loss, actor_loss = agent.train(
                         replay_buffer, self.hp.batch_size
                     )
@@ -410,7 +435,7 @@ class TD3Trainer:
             )
 
             # Diagnostic critic sensitivity check
-            if total_steps >= self.hp.stochastic_timesteps:
+            if total_steps >= stochastic_steps:
                 a_default = np.ones(self.ann_config.action_dimension, dtype=np.float32)
                 a_perturbed = np.full(
                     self.ann_config.action_dimension, 1.1, dtype=np.float32
@@ -891,45 +916,52 @@ class TD3Trainer:
         # -------------------------------------------------------------
         # INSET ZOOM PLOT
         # -------------------------------------------------------------
-        ax_inset = inset_axes(
-            ax, width="42%", height="38%", loc="center right", borderpad=2.5
-        )
-
-        if self.baseline_reward is not None:
-            ax_inset.axhline(
-                self.baseline_reward, color="crimson", linestyle="--", linewidth=1.2
+        if self.episodes_ran >= 50:
+            ax_inset = inset_axes(
+                ax, width="42%", height="38%", loc="center right", borderpad=2.5
             )
-        ax_inset.plot(episodes, rewards, color="tab:orange", alpha=0.3, linewidth=0.8)
-        if len(rewards) >= window_size:
-            ax_inset.plot(ma_episodes, moving_avg, color="tab:orange", linewidth=1.8)
 
-        # Dynamically determine the zoom window starting point
-        exploration_end = self.end_of_random_episode or 0
-        total_eps = len(episodes)
-
-        # Zooms in on the last 30% of training, but respects exploration phase bounds
-        if total_eps > exploration_end + 5:
-            zoom_start = max(exploration_end, int(total_eps * 0.7))
-        else:
-            zoom_start = 0
-
-        ax_inset.set_xlim(zoom_start, max(1, total_eps - 1))
-
-        # Safely compute y-axis zoom bounds
-        converged_rewards = rewards[zoom_start:]
-        if len(converged_rewards) > 0:
-            y_min, y_max = (
-                np.percentile(converged_rewards, 2),
-                np.percentile(converged_rewards, 98),
+            if self.baseline_reward is not None:
+                ax_inset.axhline(
+                    self.baseline_reward, color="crimson", linestyle="--", linewidth=1.2
+                )
+            ax_inset.plot(
+                episodes, rewards, color="tab:orange", alpha=0.3, linewidth=0.8
             )
-            base_ref = self.baseline_reward if self.baseline_reward is not None else 0.0
-            ax_inset.set_ylim(min(y_min, base_ref - 3), max(y_max, 0))
+            if len(rewards) >= window_size:
+                ax_inset.plot(
+                    ma_episodes, moving_avg, color="tab:orange", linewidth=1.8
+                )
 
-        ax_inset.grid(True, linestyle="--", alpha=0.3)
-        ax_inset.set_title("Convergence Zoom", fontsize=9, fontweight="bold")
-        ax_inset.tick_params(axis="both", which="major", labelsize=8)
+            # Dynamically determine the zoom window starting point
+            exploration_end = self.end_of_random_episode or 0
+            total_eps = len(episodes)
 
-        mark_inset(ax, ax_inset, loc1=3, loc2=4, fc="none", ec="0.5", linestyle=":")
+            # Zooms in on the last 30% of training, but respects exploration phase bounds
+            if total_eps > exploration_end + 5:
+                zoom_start = max(exploration_end, int(total_eps * 0.7))
+            else:
+                zoom_start = 0
+
+            ax_inset.set_xlim(zoom_start, max(1, total_eps - 1))
+
+            # Safely compute y-axis zoom bounds
+            converged_rewards = rewards[zoom_start:]
+            if len(converged_rewards) > 0:
+                y_min, y_max = (
+                    np.percentile(converged_rewards, 2),
+                    np.percentile(converged_rewards, 98),
+                )
+                base_ref = (
+                    self.baseline_reward if self.baseline_reward is not None else 0.0
+                )
+                ax_inset.set_ylim(min(y_min, base_ref - 3), max(y_max, 0))
+
+            ax_inset.grid(True, linestyle="--", alpha=0.3)
+            ax_inset.set_title("Convergence Zoom", fontsize=9, fontweight="bold")
+            ax_inset.tick_params(axis="both", which="major", labelsize=8)
+
+            mark_inset(ax, ax_inset, loc1=3, loc2=4, fc="none", ec="0.5", linestyle=":")
 
         ax.set_title("TD3 Training Reward Evolution", fontsize=14, fontweight="bold")
         ax.set_xlabel("Episode [-]", fontsize=12)

@@ -90,17 +90,17 @@ def run_offset_les_simulation(
 # ------------------------------------------------------------------ #
 # Single Sweep Execution & Plotting
 # ------------------------------------------------------------------ #
-def execute_single_sweep(coeffs: np.ndarray, z_domain: tuple[float, float] = (0.0, 2.0)):
+def execute_single_sweep(
+    coeffs: np.ndarray, z_domain: tuple[float, float] = (0.0, 2.0)
+):
     """Runs single coefficient simulations, plots results, and returns optimal baseline coeff."""
-    print(f"\n=======================================================")
-    print(f"  STEP 1: Single Parameter Sensitivity Sweep")
-    print(f"=======================================================")
+    print("\n=======================================================")
+    print("  STEP 1: Single Parameter Sensitivity Sweep")
+    print("=======================================================")
 
     for coeff in coeffs:
         coeff = round(float(coeff), 2)
-        sim_dir = (
-            SINGLE_SWEEP_DIR / f"les_n17_p2_dt_0.001_coeff_{coeff:.2f}"
-        )
+        sim_dir = SINGLE_SWEEP_DIR / f"les_n17_p2_dt_0.001_coeff_{coeff:.2f}"
         print(f"Running simulation with external coefficient = {coeff:.2f}...")
         run_offset_les_simulation(
             external_coefficients=coeff,
@@ -118,7 +118,9 @@ def execute_single_sweep(coeffs: np.ndarray, z_domain: tuple[float, float] = (0.
     for coeff in coeffs:
         coeff = round(float(coeff), 2)
         profiles_dir = (
-            SINGLE_SWEEP_DIR / f"les_n17_p2_dt_0.001_coeff_{coeff:.2f}" / "mean_profiles"
+            SINGLE_SWEEP_DIR
+            / f"les_n17_p2_dt_0.001_coeff_{coeff:.2f}"
+            / "mean_profiles"
         )
         if profiles_dir.exists():
             npy_files = sorted(profiles_dir.glob("mean_w_*.npy"))
@@ -212,7 +214,9 @@ def execute_single_sweep(coeffs: np.ndarray, z_domain: tuple[float, float] = (0.
     plt.close(fig)
 
     print(f"\nSingle sweep comparison saved to: {save_path}")
-    print(f"Optimal baseline coefficient found: {opt_coeff:.2f} (Error: {opt_err:.1f}%)")
+    print(
+        f"Optimal baseline coefficient found: {opt_coeff:.2f} (Error: {opt_err:.1f}%)"
+    )
     return opt_coeff
 
 
@@ -268,8 +272,7 @@ def create_heatmap_and_error_plot(
         )
 
         rel_err = (
-            np.linalg.norm(les_mean - dns_interp)
-            / (np.linalg.norm(dns_interp) + 1e-12)
+            np.linalg.norm(les_mean - dns_interp) / (np.linalg.norm(dns_interp) + 1e-12)
         ) * 100.0
         l2_errors.append(rel_err)
 
@@ -354,15 +357,12 @@ def main():
     )
 
     # 4. Sweep 1: Vary c1, keep c2 fixed at opt_baseline
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"  STEP 2: Sweep 1 (Varying c1, c2 fixed at {opt_baseline:.2f})")
-    print(f"=======================================================")
+    print("=======================================================")
     for c1 in double_sweep_range:
         print(f"Executing c1 = {c1:.2f}, c2 = {opt_baseline:.2f}")
-        sim_dir = (
-            VARY_C1_DIR
-            / f"les_n17_p2_dt_0.001_c1_{c1:.2f}_c2_{opt_baseline:.2f}"
-        )
+        sim_dir = VARY_C1_DIR / f"les_n17_p2_dt_0.001_c1_{c1:.2f}_c2_{opt_baseline:.2f}"
         run_offset_les_simulation(
             external_coefficients=(c1, opt_baseline),
             master_path=sim_dir,
@@ -376,15 +376,12 @@ def main():
     )
 
     # 5. Sweep 2: Vary c2, keep c1 fixed at opt_baseline
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"  STEP 3: Sweep 2 (Varying c2, c1 fixed at {opt_baseline:.2f})")
-    print(f"=======================================================")
+    print("=======================================================")
     for c2 in double_sweep_range:
         print(f"Executing c1 = {opt_baseline:.2f}, c2 = {c2:.2f}")
-        sim_dir = (
-            VARY_C2_DIR
-            / f"les_n17_p2_dt_0.001_c1_{opt_baseline:.2f}_c2_{c2:.2f}"
-        )
+        sim_dir = VARY_C2_DIR / f"les_n17_p2_dt_0.001_c1_{opt_baseline:.2f}_c2_{c2:.2f}"
         run_offset_les_simulation(
             external_coefficients=(opt_baseline, c2),
             master_path=sim_dir,
