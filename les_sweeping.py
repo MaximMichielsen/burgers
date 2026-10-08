@@ -212,7 +212,9 @@ def execute_single_sweep(coeffs: np.ndarray, z_domain: tuple[float, float] = (0.
     plt.close(fig)
 
     print(f"\nSingle sweep comparison saved to: {save_path}")
-    print(f"Optimal baseline coefficient found: {opt_coeff:.2f} (Error: {opt_err:.1f}%)")
+    print(
+        f"Optimal baseline coefficient found: {opt_coeff:.2f} (Error: {opt_err:.1f}%)"
+    )
     return opt_coeff
 
 
@@ -268,8 +270,7 @@ def create_heatmap_and_error_plot(
         )
 
         rel_err = (
-            np.linalg.norm(les_mean - dns_interp)
-            / (np.linalg.norm(dns_interp) + 1e-12)
+            np.linalg.norm(les_mean - dns_interp) / (np.linalg.norm(dns_interp) + 1e-12)
         ) * 100.0
         l2_errors.append(rel_err)
 
@@ -354,9 +355,9 @@ def main():
     )
 
     # 4. Sweep 1: Vary c1, keep c2 fixed at opt_baseline
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"  STEP 2: Sweep 1 (Varying c1, c2 fixed at {opt_baseline:.2f})")
-    print(f"=======================================================")
+    print("=======================================================")
     for c1 in double_sweep_range:
         print(f"Executing c1 = {c1:.2f}, c2 = {opt_baseline:.2f}")
         sim_dir = (
@@ -376,9 +377,9 @@ def main():
     )
 
     # 5. Sweep 2: Vary c2, keep c1 fixed at opt_baseline
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"  STEP 3: Sweep 2 (Varying c2, c1 fixed at {opt_baseline:.2f})")
-    print(f"=======================================================")
+    print("=======================================================")
     for c2 in double_sweep_range:
         print(f"Executing c1 = {opt_baseline:.2f}, c2 = {c2:.2f}")
         sim_dir = (

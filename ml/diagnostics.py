@@ -6,10 +6,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from matplotlib import pyplot as plt
+from numpy._typing import NDArray
 
 from ml.environment import EnvironmentForcingDNS
-from proofing.ann_config import ProofMode
-from proofing.environment import EnvironmentProof
+from proofing.action_based.config import ProofMode
+from proofing.action_based.environment import EnvironmentProof
+from proofing.contextual_bandit_reformulation.environment import EnvironmentSingleActionTraining
 
 if TYPE_CHECKING:
     from ml.td3 import TD3Trainer
@@ -207,13 +209,21 @@ def plot_diagnostic_metrics(trainer: TD3Trainer, save_dir: Path | None = None) -
                         label="Target History",
                     )
 
-        stochastic_steps = getattr(
-            getattr(trainer, "hp", None), "stochastic_timesteps", 0
+        stochastic_steps = (
+            getattr(trainer.ann_config, "n_random_episodes", None)
+            if hasattr(trainer, "ann_config")
+            else None
         )
+
+        if stochastic_steps is None:
+            stochastic_steps = getattr(
+                getattr(trainer, "hp", None), "stochastic_timesteps", 0
+            )
+
         n_agent_steps = getattr(ann_config, "n_agent_steps_per_episode", 1)
         cut_off_step = int(stochastic_steps / max(n_agent_steps, 1))
-
         episodes_ran = getattr(trainer, "episodes_ran", 0)
+
         if 0 < cut_off_step < episodes_ran:
             ax.axvline(
                 cut_off_step,
@@ -325,16 +335,57 @@ def plot_diagnostic_metrics(trainer: TD3Trainer, save_dir: Path | None = None) -
 
 
 def _plot_actions_history(
-    env: EnvironmentForcingDNS | EnvironmentProof,
-    episodes: np.ndarray,
+    env: EnvironmentForcingDNS | EnvironmentProof | EnvironmentSingleActionTraining,
+    episodes: NDArray,
     proof_mode: str | None,
     save_dir: Path,
 ) -> None:
     """Internal helper to plot diagnostic corrections for proof modes b, c, or d."""
-    if proof_mode not in ("b", "c", "d"):
+    if proof_mode not in ("a", "b", "c", "d"):
         return
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
+
+    if proof_mode == "a":
+        applied_actions = np.asarray(getattr(env, "action_history", []))
+        if len(applied_actions) == 0:
+            plt.close(fig)
+            print("[DIAGNOSTICS] NO APPLIED ACTIONS FOUND")
+            return
+
+        actions_1, actions_2 = applied_actions[:, 0], applied_actions[:, 1]
+
+        num_episodes = len(episodes)
+        episodes = np.linspace(start=1, stop=num_episodes + 1, num=len(episodes))
+        steps_actions = np.linspace(start=1, stop=num_episodes, num=len(actions_1))
+
+        # --- Subplot 1: Action Dimension 1 (Blue Palette) ---
+        ax1.plot(
+            steps_actions,
+            actions_1,
+            color="dodgerblue",
+        )
+
+        ax1.set_ylabel("Value", fontweight="bold")
+        ax1.set_title(
+            "Diagnostic: Corrections vs Target Actions (Action 1)",
+            fontsize=11,
+            fontweight="bold",
+        )
+
+        # --- Subplot 2: Action Dimension 2 (Orange Palette) ---
+        ax2.plot(
+            steps_actions,
+            actions_2,
+            color="sandybrown",
+        )
+        ax2.set_xlabel("Episodes / Steps", fontweight="bold")
+        ax2.set_ylabel("Value", fontweight="bold")
+        ax2.set_title(
+            "Diagnostic: Corrections vs Target Actions (Action 2)",
+            fontsize=11,
+            fontweight="bold",
+        )
 
     if proof_mode in ("b", "c"):
         applied_actions = np.asarray(getattr(env, "applied_actions_history", []))

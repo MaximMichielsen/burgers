@@ -7,8 +7,8 @@ from numpy.typing import NDArray
 from ml.ann_config import TauANNHyperparameters, TD3Hyperparameters
 from ml.environment import EnvironmentForcingDNS, CRASH_PENALTY
 from ml.reference_scheduler import ReferenceTrajectory
-from proofing.ann_config import ANNConfigProof
-from proofing.solver import SolverForProofs
+from proofing.action_based.config import ANNConfigProof
+from proofing.action_based.solver import SolverForProofs
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode

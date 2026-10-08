@@ -23,9 +23,11 @@ from ml.les_caching import (
     write_les_parameters,
 )
 from ml.reference_scheduler import ReferenceTrajectory
-from proofing.ann_config import ANNConfigProof
-from proofing.environment import EnvironmentProof
-from proofing.solver import SolverForProofs
+from proofing.action_based.config import ANNConfigProof
+from proofing.action_based.environment import EnvironmentProof
+from proofing.action_based.solver import SolverForProofs
+from proofing.contextual_bandit_reformulation.config import ANNBanditConfig, TD3BanditHyperparameters
+from proofing.contextual_bandit_reformulation.environment import EnvironmentSingleActionTraining
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, SolverBase
@@ -74,7 +76,7 @@ class TD3Agent:
     """Twin Delayed Deep Deterministic Policy Gradient Agent."""
 
     def __init__(
-        self, ann_config: TauANNConfig, hp: TD3Hyperparameters = TD3Hyperparameters()
+        self, ann_config: TauANNConfig, hp: TD3Hyperparameters | TD3BanditHyperparameters = TD3Hyperparameters()
     ):
         self.hp = hp
         self.device = torch.device("cpu")
@@ -136,9 +138,9 @@ class TD3Agent:
             target_q = reward + (1.0 - done.float()) * self.hp.discount * target_q
 
         current_q1, current_q2 = self.critic(state, action)
-        critic_loss = functional.smooth_l1_loss(
-            current_q1, target_q
-        ) + functional.smooth_l1_loss(current_q2, target_q)
+
+        loss_fn = functional.mse_loss if self.hp.critic_mse else functional.smooth_l1_loss
+        critic_loss = loss_fn(current_q1, target_q) + loss_fn(current_q2, target_q)
 
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
@@ -205,18 +207,26 @@ class TD3Trainer:
         self,
         problem: Problem,
         disc_config: DiscretizationConfig,
-        ann_config: TauANNConfig | ANNConfigProof,
+        ann_config: TauANNConfig | ANNConfigProof | ANNBanditConfig,
         master_path: Path,
         reference_trajectory: ReferenceTrajectory,
-        hp: TD3Hyperparameters = TD3Hyperparameters(),
+        hp: TD3Hyperparameters | TD3BanditHyperparameters | None = None,
         baseline_path: Path | None = None,
     ):
+
+        if hp is None:
+            if isinstance(ann_config, ANNBanditConfig):
+                self.hp = TD3BanditHyperparameters()
+            else:
+                self.hp = TD3Hyperparameters()
+
         self.problem = problem
         self.disc_config = disc_config
-        self.ann_config: TauANNConfig | ANNConfigProof = ann_config
+        self.ann_config: TauANNConfig | ANNConfigProof | ANNBanditConfig = (
+            ann_config
+        )
         self.master_path = Path(master_path)
         self.reference_trajectory = reference_trajectory
-        self.hp = hp
         self.baseline_dir = (
             Path(baseline_path)
             if baseline_path
@@ -263,6 +273,15 @@ class TD3Trainer:
                 reference_trajectory=self.reference_trajectory,
                 master_path=self.master_path,
             )
+        elif isinstance(self.ann_config, ANNBanditConfig):
+            env = EnvironmentSingleActionTraining(
+                problem=self.problem,
+                disc_config=self.disc_config,
+                ann_config=self.ann_config,
+                hyperparameters=self.hp,
+                reference_trajectory=self.reference_trajectory,
+                master_path=self.master_path,
+            )
         elif isinstance(self.ann_config, TauANNConfig):
             env = EnvironmentForcingDNS(
                 problem=self.problem,
@@ -297,6 +316,18 @@ class TD3Trainer:
         episode = 0
         stop_training = False
 
+        # before the while loop
+        is_bandit = isinstance(self.ann_config, ANNBanditConfig)
+        worst_valid_reward = None
+        if is_bandit:
+            edges = np.linspace(self.hp.min_action, self.hp.max_action, self.ann_config.n_random_episodes + 1)
+            random_values = np.random.permutation(np.random.uniform(edges[:-1], edges[1:]))
+
+        if hasattr(self.ann_config, "n_random_episodes"):
+            stochastic_steps = self.ann_config.n_random_episodes
+        else:
+            stochastic_steps = self.hp.stochastic_timesteps
+
         while episode < self.ann_config.n_training_episodes and not stop_training:
             ep_start_time = time.time()
             state = env.reset()
@@ -314,18 +345,29 @@ class TD3Trainer:
                 episode_steps += 1
 
                 # Action selection
-                if total_steps < self.hp.stochastic_timesteps:
+                if total_steps < stochastic_steps:
                     min_action, max_action = self.get_action_bounds(steps=total_steps)
-                    action = np.random.uniform(
-                        min_action,
-                        max_action,
-                        size=self.ann_config.action_dimension,
-                    )
+                    if isinstance(self.ann_config, ANNBanditConfig):
+                        # Sample one random value and broadcast it across all action dimensions
+                        action = np.full(self.ann_config.action_dimension, random_values[episode])
+                    else:
+                        action = np.random.uniform(
+                            min_action,
+                            max_action,
+                            size=self.ann_config.action_dimension,
+                        )
                 else:
+                    for _ in range(self.hp.updates_per_step):
+                        critic_loss, actor_loss = agent.train(replay_buffer, self.hp.batch_size)
+                        self.critic_loss_history.append(critic_loss)
+                        self.actor_loss_history.append(actor_loss)
+
                     action = agent.select_action(state, noise_std=self.hp.expl_noise)
+                    if isinstance(self.ann_config, ANNBanditConfig):
+                        # Enforce exact identity across actions (if noise introduced minor floating-point differences)
+                        action = np.full(self.ann_config.action_dimension, action[0])
 
                 actions.append(action)
-
                 # Execution & numeric safety checks
                 try:
                     with np.errstate(over="raise", invalid="raise", divide="raise"):
@@ -348,6 +390,10 @@ class TD3Trainer:
                     break
 
                 if info.get("crashed", False):
+                    if is_bandit:
+                        crash_reward = reward if worst_valid_reward is None else worst_valid_reward
+                        replay_buffer.add(state, action, next_state, crash_reward, True)
+
                     reason = info.get("crash_reason", "Solver Divergence")
                     stop_training = self._handle_episode_abort(
                         f"Episode {episode + 1} aborted: {reason}"
@@ -359,6 +405,7 @@ class TD3Trainer:
                 replay_buffer.add(state, action, next_state, reward, done)
                 state = next_state
                 episode_reward += reward
+                worst_valid_reward = reward if worst_valid_reward is None else min(worst_valid_reward, reward)
 
                 # Step progress logging
                 if episode_steps % 100 == 0 or done:
@@ -366,7 +413,7 @@ class TD3Trainer:
                         episode_steps, max_steps_per_ep, reward, episode_reward, env
                     )
 
-                if total_steps >= self.hp.stochastic_timesteps:
+                if total_steps >= stochastic_steps:
                     critic_loss, actor_loss = agent.train(
                         replay_buffer, self.hp.batch_size
                     )
@@ -410,7 +457,7 @@ class TD3Trainer:
             )
 
             # Diagnostic critic sensitivity check
-            if total_steps >= self.hp.stochastic_timesteps:
+            if total_steps >= stochastic_steps:
                 a_default = np.ones(self.ann_config.action_dimension, dtype=np.float32)
                 a_perturbed = np.full(
                     self.ann_config.action_dimension, 1.1, dtype=np.float32
@@ -891,45 +938,52 @@ class TD3Trainer:
         # -------------------------------------------------------------
         # INSET ZOOM PLOT
         # -------------------------------------------------------------
-        ax_inset = inset_axes(
-            ax, width="42%", height="38%", loc="center right", borderpad=2.5
-        )
-
-        if self.baseline_reward is not None:
-            ax_inset.axhline(
-                self.baseline_reward, color="crimson", linestyle="--", linewidth=1.2
+        if self.episodes_ran >= 50:
+            ax_inset = inset_axes(
+                ax, width="42%", height="38%", loc="center right", borderpad=2.5
             )
-        ax_inset.plot(episodes, rewards, color="tab:orange", alpha=0.3, linewidth=0.8)
-        if len(rewards) >= window_size:
-            ax_inset.plot(ma_episodes, moving_avg, color="tab:orange", linewidth=1.8)
 
-        # Dynamically determine the zoom window starting point
-        exploration_end = self.end_of_random_episode or 0
-        total_eps = len(episodes)
-
-        # Zooms in on the last 30% of training, but respects exploration phase bounds
-        if total_eps > exploration_end + 5:
-            zoom_start = max(exploration_end, int(total_eps * 0.7))
-        else:
-            zoom_start = 0
-
-        ax_inset.set_xlim(zoom_start, max(1, total_eps - 1))
-
-        # Safely compute y-axis zoom bounds
-        converged_rewards = rewards[zoom_start:]
-        if len(converged_rewards) > 0:
-            y_min, y_max = (
-                np.percentile(converged_rewards, 2),
-                np.percentile(converged_rewards, 98),
+            if self.baseline_reward is not None:
+                ax_inset.axhline(
+                    self.baseline_reward, color="crimson", linestyle="--", linewidth=1.2
+                )
+            ax_inset.plot(
+                episodes, rewards, color="tab:orange", alpha=0.3, linewidth=0.8
             )
-            base_ref = self.baseline_reward if self.baseline_reward is not None else 0.0
-            ax_inset.set_ylim(min(y_min, base_ref - 3), max(y_max, 0))
+            if len(rewards) >= window_size:
+                ax_inset.plot(
+                    ma_episodes, moving_avg, color="tab:orange", linewidth=1.8
+                )
 
-        ax_inset.grid(True, linestyle="--", alpha=0.3)
-        ax_inset.set_title("Convergence Zoom", fontsize=9, fontweight="bold")
-        ax_inset.tick_params(axis="both", which="major", labelsize=8)
+            # Dynamically determine the zoom window starting point
+            exploration_end = self.end_of_random_episode or 0
+            total_eps = len(episodes)
 
-        mark_inset(ax, ax_inset, loc1=3, loc2=4, fc="none", ec="0.5", linestyle=":")
+            # Zooms in on the last 30% of training, but respects exploration phase bounds
+            if total_eps > exploration_end + 5:
+                zoom_start = max(exploration_end, int(total_eps * 0.7))
+            else:
+                zoom_start = 0
+
+            ax_inset.set_xlim(zoom_start, max(1, total_eps - 1))
+
+            # Safely compute y-axis zoom bounds
+            converged_rewards = rewards[zoom_start:]
+            if len(converged_rewards) > 0:
+                y_min, y_max = (
+                    np.percentile(converged_rewards, 2),
+                    np.percentile(converged_rewards, 98),
+                )
+                base_ref = (
+                    self.baseline_reward if self.baseline_reward is not None else 0.0
+                )
+                ax_inset.set_ylim(min(y_min, base_ref - 3), max(y_max, 0))
+
+            ax_inset.grid(True, linestyle="--", alpha=0.3)
+            ax_inset.set_title("Convergence Zoom", fontsize=9, fontweight="bold")
+            ax_inset.tick_params(axis="both", which="major", labelsize=8)
+
+            mark_inset(ax, ax_inset, loc1=3, loc2=4, fc="none", ec="0.5", linestyle=":")
 
         ax.set_title("TD3 Training Reward Evolution", fontsize=14, fontweight="bold")
         ax.set_xlabel("Episode [-]", fontsize=12)

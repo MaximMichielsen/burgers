@@ -258,7 +258,11 @@ class SolverCoupled(SolverBase):
     # ------------------------------------------------------------------ #
 
     def compute_tau(
-        self, u_e: NDArray, u_x_e: NDArray | None = None, element: int | None = None
+        self,
+        u_e: NDArray,
+        u_x_e: NDArray | None = None,
+        element: int | None = None,
+        external_coefficients: NDArray | None = None,
     ) -> float:
         # Default to ones (1.0 for each term) if correction_coefficients is None
         c = (
