@@ -119,6 +119,7 @@ class SolverBase:
         self.forced_correction_coefficients = external_correction_coefficients
 
         self.problem_name = problem.name
+        self.disc_config = disc_config
 
         # simulation settings
         self.simulation_mode = SimulationMode(simulation_mode)

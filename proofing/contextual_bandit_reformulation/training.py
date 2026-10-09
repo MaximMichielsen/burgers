@@ -26,10 +26,10 @@ dt = 1e-3
 t_start = 308.0101
 t_end = 309.0100
 
-n_episodes = 10
+n_episodes = 50
 proof_mode = ProofMode.a
 
-link = False
+link = True
 
 run_dir = (
     CURRENT_DIR

@@ -23,7 +23,6 @@ class EnvironmentSingleActionTraining(EnvironmentForcingDNS):
         reference_trajectory: ReferenceTrajectory,
         master_path: Path,
         baseline_path: Path,
-        step_divisions: int = 1,
     ):
         super().__init__(
             problem,
@@ -34,7 +33,6 @@ class EnvironmentSingleActionTraining(EnvironmentForcingDNS):
             master_path,
         )
 
-        self.step_divisions: int = step_divisions
         self.action_history: list[NDArray] = []
         self.baseline_reward: float | None = None
         self.baseline_path = baseline_path

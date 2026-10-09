@@ -1,6 +1,7 @@
 import copy
 import time
 from dataclasses import fields, replace
+from math import ceil
 from pathlib import Path
 from typing import Optional, Any
 
@@ -33,6 +34,8 @@ from proofing.contextual_bandit_reformulation.config import (
 from proofing.contextual_bandit_reformulation.environment import (
     EnvironmentSingleActionTraining,
 )
+from proofing.short_mdp.config import ShortMDPConfig, TD3ShortMDPHyperparameters
+from proofing.short_mdp.environment import EnvironmentShortMDP
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, SolverBase
@@ -216,7 +219,7 @@ class TD3Trainer:
         self,
         problem: Problem,
         disc_config: DiscretizationConfig,
-        ann_config: TauANNConfig | ANNConfigProof | ANNBanditConfig,
+        ann_config: TauANNConfig | ANNConfigProof | ANNBanditConfig | ShortMDPConfig,
         master_path: Path,
         reference_trajectory: ReferenceTrajectory,
         hp: TD3Hyperparameters | TD3BanditHyperparameters | None = None,
@@ -226,12 +229,16 @@ class TD3Trainer:
         if hp is None:
             if isinstance(ann_config, ANNBanditConfig):
                 self.hp = TD3BanditHyperparameters()
+            elif isinstance(ann_config, ShortMDPConfig):
+                self.hp = TD3ShortMDPHyperparameters()
             else:
                 self.hp = TD3Hyperparameters()
 
         self.problem = problem
         self.disc_config = disc_config
-        self.ann_config: TauANNConfig | ANNConfigProof | ANNBanditConfig = ann_config
+        self.ann_config: (
+            TauANNConfig | ANNConfigProof | ANNBanditConfig | ShortMDPConfig
+        ) = ann_config
         self.master_path = Path(master_path)
         self.reference_trajectory = reference_trajectory
         self.baseline_dir = (
@@ -253,11 +260,18 @@ class TD3Trainer:
         if hasattr(self.ann_config, "n_random_episodes"):
             stochastic_episodes = self.ann_config.n_random_episodes
         else:
-            stochastic_episodes = math.ceil(self.hp.stochastic_timesteps / self.ann_config.n_agent_steps_per_episode)
+            stochastic_episodes = ceil(
+                self.hp.stochastic_timesteps / self.ann_config.n_agent_steps_per_episode
+            )
         self.n_stochastic_episodes = stochastic_episodes
 
         self.solver: SolverCoupled | SolverBase | SolverForProofs | None = None
-        self.env: EnvironmentForcingDNS | EnvironmentProof | None = None
+        self.env: (
+            EnvironmentForcingDNS
+            | EnvironmentProof
+            | EnvironmentSingleActionTraining
+            | None
+        ) = None
 
         # File logging setup
         self.master_path.mkdir(parents=True, exist_ok=True)
@@ -285,6 +299,16 @@ class TD3Trainer:
                 hyperparameters=self.hp,
                 reference_trajectory=self.reference_trajectory,
                 master_path=self.master_path,
+            )
+        elif isinstance(self.ann_config, ShortMDPConfig):
+            env = EnvironmentShortMDP(
+                problem=self.problem,
+                disc_config=self.disc_config,
+                ann_config=self.ann_config,
+                hyperparameters=self.hp,
+                reference_trajectory=self.reference_trajectory,
+                master_path=self.master_path,
+                baseline_path=None,
             )
         elif isinstance(self.ann_config, ANNBanditConfig):
             env = EnvironmentSingleActionTraining(
@@ -592,6 +616,7 @@ class TD3Trainer:
             master_path=self.master_path / "evaluation",
             tau_model=self.ann_config.tau_model,
             simulation_mode=SimulationMode.TAU_BASED,
+            prescribed_action_trajectory=None,
         )
 
         self.solver.run_simulation()
@@ -1041,14 +1066,14 @@ class TD3Trainer:
             plt.close(fig)
 
     def plot_profile_comparison(
-            self,
-            env: EnvironmentForcingDNS | None,
-            solver: SolverCoupled | SolverBase | None,
-            episode: int | None,
-            show_plot: bool = False,
-            dns_trajectory: NDArray | None = None,
-            save_dir: Path | None = None,
-            evaluation_mode: bool = False,
+        self,
+        env: EnvironmentForcingDNS | None,
+        solver: SolverCoupled | SolverBase | None,
+        episode: int | None,
+        show_plot: bool = False,
+        dns_trajectory: NDArray | None = None,
+        save_dir: Path | None = None,
+        evaluation_mode: bool = False,
     ) -> None:
         """Plot comparison of the mean velocity profile against DNS reference.
 
@@ -1094,12 +1119,13 @@ class TD3Trainer:
         relative_l2_error = (l2_error / (dns_l2_norm + 1e-12)) * 100.0
 
         if active_env is not None and hasattr(active_env, "compute_distance_error"):
-            rmse_error = float(active_env.compute_distance_error(field=les_mean, target=mean_profile_dns))
+            rmse_error = float(
+                active_env.compute_distance_error(
+                    field=les_mean, target=mean_profile_dns
+                )
+            )
         else:
             rmse_error = float(np.sqrt(np.mean((les_mean - mean_profile_dns) ** 2)))
-
-        dns_rms_norm = float(np.sqrt(np.mean(mean_profile_dns ** 2)))
-        relative_rmse_error = (rmse_error / (dns_rms_norm + 1e-12)) * 100.0
 
         # 4. Generate Plot
         fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
@@ -1133,7 +1159,6 @@ class TD3Trainer:
 
         baseline_file = None
         baseline_l2_error, baseline_relative_l2_error = None, None
-        baseline_rmse_error, baseline_relative_rmse_error = None, None
 
         if evaluation_mode and getattr(self, "baseline_run_dir", None) is not None:
             mean_profiles_dir = self.baseline_run_dir / "mean_profiles"
@@ -1162,17 +1187,12 @@ class TD3Trainer:
                     )
                     baseline_file = None
                 else:
-                    baseline_l2_error = float(np.linalg.norm(baseline_mean - mean_profile_dns))
-                    baseline_relative_l2_error = (baseline_l2_error / (dns_l2_norm + 1e-12)) * 100.0
-
-                    if active_env is not None and hasattr(active_env, "compute_distance_error"):
-                        baseline_rmse_error = float(
-                            active_env.compute_distance_error(field=baseline_mean, target=mean_profile_dns)
-                        )
-                    else:
-                        baseline_rmse_error = float(np.sqrt(np.mean((baseline_mean - mean_profile_dns) ** 2)))
-
-                    baseline_relative_rmse_error = (baseline_rmse_error / (dns_rms_norm + 1e-12)) * 100.0
+                    baseline_l2_error = float(
+                        np.linalg.norm(baseline_mean - mean_profile_dns)
+                    )
+                    baseline_relative_l2_error = (
+                        baseline_l2_error / (dns_l2_norm + 1e-12)
+                    ) * 100.0
 
                     ax.plot(
                         mesh,
