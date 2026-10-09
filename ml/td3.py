@@ -26,8 +26,13 @@ from ml.reference_scheduler import ReferenceTrajectory
 from proofing.action_based.config import ANNConfigProof
 from proofing.action_based.environment import EnvironmentProof
 from proofing.action_based.solver import SolverForProofs
-from proofing.contextual_bandit_reformulation.config import ANNBanditConfig, TD3BanditHyperparameters
-from proofing.contextual_bandit_reformulation.environment import EnvironmentSingleActionTraining
+from proofing.contextual_bandit_reformulation.config import (
+    ANNBanditConfig,
+    TD3BanditHyperparameters,
+)
+from proofing.contextual_bandit_reformulation.environment import (
+    EnvironmentSingleActionTraining,
+)
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, SolverBase
@@ -76,7 +81,9 @@ class TD3Agent:
     """Twin Delayed Deep Deterministic Policy Gradient Agent."""
 
     def __init__(
-        self, ann_config: TauANNConfig, hp: TD3Hyperparameters | TD3BanditHyperparameters = TD3Hyperparameters()
+        self,
+        ann_config: TauANNConfig,
+        hp: TD3Hyperparameters | TD3BanditHyperparameters = TD3Hyperparameters(),
     ):
         self.hp = hp
         self.device = torch.device("cpu")
@@ -139,7 +146,9 @@ class TD3Agent:
 
         current_q1, current_q2 = self.critic(state, action)
 
-        loss_fn = functional.mse_loss if self.hp.critic_mse else functional.smooth_l1_loss
+        loss_fn = (
+            functional.mse_loss if self.hp.critic_mse else functional.smooth_l1_loss
+        )
         critic_loss = loss_fn(current_q1, target_q) + loss_fn(current_q2, target_q)
 
         self.critic_optimizer.zero_grad()
@@ -222,9 +231,7 @@ class TD3Trainer:
 
         self.problem = problem
         self.disc_config = disc_config
-        self.ann_config: TauANNConfig | ANNConfigProof | ANNBanditConfig = (
-            ann_config
-        )
+        self.ann_config: TauANNConfig | ANNConfigProof | ANNBanditConfig = ann_config
         self.master_path = Path(master_path)
         self.reference_trajectory = reference_trajectory
         self.baseline_dir = (
@@ -242,6 +249,12 @@ class TD3Trainer:
 
         self.best_historical_reward = -np.inf
         self.best_action_sequence: list = []
+
+        if hasattr(self.ann_config, "n_random_episodes"):
+            stochastic_episodes = self.ann_config.n_random_episodes
+        else:
+            stochastic_episodes = math.ceil(self.hp.stochastic_timesteps / self.ann_config.n_agent_steps_per_episode)
+        self.n_stochastic_episodes = stochastic_episodes
 
         self.solver: SolverCoupled | SolverBase | SolverForProofs | None = None
         self.env: EnvironmentForcingDNS | EnvironmentProof | None = None
@@ -281,6 +294,7 @@ class TD3Trainer:
                 hyperparameters=self.hp,
                 reference_trajectory=self.reference_trajectory,
                 master_path=self.master_path,
+                baseline_path=None,
             )
         elif isinstance(self.ann_config, TauANNConfig):
             env = EnvironmentForcingDNS(
@@ -306,6 +320,8 @@ class TD3Trainer:
         self.print_title("Starting Baseline Evaluation Run")
 
         self.run_baseline_evaluation()
+        if isinstance(self.ann_config, ANNBanditConfig):
+            self.env.baseline_path = self.baseline_run_dir
 
         self.print_title("Starting Training Loop")
 
@@ -320,13 +336,14 @@ class TD3Trainer:
         is_bandit = isinstance(self.ann_config, ANNBanditConfig)
         worst_valid_reward = None
         if is_bandit:
-            edges = np.linspace(self.hp.min_action, self.hp.max_action, self.ann_config.n_random_episodes + 1)
-            random_values = np.random.permutation(np.random.uniform(edges[:-1], edges[1:]))
-
-        if hasattr(self.ann_config, "n_random_episodes"):
-            stochastic_steps = self.ann_config.n_random_episodes
-        else:
-            stochastic_steps = self.hp.stochastic_timesteps
+            edges = np.linspace(
+                self.hp.min_action,
+                self.hp.max_action,
+                self.ann_config.n_random_episodes + 1,
+            )
+            random_values = np.random.permutation(
+                np.random.uniform(edges[:-1], edges[1:])
+            )
 
         while episode < self.ann_config.n_training_episodes and not stop_training:
             ep_start_time = time.time()
@@ -338,6 +355,8 @@ class TD3Trainer:
             actions = []
             skip_episode = False
 
+            is_random_action_episode = episode < self.n_stochastic_episodes
+
             self._log_episode_header(episode, total_steps)
 
             while not done:
@@ -345,11 +364,15 @@ class TD3Trainer:
                 episode_steps += 1
 
                 # Action selection
-                if total_steps < stochastic_steps:
-                    min_action, max_action = self.get_action_bounds(steps=total_steps)
-                    if isinstance(self.ann_config, ANNBanditConfig):
+                if is_random_action_episode:
+                    min_action, max_action = self.get_action_bounds(episode=episode)
+                    if isinstance(self.ann_config, ANNBanditConfig) and getattr(
+                        self.ann_config, "link_coefficients", True
+                    ):
                         # Sample one random value and broadcast it across all action dimensions
-                        action = np.full(self.ann_config.action_dimension, random_values[episode])
+                        action = np.full(
+                            self.ann_config.action_dimension, random_values[episode]
+                        )
                     else:
                         action = np.random.uniform(
                             min_action,
@@ -358,13 +381,17 @@ class TD3Trainer:
                         )
                 else:
                     for _ in range(self.hp.updates_per_step):
-                        critic_loss, actor_loss = agent.train(replay_buffer, self.hp.batch_size)
+                        critic_loss, actor_loss = agent.train(
+                            replay_buffer, self.hp.batch_size
+                        )
                         self.critic_loss_history.append(critic_loss)
                         self.actor_loss_history.append(actor_loss)
 
                     action = agent.select_action(state, noise_std=self.hp.expl_noise)
-                    if isinstance(self.ann_config, ANNBanditConfig):
-                        # Enforce exact identity across actions (if noise introduced minor floating-point differences)
+                    if isinstance(self.ann_config, ANNBanditConfig) and getattr(
+                        self.ann_config, "link_coefficients", True
+                    ):
+                        # Enforce exact identity across actions only if linking is explicitly enabled
                         action = np.full(self.ann_config.action_dimension, action[0])
 
                 actions.append(action)
@@ -391,7 +418,9 @@ class TD3Trainer:
 
                 if info.get("crashed", False):
                     if is_bandit:
-                        crash_reward = reward if worst_valid_reward is None else worst_valid_reward
+                        crash_reward = (
+                            reward if worst_valid_reward is None else worst_valid_reward
+                        )
                         replay_buffer.add(state, action, next_state, crash_reward, True)
 
                     reason = info.get("crash_reason", "Solver Divergence")
@@ -405,7 +434,11 @@ class TD3Trainer:
                 replay_buffer.add(state, action, next_state, reward, done)
                 state = next_state
                 episode_reward += reward
-                worst_valid_reward = reward if worst_valid_reward is None else min(worst_valid_reward, reward)
+                worst_valid_reward = (
+                    reward
+                    if worst_valid_reward is None
+                    else min(worst_valid_reward, reward)
+                )
 
                 # Step progress logging
                 if episode_steps % 100 == 0 or done:
@@ -413,7 +446,7 @@ class TD3Trainer:
                         episode_steps, max_steps_per_ep, reward, episode_reward, env
                     )
 
-                if total_steps >= stochastic_steps:
+                if not is_random_action_episode:
                     critic_loss, actor_loss = agent.train(
                         replay_buffer, self.hp.batch_size
                     )
@@ -457,7 +490,7 @@ class TD3Trainer:
             )
 
             # Diagnostic critic sensitivity check
-            if total_steps >= stochastic_steps:
+            if not is_random_action_episode:
                 a_default = np.ones(self.ann_config.action_dimension, dtype=np.float32)
                 a_perturbed = np.full(
                     self.ann_config.action_dimension, 1.1, dtype=np.float32
@@ -494,12 +527,9 @@ class TD3Trainer:
 
         return agent.actor
 
-    def get_action_bounds(self, steps: int) -> tuple[float, float]:
+    def get_action_bounds(self, episode: int) -> tuple[float, float]:
         """Compute action bounds on stochastic action selection, follows linearly varying profile."""
-        if steps > self.hp.stochastic_timesteps:
-            return self.hp.min_action, self.hp.max_action
-
-        progress = steps / max(1, self.hp.stochastic_timesteps)
+        progress = episode / max(1, self.n_stochastic_episodes)
         current_min = self.hp.init_min_action + progress * (
             self.hp.min_action - self.hp.init_min_action
         )
@@ -622,10 +652,13 @@ class TD3Trainer:
 
     def _log_episode_header(self, episode: int, total_steps: int) -> None:
         """Logs phase and episode start header."""
+        if hasattr(self.ann_config, "n_random_episodes"):
+            stochastic_steps = self.ann_config.n_random_episodes
+        else:
+            stochastic_steps = self.hp.stochastic_timesteps
+
         phase_str = (
-            "EXPLORATION"
-            if total_steps < self.hp.stochastic_timesteps
-            else "POLICY TRAINING"
+            "EXPLORATION" if total_steps < stochastic_steps else "POLICY TRAINING"
         )
         self._log(
             f"\n>>> Episode {episode + 1}/{self.ann_config.n_training_episodes} "
@@ -1008,14 +1041,14 @@ class TD3Trainer:
             plt.close(fig)
 
     def plot_profile_comparison(
-        self,
-        env: EnvironmentForcingDNS | None,
-        solver: SolverCoupled | SolverBase | None,
-        episode: int | None,
-        show_plot: bool = False,
-        dns_trajectory: NDArray | None = None,
-        save_dir: Path | None = None,
-        evaluation_mode: bool = False,
+            self,
+            env: EnvironmentForcingDNS | None,
+            solver: SolverCoupled | SolverBase | None,
+            episode: int | None,
+            show_plot: bool = False,
+            dns_trajectory: NDArray | None = None,
+            save_dir: Path | None = None,
+            evaluation_mode: bool = False,
     ) -> None:
         """Plot comparison of the mean velocity profile against DNS reference.
 
@@ -1054,9 +1087,19 @@ class TD3Trainer:
             )
 
         # 3. Compute error metrics
+        active_env = env or getattr(self, "env", None)
+
         l2_error = float(np.linalg.norm(les_mean - mean_profile_dns))
-        dns_norm = np.linalg.norm(mean_profile_dns)
-        relative_l2_error = (l2_error / (dns_norm + 1e-12)) * 100.0
+        dns_l2_norm = float(np.linalg.norm(mean_profile_dns))
+        relative_l2_error = (l2_error / (dns_l2_norm + 1e-12)) * 100.0
+
+        if active_env is not None and hasattr(active_env, "compute_distance_error"):
+            rmse_error = float(active_env.compute_distance_error(field=les_mean, target=mean_profile_dns))
+        else:
+            rmse_error = float(np.sqrt(np.mean((les_mean - mean_profile_dns) ** 2)))
+
+        dns_rms_norm = float(np.sqrt(np.mean(mean_profile_dns ** 2)))
+        relative_rmse_error = (rmse_error / (dns_rms_norm + 1e-12)) * 100.0
 
         # 4. Generate Plot
         fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
@@ -1088,7 +1131,11 @@ class TD3Trainer:
             zorder=3,
         )
 
-        if evaluation_mode:
+        baseline_file = None
+        baseline_l2_error, baseline_relative_l2_error = None, None
+        baseline_rmse_error, baseline_relative_rmse_error = None, None
+
+        if evaluation_mode and getattr(self, "baseline_run_dir", None) is not None:
             mean_profiles_dir = self.baseline_run_dir / "mean_profiles"
             baseline_file = mean_profiles_dir / f"mean_w_{self.problem.t_end}.npy"
 
@@ -1107,13 +1154,26 @@ class TD3Trainer:
                 baseline_mean = np.load(baseline_file)
                 mesh = self.disc_config.mesh_les
 
-                # Validate dimensions before plotting
+                # Validate dimensions before plotting and computing baseline metrics
                 if mesh.shape != baseline_mean.shape:
                     self._log(
                         f"[Warning] Skipping baseline plot due to shape mismatch: "
                         f"mesh {mesh.shape} vs baseline {baseline_mean.shape}."
                     )
+                    baseline_file = None
                 else:
+                    baseline_l2_error = float(np.linalg.norm(baseline_mean - mean_profile_dns))
+                    baseline_relative_l2_error = (baseline_l2_error / (dns_l2_norm + 1e-12)) * 100.0
+
+                    if active_env is not None and hasattr(active_env, "compute_distance_error"):
+                        baseline_rmse_error = float(
+                            active_env.compute_distance_error(field=baseline_mean, target=mean_profile_dns)
+                        )
+                    else:
+                        baseline_rmse_error = float(np.sqrt(np.mean((baseline_mean - mean_profile_dns) ** 2)))
+
+                    baseline_relative_rmse_error = (baseline_rmse_error / (dns_rms_norm + 1e-12)) * 100.0
+
                     ax.plot(
                         mesh,
                         baseline_mean,
@@ -1161,10 +1221,21 @@ class TD3Trainer:
 
         ax.legend(loc="upper right", frameon=True, framealpha=0.9, fontsize=9.5)
 
-        score_text = (
-            rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}"
-            + f"\nRel. Error: {relative_l2_error:.2f}%"
-        )
+        # Build metric display box
+        score_lines = [
+            f"$\\mathrm{{L}}_2$ Error: {l2_error:.4e}",
+            f"RMSE Error: {rmse_error:.4e}",
+        ]
+
+        if evaluation_mode and baseline_file and baseline_relative_l2_error is not None:
+            score_lines.append(
+                f"Rel. Error: {relative_l2_error:.2f}% (vs. {baseline_relative_l2_error:.2f}%)"
+            )
+        else:
+            score_lines.append(f"Rel. Error: {relative_l2_error:.2f}%")
+
+        score_text = "\n".join(score_lines)
+
         ax.text(
             0.03,
             0.05,

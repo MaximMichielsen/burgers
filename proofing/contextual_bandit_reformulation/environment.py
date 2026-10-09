@@ -22,6 +22,7 @@ class EnvironmentSingleActionTraining(EnvironmentForcingDNS):
         hyperparameters: TauANNHyperparameters | TD3Hyperparameters,
         reference_trajectory: ReferenceTrajectory,
         master_path: Path,
+        baseline_path: Path,
         step_divisions: int = 1,
     ):
         super().__init__(
@@ -35,6 +36,8 @@ class EnvironmentSingleActionTraining(EnvironmentForcingDNS):
 
         self.step_divisions: int = step_divisions
         self.action_history: list[NDArray] = []
+        self.baseline_reward: float | None = None
+        self.baseline_path = baseline_path
 
     def step(self, action: NDArray) -> tuple[NDArray, float, bool, dict]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done, info)."""
@@ -91,4 +94,18 @@ class EnvironmentSingleActionTraining(EnvironmentForcingDNS):
         penalty = self.compute_distance_error(
             field=mean_solution, target=self.reference_trajectory.target_profile
         )
-        return -penalty * 100
+        if self.baseline_reward is None:
+            self.compute_baseline_reward(baseline_path=self.baseline_path)
+
+        normalized_penalty = self.baseline_reward - penalty
+        return normalized_penalty * 100
+
+    def compute_baseline_reward(self, baseline_path: Path) -> None:
+        """Compute mean target deviation with baseline."""
+        mean_profile = np.load(
+            baseline_path / "mean_profiles" / f"mean_w_{self.problem.t_end}.npy"
+        )
+        penalty = self.compute_distance_error(
+            field=mean_profile, target=self.reference_trajectory.target_profile
+        )
+        self.baseline_reward = penalty
