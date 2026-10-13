@@ -10,11 +10,12 @@ from utils.forcing_pathing import get_forcing_path
 PROJECT_ROOT = Path(__file__).resolve().parent
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 
-n_nodes_les = 17
+n_nodes_les = 33
 z_length = 2.0
 dt = 1e-3
 t_start = 308.0101
 t_end = 309.0100
+external_coefficients = np.array([1, 1])
 
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS
@@ -26,8 +27,6 @@ forcing_path = get_forcing_path(
 )
 
 forcing_projected = np.load(forcing_path)
-
-print(forcing_path)
 
 n_timesteps, _ = np.shape(forcing_projected)
 timespan = n_timesteps * dt
@@ -63,9 +62,10 @@ solver_les = SolverBase(
     simulation_mode=simulation_mode,
     master_path=PROJECT_ROOT
     / "solver_data"
-    / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}_dt_{dt}_test",
+    / "base_les"
+    / f"n{n_nodes_les}_p{tau_model.output_dimensions}_dt{dt}",
     tau_model=tau_model,
-    external_correction_coefficients=np.array([4.1, 4.1]),
+    external_correction_coefficients=external_coefficients,
 )
 solver_les.run_simulation()
 solver_les.post_plotting()

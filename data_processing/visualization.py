@@ -227,30 +227,26 @@ def plot_mean_statistics(
     z_coords: NDArray,
     stat_times: NDArray,
     w_mean_data: NDArray,
-    field_title: str = r"Mean Velocity $\langle w \rangle$",
+    reynolds_stress_data: NDArray,
+    fz_data: NDArray,
+    fz_fz_data: NDArray,
+    save_path: Path,
+    show_plot: bool = True,
 ):
-    """Plots spatial mean profiles at each time frame and domain-averaged statistics over time.
+    """Plots spatial mean profiles at each time frame and domain-averaged statistics over time."""
 
-    Parameters
-    ----------
-    z_coords : NDArray
-        Spatial grid coordinates (N_nodes,).
-    stat_times : NDArray
-        Timestamps for statistical frames (N_frames,).
-    w_mean_data : NDArray
-        Spatial mean profiles across time (N_frames, N_nodes).
-    field_title : str, default="Mean Velocity"
-        Latex title formatted string for headers.
-    """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), dpi=120)
+    # -------------------------------------------------------------
+    # FILE 1: mean_w_profiles.png
+    # -------------------------------------------------------------
+    fig1, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), dpi=120)
 
     # Subplot 1: Spatial Profiles for each time frame
     for idx, t in enumerate(stat_times):
         ax1.plot(z_coords, w_mean_data[idx], label=f"t = {t:.2f} s")
 
-    ax1.set_title(f"Spatial {field_title} Profiles")
-    ax1.set_xlabel("Grid coordinate $z$")
-    ax1.set_ylabel(field_title)
+    ax1.set_title(r"Spatial Mean Velocity $\langle w \rangle$ Profiles")
+    ax1.set_xlabel(r"Grid coordinate $z$")
+    ax1.set_ylabel(r"Mean Velocity $\langle w \rangle$")
     ax1.grid(True, linestyle="--", alpha=0.6)
     ax1.legend(loc="upper right")
 
@@ -258,13 +254,71 @@ def plot_mean_statistics(
     domain_avg_w = np.mean(w_mean_data, axis=1)
     ax2.plot(stat_times, domain_avg_w, marker="o", color="darkred", linestyle="-")
 
-    ax2.set_title(f"Domain-Averaged {field_title} over Time")
     ax2.set_xlabel("Time $t$ (s)")
-    ax2.set_ylabel(f"Domain Mean {field_title}")
+    ax2.set_title(r"Domain-Averaged Mean Velocity $\langle w \rangle$ over Time")
+    ax2.set_ylabel(r"Domain Mean Velocity $\langle w \rangle$")
     ax2.grid(True, linestyle="--", alpha=0.6)
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(save_path / "mean_w_profiles.png", dpi=300)
+    if show_plot:
+        plt.show()
+    plt.close(fig1)
+
+    # -------------------------------------------------------------
+    # FILE 2: reynolds_stress_profiles.png
+    # -------------------------------------------------------------
+    fig2, ax_reynolds = plt.subplots(figsize=(8, 5), dpi=120)
+
+    for idx, t in enumerate(stat_times):
+        ax_reynolds.plot(z_coords, reynolds_stress_data[idx], label=f"t = {t:.2f} s")
+
+    ax_reynolds.set_title("Reynolds Stress Data")
+    ax_reynolds.set_xlabel("Grid coordinate $z$")
+    ax_reynolds.grid(True, linestyle="--", alpha=0.6)
+    ax_reynolds.legend(loc="upper right")
+
+    plt.tight_layout()
+    plt.savefig(save_path / "reynolds_stress_profiles.png", dpi=300)
+    if show_plot:
+        plt.show()
+    plt.close(fig2)
+
+    # -------------------------------------------------------------
+    # FILE 3: fz_profiles.png
+    # -------------------------------------------------------------
+    fig3, ax_fz = plt.subplots(figsize=(8, 5), dpi=120)
+
+    for idx, t in enumerate(stat_times):
+        ax_fz.plot(z_coords, fz_data[idx], label=f"t = {t:.2f} s")
+
+    ax_fz.set_title("Fz Data")
+    ax_fz.set_xlabel("Grid coordinate $z$")
+    ax_fz.grid(True, linestyle="--", alpha=0.6)
+
+    plt.tight_layout()
+    plt.savefig(save_path / "fz_profiles.png", dpi=300)
+    if show_plot:
+        plt.show()
+    plt.close(fig3)
+
+    # -------------------------------------------------------------
+    # FILE 4: fz_fz_profiles.png
+    # -------------------------------------------------------------
+    fig4, ax_fzfz = plt.subplots(figsize=(8, 5), dpi=120)
+
+    for idx, t in enumerate(stat_times):
+        ax_fzfz.plot(z_coords, fz_fz_data[idx], label=f"t = {t:.2f} s")
+
+    ax_fzfz.set_title("Fz Fz Data")
+    ax_fzfz.set_xlabel("Grid coordinate $z$")
+    ax_fzfz.grid(True, linestyle="--", alpha=0.6)
+
+    plt.tight_layout()
+    plt.savefig(save_path / "fz_fz_profiles.png", dpi=300)
+    if show_plot:
+        plt.show()
+    plt.close(fig4)
 
 
 def main():
@@ -330,18 +384,27 @@ def main():
     print("=== Plotting Velocity Mean Statistics <w> ===")
 
     w_stat_path = STAT_PARSED_DIR / "mean_w.npy"
+    reynolds_stat_path = STAT_PARSED_DIR / "mean_reynolds_w.npy"
+    fz_path = STAT_PARSED_DIR / "mean_fz.npy"
+    fz_fz_path = STAT_PARSED_DIR / "mean_reynolds_fz.npy"
     w_dat_path = DAT_PARSED_DIR / "w.npy"
 
     if w_stat_path.exists():
         w_data = np.load(w_stat_path)
-    elif w_dat_path.exists():
-        w_data = np.load(w_dat_path)
     else:
         print(
             f"Velocity statistics file not found at {w_stat_path} or {w_dat_path}. "
             "Skipping velocity mean plot."
         )
         return
+
+    if reynolds_stat_path.exists():
+        reynolds_stress = np.load(reynolds_stat_path)
+    if fz_path.exists():
+        fz = np.load(fz_path)
+
+    if fz_fz_path.exists():
+        fz_fz = np.load(fz_fz_path)
 
     sample_indices = np.arange(len(w_data))
     w_sampled_profiles = w_data[sample_indices]
@@ -356,7 +419,10 @@ def main():
         z_coords=z_dns,
         stat_times=stat_times,
         w_mean_data=w_sampled_profiles,
-        field_title=r"Mean Velocity $\langle w \rangle$",
+        reynolds_stress_data=reynolds_stress,
+        fz_data=fz,
+        fz_fz_data=fz_fz,
+        save_path=PROJECT_ROOT / "dns_data" / "visualized",
     )
 
 

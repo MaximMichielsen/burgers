@@ -180,6 +180,7 @@ class SolverBase:
         self.solution: NDArray = self.initial_condition.copy()
         self.solution_previous: NDArray = self.initial_condition.copy()
         self.mean_solution: NDArray | None = None
+        self.reynolds_stress: NDArray | None = None
 
         # forcing
         self.forcing: NDArray | Callable | None = problem.forcing
@@ -255,7 +256,9 @@ class SolverBase:
 
             # final flush
             self.mean_solution = self.calculate_mean_profile()
+            self.reynolds_stress = self.compute_reynolds_stress()
             self.write_mean_solution_to_csv()
+            self.write_reynolds_profile()
 
     def advance_time_step(self) -> None:
         """Advance the solution by one time step: U^{n+1} ← U^n.
@@ -587,6 +590,12 @@ class SolverBase:
 
         return float(denom_sq**-0.5)
 
+    def compute_reynolds_stress(self) -> NDArray:
+        """Compute Reynolds stress <u'u'>."""
+        snapshots = np.asarray(self.snapshots_solution)
+        mean = np.mean(snapshots, axis=0)
+        return np.mean((snapshots - mean) ** 2, axis=0)
+
     # ------------------------------------------------------------------ #
     #  FEM primitives
     # ------------------------------------------------------------------ #
@@ -885,6 +894,24 @@ class SolverBase:
         np.save(filepath_npy, mean_profile)
 
         print(f"wrote mean profile at {self.master_path}")
+
+    def write_reynolds_profile(self) -> None:
+        reynolds_profile = self.reynolds_stress
+        time = round(self.time, ndigits=3)
+
+        file_dir = self.master_path / "reynolds_profiles"
+        file_dir.mkdir(parents=True, exist_ok=True)
+
+        filepath = file_dir / f"reynolds_stress_profile_{time}.csv"
+        filepath_npy = file_dir / f"reynolds_stress_profile_{time}.npy"
+
+        with open(filepath, mode="w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(["node_index", "x_coordinate", "w"])
+            for i in range(len(self.nodes)):
+                writer.writerow([self.nodes[i], self.mesh[i], reynolds_profile[i]])
+
+        np.save(filepath_npy, reynolds_profile)
 
     def post_processing(self) -> None:
         """Run post-plotting and post-logging."""

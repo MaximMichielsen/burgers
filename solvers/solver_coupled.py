@@ -71,8 +71,10 @@ class SolverCoupled(SolverBase):
 
         # Inside SolverCoupled.__init__
 
-        if hasattr(self.ann_config,
-                   "n_agent_steps_per_episode") and self.ann_config.n_agent_steps_per_episode is not None:
+        if (
+            hasattr(self.ann_config, "n_agent_steps_per_episode")
+            and self.ann_config.n_agent_steps_per_episode is not None
+        ):
             self.n_agent_calls = self.ann_config.n_agent_steps_per_episode
         else:
             # Standard sequential RL: total steps divided by skip steps
@@ -80,7 +82,9 @@ class SolverCoupled(SolverBase):
             self.n_agent_calls = max(1, self.disc_config.n_timesteps // max(1, n_skip))
 
         # Calculate exact step interval between policy evaluations
-        self.agent_eval_interval = max(1, self.disc_config.n_timesteps // self.n_agent_calls)
+        self.agent_eval_interval = max(
+            1, self.disc_config.n_timesteps // self.n_agent_calls
+        )
 
         # Load ANN only during inference/solver mode
         self.ann: TauANN | None = None
@@ -103,9 +107,8 @@ class SolverCoupled(SolverBase):
             self.correction_coefficients = np.asarray(action, dtype=np.float64)
 
         elif not self.training_mode:
-            should_eval_ann = (
-                    self.correction_coefficients is None
-                    or (self.current_time_step % self.agent_eval_interval == 0)
+            should_eval_ann = self.correction_coefficients is None or (
+                self.current_time_step % self.agent_eval_interval == 0
             )
 
             if should_eval_ann:
