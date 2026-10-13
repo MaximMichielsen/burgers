@@ -90,17 +90,17 @@ def run_offset_les_simulation(
 # ------------------------------------------------------------------ #
 # Single Sweep Execution & Plotting
 # ------------------------------------------------------------------ #
-def execute_single_sweep(coeffs: np.ndarray, z_domain: tuple[float, float] = (0.0, 2.0)):
+def execute_single_sweep(
+    coeffs: np.ndarray, z_domain: tuple[float, float] = (0.0, 2.0)
+):
     """Runs single coefficient simulations, plots results, and returns optimal baseline coeff."""
-    print(f"\n=======================================================")
-    print(f"  STEP 1: Single Parameter Sensitivity Sweep")
-    print(f"=======================================================")
+    print("\n=======================================================")
+    print("  STEP 1: Single Parameter Sensitivity Sweep")
+    print("=======================================================")
 
     for coeff in coeffs:
         coeff = round(float(coeff), 2)
-        sim_dir = (
-            SINGLE_SWEEP_DIR / f"les_n33_p2_dt_0.001_coeff_{coeff:.2f}"
-        )
+        sim_dir = SINGLE_SWEEP_DIR / f"les_n33_p2_dt_0.001_coeff_{coeff:.2f}"
         print(f"Running simulation with external coefficient = {coeff:.2f}...")
         run_offset_les_simulation(
             external_coefficients=coeff,
@@ -118,7 +118,9 @@ def execute_single_sweep(coeffs: np.ndarray, z_domain: tuple[float, float] = (0.
     for coeff in coeffs:
         coeff = round(float(coeff), 2)
         profiles_dir = (
-            SINGLE_SWEEP_DIR / f"les_n33_p2_dt_0.001_coeff_{coeff:.2f}" / "mean_profiles"
+            SINGLE_SWEEP_DIR
+            / f"les_n33_p2_dt_0.001_coeff_{coeff:.2f}"
+            / "mean_profiles"
         )
         if profiles_dir.exists():
             npy_files = sorted(profiles_dir.glob("mean_w_*.npy"))
@@ -360,10 +362,7 @@ def main():
     print("=======================================================")
     for c1 in double_sweep_range:
         print(f"Executing c1 = {c1:.2f}, c2 = {opt_baseline:.2f}")
-        sim_dir = (
-            VARY_C1_DIR
-            / f"les_n33_p2_dt_0.001_c1_{c1:.2f}_c2_{opt_baseline:.2f}"
-        )
+        sim_dir = VARY_C1_DIR / f"les_n33_p2_dt_0.001_c1_{c1:.2f}_c2_{opt_baseline:.2f}"
         run_offset_les_simulation(
             external_coefficients=(c1, opt_baseline),
             master_path=sim_dir,
@@ -382,10 +381,7 @@ def main():
     print("=======================================================")
     for c2 in double_sweep_range:
         print(f"Executing c1 = {opt_baseline:.2f}, c2 = {c2:.2f}")
-        sim_dir = (
-            VARY_C2_DIR
-            / f"les_n33_p2_dt_0.001_c1_{opt_baseline:.2f}_c2_{c2:.2f}"
-        )
+        sim_dir = VARY_C2_DIR / f"les_n33_p2_dt_0.001_c1_{opt_baseline:.2f}_c2_{c2:.2f}"
         run_offset_les_simulation(
             external_coefficients=(opt_baseline, c2),
             master_path=sim_dir,

@@ -18,7 +18,7 @@ FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 TEMPORAL_DIR = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
 TRAINING_DIR = PROJECT_ROOT / "dns_data" / "training"
 
-n_nodes_les = 33
+n_nodes_les = 17
 n_nodes_dns = 513
 z_length = 2.0
 
@@ -26,7 +26,7 @@ dt = 1e-3
 t_start = 308.0101
 t_end = 309.0100
 
-n_episodes = 50
+n_episodes = 12
 proof_mode = ProofMode.a
 
 link = True
@@ -52,6 +52,7 @@ target_profile_path = TRAINING_DIR / f"n{n_nodes_les}" / "training" / "stat_mean
 w_field_path = (
     TRAINING_DIR / f"n{n_nodes_les}" / "training" / f"w_field_{n_nodes_les}.npy"
 )
+reynolds_path = PROJECT_ROOT / "dns_data" / "curated" / "stat" / "mean_reynolds_w.npy"
 
 problem = Problem(
     name="tcf_1d",
@@ -91,6 +92,7 @@ ann_config = ANNBanditConfig(
 reference_trajectory = ReferenceTrajectory(
     target_profile_path=target_profile_path,
     projected_w_path=w_field_path,
+    reynolds_path=reynolds_path,
     n_les_nodes=n_nodes_les,
     target_time_index=0,
 )
@@ -105,7 +107,5 @@ trainer = TD3Trainer(
 
 # Execute training and plot diagnostics
 trainer.run_training()
-trainer.plot_reward_evolution()
-trainer.run_diagnostic_plotting()
 
 print(f"\n[SUCCESS] Mode '{proof_mode.value}' proof experiment completed.")

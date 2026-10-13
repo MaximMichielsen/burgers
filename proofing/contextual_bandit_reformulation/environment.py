@@ -11,7 +11,7 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 
 
-class EnvironmentSingleActionTraining(EnvironmentForcingDNS):
+class EnvironmentBanditTraining(EnvironmentForcingDNS):
     """Adjusted environment for testing single action based sweeping training."""
 
     def __init__(

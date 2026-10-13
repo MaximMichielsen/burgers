@@ -32,7 +32,7 @@ from proofing.contextual_bandit_reformulation.config import (
     TD3BanditHyperparameters,
 )
 from proofing.contextual_bandit_reformulation.environment import (
-    EnvironmentSingleActionTraining,
+    EnvironmentBanditTraining,
 )
 from proofing.short_mdp.config import ShortMDPConfig, TD3ShortMDPHyperparameters
 from proofing.short_mdp.environment import EnvironmentShortMDP
@@ -40,6 +40,7 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, SolverBase
 from solvers.solver_coupled import SolverCoupled
+from utils.error_metrics import compute_error_metrics
 
 EPISODE_PENALTY_CLIP = -10000
 
@@ -267,16 +268,25 @@ class TD3Trainer:
 
         self.solver: SolverCoupled | SolverBase | SolverForProofs | None = None
         self.env: (
-            EnvironmentForcingDNS
-            | EnvironmentProof
-            | EnvironmentSingleActionTraining
-            | None
+            EnvironmentForcingDNS | EnvironmentProof | EnvironmentBanditTraining | None
         ) = None
 
         # File logging setup
         self.master_path.mkdir(parents=True, exist_ok=True)
         self.log_file_path = self.master_path / "training_log.txt"
         self._init_txt_log()
+
+        self.w_l2_error_history: list[float] = []
+        self.w_rms_error_history: list[float] = []
+
+        self.reynolds_l2_error_history: list[float] = []
+        self.reynolds_rms_error_history: list[float] = []
+
+        self.baseline_w_l2_error: float = 0
+        self.baseline_w_rms_error: float = 0
+
+        self.baseline_reynolds_l2_error: float = 0
+        self.baseline_reynolds_rms_error: float = 0
 
         self.mean_actions: list[float] = []
         self.action_deviation_history = []
@@ -311,7 +321,7 @@ class TD3Trainer:
                 baseline_path=None,
             )
         elif isinstance(self.ann_config, ANNBanditConfig):
-            env = EnvironmentSingleActionTraining(
+            env = EnvironmentBanditTraining(
                 problem=self.problem,
                 disc_config=self.disc_config,
                 ann_config=self.ann_config,
@@ -491,7 +501,7 @@ class TD3Trainer:
             solver_post_processing = False
             if episode >= self.ann_config.n_training_episodes:
                 solver_post_processing = True
-            self._execute_post_processing(
+            self._execute_episodic_post_processing(
                 env, episode, do_solver_post_processing=solver_post_processing
             )
 
@@ -549,6 +559,10 @@ class TD3Trainer:
         if self.ann_config.run_final_evaluation:
             self.run_evaluation()
 
+        self.plot_reward_evolution()
+        self.plot_error_evaluation_evolution()
+        self.run_diagnostic_plotting()
+
         return agent.actor
 
     def get_action_bounds(self, episode: int) -> tuple[float, float]:
@@ -600,13 +614,27 @@ class TD3Trainer:
         self.solver.post_processing()
         write_les_parameters(target_cache_dir, cache_key)
 
-        self.plot_profile_comparison(
+        _, _, baseline_w_l2_error, baseline_w_rms_error = self.plot_profile_comparison(
             env=None,
             solver=self.solver,
             episode=None,
             dns_trajectory=self.reference_trajectory.target_profile,
             save_dir=target_cache_dir,
         )
+
+        self.baseline_w_l2_error = baseline_w_l2_error
+        self.baseline_w_rms_error = baseline_w_rms_error
+
+        _, _, baseline_reynolds_l2_error, baseline_reynolds_rms_error = self.plot_reynolds_stress_comparison(
+            env=None,
+            solver=self.solver,
+            episode=None,
+            dns_reynolds_profile=self.reference_trajectory.reynolds_profile,
+            save_dir=target_cache_dir,
+        )
+
+        self.baseline_reynolds_l2_error = baseline_reynolds_l2_error
+        self.baseline_reynolds_rms_error = baseline_reynolds_rms_error
 
     def run_evaluation(self):
         self.solver = SolverCoupled(
@@ -622,13 +650,27 @@ class TD3Trainer:
         self.solver.run_simulation()
         self.solver.post_processing()
 
-        self.plot_profile_comparison(
+        _, _, baseline_w_l2_error, baseline_w_rms_error = self.plot_profile_comparison(
             env=None,
             solver=self.solver,
             episode=None,
             dns_trajectory=self.reference_trajectory.target_profile,
             evaluation_mode=True,
         )
+
+        self.baseline_w_l2_error = baseline_w_l2_error
+        self.baseline_w_rms_error = baseline_w_rms_error
+
+        _, _, baseline_reynolds_l2_error, baseline_reynolds_rms_error = self.plot_reynolds_stress_comparison(
+            env=None,
+            solver=self.solver,
+            episode=None,
+            dns_reynolds_profile=self.reference_trajectory.reynolds_profile,
+            evaluation_mode=True,
+        )
+
+        self.baseline_reynolds_l2_error = baseline_reynolds_l2_error
+        self.baseline_reynolds_rms_error = baseline_reynolds_rms_error
 
     def run_diagnostic_plotting(self, save_path: Path | None = None) -> Path:
         """Trigger diagnostic plot generation for the trainer instance."""
@@ -711,16 +753,35 @@ class TD3Trainer:
             f"Sim Time: {sim_t:.4f}s"
         )
 
-    def _execute_post_processing(
+    def _execute_episodic_post_processing(
         self, env: Any, episode: int, do_solver_post_processing: bool = False
     ) -> None:
         """Triggers plotting routines and solver post-processing."""
         self._log("-" * 75)
         self._log("  [POST-PROCESSING & PLOTTING ARTIFACTS]")
         self.plot_history_breakdown(env=env, show_plot=False)
-        self.plot_profile_comparison(
+
+        w_l2_error, w_rms_error, _, _ = (
+            self.plot_profile_comparison(
+                env=env, episode=episode, show_plot=False, solver=None
+            )
+        )
+
+        self.w_l2_error_history.append(w_l2_error)
+        self.w_rms_error_history.append(w_rms_error)
+
+        (
+            reynolds_l2_error,
+            reynolds_rms_error,
+            _,
+            _,
+        ) = self.plot_reynolds_stress_comparison(
             env=env, episode=episode, show_plot=False, solver=None
         )
+
+        self.reynolds_l2_error_history.append(reynolds_l2_error)
+        self.reynolds_rms_error_history.append(reynolds_rms_error)
+
         if hasattr(env, "solver") and do_solver_post_processing:
             env.solver.post_processing()
 
@@ -911,6 +972,111 @@ class TD3Trainer:
         )
         self.print_footer(w)
 
+    def plot_error_evaluation_evolution(self, show_plot: bool = False) -> None:
+        """Visualize the evolution of episode errors in a 2x2 grid (separating L2 and RMS)."""
+        if len(self.w_l2_error_history) == 0:
+            print(
+                "Skipping error evolution across episodes. No episode errors recorded to plot (w_l2_error_history is unpopulated)."
+            )
+            return
+
+        episodes = np.arange(self.episodes_ran)
+        w_l2_errors = self.w_l2_error_history
+        w_rms_errors = self.w_rms_error_history
+        w_baseline_l2_error = self.baseline_w_l2_error
+        w_baseline_rms_error = self.baseline_w_rms_error
+
+        reynolds_l2_errors = self.reynolds_l2_error_history
+        reynolds_rms_errors = self.reynolds_rms_error_history
+        reynolds_baseline_l2_error = self.baseline_reynolds_l2_error
+        reynolds_baseline_rms_error = self.baseline_reynolds_rms_error
+
+        fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12, 10), dpi=300, sharex=True)
+
+        # Cohesive, modern color palette
+        color_velocity = "#2563eb"  # Vibrant Blue
+        color_reynolds = "#7c3aed"  # Rich Purple
+
+        # --- Subplot (0, 0): Velocity Field L2 Error ---
+        ax1 = axs[0, 0]
+        ax1.plot(episodes, w_l2_errors, color=color_velocity, linewidth=1.8, label="Velocity L2 Error")
+        ax1.axhline(
+            w_baseline_l2_error,
+            color=color_velocity,
+            linestyle="--",
+            alpha=0.7,
+            linewidth=1.5,
+            label="Baseline L2",
+        )
+        ax1.set_title("Velocity Field - L2 Error", fontsize=11, fontweight="bold", pad=8)
+        ax1.set_ylabel("Error Value", fontsize=10, fontweight="medium")
+        ax1.grid(True, linestyle=":", alpha=0.6)
+        ax1.legend(frameon=True, facecolor="white", framealpha=0.9, fontsize=8.5)
+
+        # --- Subplot (0, 1): Reynolds L2 Error ---
+        ax2 = axs[0, 1]
+        ax2.plot(episodes, reynolds_l2_errors, color=color_reynolds, linewidth=1.8, label="Reynolds L2 Error")
+        ax2.axhline(
+            reynolds_baseline_l2_error,
+            color=color_reynolds,
+            linestyle="--",
+            alpha=0.7,
+            linewidth=1.5,
+            label="Baseline L2",
+        )
+        ax2.set_title("Reynolds - L2 Error", fontsize=11, fontweight="bold", pad=8)
+        ax2.grid(True, linestyle=":", alpha=0.6)
+        ax2.legend(frameon=True, facecolor="white", framealpha=0.9, fontsize=8.5)
+
+        # --- Subplot (1, 0): Velocity Field RMS Error ---
+        ax3 = axs[1, 0]
+        ax3.plot(episodes, w_rms_errors, color=color_velocity, linewidth=1.8, label="Velocity RMS Error")
+        ax3.axhline(
+            w_baseline_rms_error,
+            color=color_velocity,
+            linestyle="--",
+            alpha=0.7,
+            linewidth=1.5,
+            label="Baseline RMS",
+        )
+        ax3.set_title("Velocity Field - RMS Error", fontsize=11, fontweight="bold", pad=8)
+        ax3.set_xlabel("Episode", fontsize=10, fontweight="medium")
+        ax3.set_ylabel("Error Value", fontsize=10, fontweight="medium")
+        ax3.grid(True, linestyle=":", alpha=0.6)
+        ax3.legend(frameon=True, facecolor="white", framealpha=0.9, fontsize=8.5)
+
+        # --- Subplot (1, 1): Reynolds RMS Error ---
+        ax4 = axs[1, 1]
+        ax4.plot(episodes, reynolds_rms_errors, color=color_reynolds, linewidth=1.8, label="Reynolds RMS Error")
+        ax4.axhline(
+            reynolds_baseline_rms_error,
+            color=color_reynolds,
+            linestyle="--",
+            alpha=0.7,
+            linewidth=1.5,
+            label="Baseline RMS",
+        )
+        ax4.set_title("Reynolds - RMS Error", fontsize=11, fontweight="bold", pad=8)
+        ax4.set_xlabel("Episode", fontsize=10, fontweight="medium")
+        ax4.grid(True, linestyle=":", alpha=0.6)
+        ax4.legend(frameon=True, facecolor="white", framealpha=0.9, fontsize=8.5)
+
+        # Adjust layout to prevent overlap
+        plt.tight_layout()
+
+        save_path = self.master_path / "training_error_evolution.png"
+        plt.savefig(
+            save_path,
+            dpi=300,
+            bbox_inches="tight",
+        )
+        self._log(f"  * Saved error evolution plot -> {save_path.name}")
+
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)
+
     def plot_reward_evolution(self, show_plot: bool = False):
         """Visualize the evolution of episode rewards over training with a clean inset zoom."""
         if len(self.episode_reward_history) == 0:
@@ -1065,16 +1231,249 @@ class TD3Trainer:
         else:
             plt.close(fig)
 
+    def plot_reynolds_stress_comparison(
+        self,
+        env: EnvironmentBanditTraining | None,
+        solver: SolverCoupled | SolverBase | None,
+        episode: int | None,
+        show_plot: bool = False,
+        dns_reynolds_profile: NDArray | None = None,
+        save_dir: Path | None = None,
+        evaluation_mode: bool = False,
+    ) -> tuple[float, float, float, float]:
+
+        try:
+            if solver is not None:
+                les_reynolds = solver.compute_reynolds_stress()
+            elif env is not None:
+                les_reynolds = env.solver.compute_reynolds_stress()
+            else:
+                self._log(
+                    "[Error] Skipping profile plot: neither 'solver' nor 'env' was provided."
+                )
+                return
+        except ValueError as e:
+            self._log(f"[Warning] Skipping profile plot: {e}")
+            return
+
+        if env is not None:
+            dns_reynolds = env.reference_trajectory.reynolds_profile
+        elif dns_reynolds_profile is not None:
+            dns_reynolds = dns_reynolds_profile
+        else:
+            self._log(
+                "[Error] Skipping profile plot: missing reference DNS trajectory."
+            )
+            return
+
+        if les_reynolds.shape != dns_reynolds.shape:
+            raise ValueError(
+                f"Shape mismatch in profile comparison! "
+                f"LES profile shape {les_reynolds.shape} vs DNS target shape {dns_reynolds.shape}."
+            )
+
+        l2_error, rms_error, relative_error = compute_error_metrics(
+            field=les_reynolds, target=dns_reynolds
+        )
+
+        # 4. Generate Plot
+        fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
+
+        ax.axhline(0, color="black", linestyle="--", linewidth=0.8, alpha=0.7, zorder=1)
+
+        ax.plot(
+            self.disc_config.mesh_les,
+            dns_reynolds,
+            color="mediumseagreen",
+            linestyle="-",
+            linewidth=1.2,
+            label="Projected DNS Reference",
+            zorder=2,
+        )
+
+        ax.plot(
+            self.disc_config.mesh_les,
+            les_reynolds,
+            color="crimson",
+            linestyle="--",
+            linewidth=1.0,
+            marker="o",
+            markevery=max(1, len(self.disc_config.mesh_les) // 16),
+            markersize=5,
+            markerfacecolor="white",
+            markeredgewidth=1.2,
+            label=f"LES Model ({len(self.disc_config.mesh_les)} pts)",
+            zorder=3,
+        )
+
+        baseline_file = None
+        baseline_l2_error, baseline_rms_error, baseline_relative_error = None, None, None
+
+        if evaluation_mode and getattr(self, "baseline_run_dir", None) is not None:
+            reynolds_profiles_dir = self.baseline_run_dir / "reynolds_profiles"
+            baseline_file = (
+                reynolds_profiles_dir
+                / f"reynolds_stress_profile_{self.problem.t_end}.npy"
+            )
+
+            # Locate baseline file or fallback safely
+            if not baseline_file.exists():
+                npy_files = list(reynolds_profiles_dir.glob("*.npy"))
+                if not npy_files:
+                    self._log(
+                        f"[Warning] Skipping baseline plot: No .npy files found in {reynolds_profiles_dir}"
+                    )
+                    baseline_file = None
+                else:
+                    baseline_file = npy_files[0]
+
+            if baseline_file:
+                baseline_mean = np.load(baseline_file)
+                mesh = self.disc_config.mesh_les
+
+                # Validate dimensions before plotting and computing baseline metrics
+                if mesh.shape != baseline_mean.shape:
+                    self._log(
+                        f"[Warning] Skipping baseline plot due to shape mismatch: "
+                        f"mesh {mesh.shape} vs baseline {baseline_mean.shape}."
+                    )
+                    baseline_file = None
+                else:
+                    (
+                        baseline_l2_error,
+                        baseline_rms_error,
+                        baseline_relative_error,
+                    ) = compute_error_metrics(baseline_mean, dns_reynolds)
+
+                    ax.plot(
+                        mesh,
+                        baseline_mean,
+                        color="blueviolet",
+                        linestyle="--",
+                        linewidth=1.0,
+                        marker="x",
+                        markevery=max(1, len(mesh) // 16),
+                        markersize=4,
+                        markerfacecolor="white",
+                        markeredgewidth=1.2,
+                        label=f"Baseline Model ({len(mesh)} pts)",
+                        zorder=3,
+                        alpha=0.8,
+                    )
+
+        all_data = np.concatenate([dns_reynolds, les_reynolds])
+        y_min, y_max = all_data.min(), all_data.max()
+        y_range = y_max - y_min if y_max != y_min else 1.0
+        ax.set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
+
+        # Dynamic Title
+        if env is not None:
+            title_tag = f"(Episode {episode if episode is not None else 0})"
+        elif isinstance(solver, SolverCoupled):
+            title_tag = "Evaluation"
+        elif isinstance(solver, SolverBase):
+            title_tag = "Baseline"
+        else:
+            title_tag = ""
+
+        ax.set_title(
+            rf"Reynolds Profile Comparison $\langle w \rangle$ {title_tag}".strip(),
+            fontsize=13,
+            pad=10,
+        )
+
+        ax.set_xlabel(r"Domain Coordinate $z$", fontsize=11)
+        ax.set_ylabel("Value", fontsize=11)
+
+        ax.set_xlim(min(self.disc_config.mesh_les), max(self.disc_config.mesh_les))
+        ax.grid(True, which="major", linestyle="--", alpha=0.5)
+        ax.grid(True, which="minor", linestyle=":", alpha=0.25)
+        ax.minorticks_on()
+
+        ax.legend(loc="upper right", frameon=True, framealpha=0.9, fontsize=9.5)
+
+        # Build metric display box
+        score_lines = [
+            f"$\\mathrm{{L}}_2$ Error: {l2_error:.4e}",
+            f"RMSE Error: {rms_error:.4e}",
+        ]
+
+        if evaluation_mode and baseline_file and baseline_relative_error is not None:
+            score_lines.append(
+                f"Rel. Error: {relative_error:.2f}% (vs. {baseline_relative_error:.2f}%)"
+            )
+        else:
+            score_lines.append(f"Rel. Error: {relative_error:.2f}%")
+
+        score_text = "\n".join(score_lines)
+
+        ax.text(
+            0.03,
+            0.05,
+            score_text,
+            transform=ax.transAxes,
+            fontsize=9.5,
+            verticalalignment="bottom",
+            horizontalalignment="left",
+            bbox=dict(
+                boxstyle="round,pad=0.5",
+                facecolor="white",
+                edgecolor="gray",
+                alpha=0.85,
+            ),
+            zorder=5,
+        )
+
+        plt.tight_layout()
+
+        # 5. Resolve Output Directory & File Name
+        if save_dir is not None:
+            out_dir = save_dir
+        elif env is not None:
+            out_dir = self.master_path / "profile_comparisons"
+        elif isinstance(solver, SolverCoupled):
+            out_dir = self.master_path / "evaluation"
+        elif isinstance(solver, SolverBase):
+            out_dir = self.master_path / "baseline"
+        else:
+            out_dir = self.master_path
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        if env is not None:
+            filename = (
+                f"reynolds_comparison_ep{episode if episode is not None else 0:03d}.png"
+            )
+        elif isinstance(solver, SolverCoupled):
+            filename = "reynolds_comparison_evaluation.png"
+        elif isinstance(solver, SolverBase):
+            filename = "reynolds_comparison_baseline.png"
+        else:
+            filename = "reynolds_comparison.png"
+
+        output_plot_path = out_dir / filename
+
+        plt.savefig(output_plot_path, dpi=300)
+
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)
+
+        self._log(f"  * Saved velocity profile comparison -> {output_plot_path}")
+
+        return l2_error, rms_error, baseline_l2_error, baseline_rms_error
+
     def plot_profile_comparison(
         self,
-        env: EnvironmentForcingDNS | None,
+        env: EnvironmentForcingDNS | EnvironmentBanditTraining | None,
         solver: SolverCoupled | SolverBase | None,
         episode: int | None,
         show_plot: bool = False,
         dns_trajectory: NDArray | None = None,
         save_dir: Path | None = None,
         evaluation_mode: bool = False,
-    ) -> None:
+    ) -> tuple[float, float, float, float]:
         """Plot comparison of the mean velocity profile against DNS reference.
 
         Evaluation mode: Use baseline data as a comparison."""
@@ -1112,20 +1511,9 @@ class TD3Trainer:
             )
 
         # 3. Compute error metrics
-        active_env = env or getattr(self, "env", None)
-
-        l2_error = float(np.linalg.norm(les_mean - mean_profile_dns))
-        dns_l2_norm = float(np.linalg.norm(mean_profile_dns))
-        relative_l2_error = (l2_error / (dns_l2_norm + 1e-12)) * 100.0
-
-        if active_env is not None and hasattr(active_env, "compute_distance_error"):
-            rmse_error = float(
-                active_env.compute_distance_error(
-                    field=les_mean, target=mean_profile_dns
-                )
-            )
-        else:
-            rmse_error = float(np.sqrt(np.mean((les_mean - mean_profile_dns) ** 2)))
+        l2_error, rms_error, relative_error = compute_error_metrics(
+            les_mean, mean_profile_dns
+        )
 
         # 4. Generate Plot
         fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
@@ -1158,7 +1546,7 @@ class TD3Trainer:
         )
 
         baseline_file = None
-        baseline_l2_error, baseline_relative_l2_error = None, None
+        baseline_l2_error, baseline_rms_error, baseline_relative_error = None, None, None
 
         if evaluation_mode and getattr(self, "baseline_run_dir", None) is not None:
             mean_profiles_dir = self.baseline_run_dir / "mean_profiles"
@@ -1187,12 +1575,11 @@ class TD3Trainer:
                     )
                     baseline_file = None
                 else:
-                    baseline_l2_error = float(
-                        np.linalg.norm(baseline_mean - mean_profile_dns)
-                    )
-                    baseline_relative_l2_error = (
-                        baseline_l2_error / (dns_l2_norm + 1e-12)
-                    ) * 100.0
+                    (
+                        baseline_l2_error,
+                        baseline_rms_error,
+                        baseline_relative_error,
+                    ) = compute_error_metrics(baseline_mean, mean_profile_dns)
 
                     ax.plot(
                         mesh,
@@ -1244,15 +1631,15 @@ class TD3Trainer:
         # Build metric display box
         score_lines = [
             f"$\\mathrm{{L}}_2$ Error: {l2_error:.4e}",
-            f"RMSE Error: {rmse_error:.4e}",
+            f"RMSE Error: {rms_error:.4e}",
         ]
 
-        if evaluation_mode and baseline_file and baseline_relative_l2_error is not None:
+        if evaluation_mode and baseline_file and baseline_relative_error is not None:
             score_lines.append(
-                f"Rel. Error: {relative_l2_error:.2f}% (vs. {baseline_relative_l2_error:.2f}%)"
+                f"Rel. Error: {relative_error:.2f}% (vs. {baseline_relative_error:.2f}%)"
             )
         else:
-            score_lines.append(f"Rel. Error: {relative_l2_error:.2f}%")
+            score_lines.append(f"Rel. Error: {relative_error:.2f}%")
 
         score_text = "\n".join(score_lines)
 
@@ -1311,6 +1698,8 @@ class TD3Trainer:
 
         self._log(f"  * Saved velocity profile comparison -> {output_plot_path}")
 
+        return l2_error, rms_error, baseline_l2_error, baseline_rms_error
+
     def plot_history_breakdown(
         self, env: EnvironmentForcingDNS, show_plot: bool = False
     ) -> None:
@@ -1350,9 +1739,6 @@ class TD3Trainer:
                 "tab:green",
             ),
         }
-
-        print(env.distance_error_history_raw)
-        print(env.distance_improvement_history_raw)
 
         fig_raw, axes_raw = plt.subplots(
             4, 1, figsize=(10, 10), sharex=True, layout="constrained", dpi=300

@@ -153,14 +153,12 @@ class SolverCoupled(SolverBase):
 
     def get_ann_coefficients(self) -> NDArray:
         """Call ANN and receive correction coefficients."""
-        print("Invoking ANN corrections")
         state_array = self.create_input_stencil(mean_profile=self.mean_solution)
         state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
 
         with torch.no_grad():
             alpha_tensor = self.ann(state_tensor).squeeze(0)  # (output_dim,)
 
-        print(alpha_tensor.numpy().astype(np.float64))
         return alpha_tensor.numpy().astype(np.float64)
 
     def _coefficients_as_kwargs(self) -> dict[str, float]:

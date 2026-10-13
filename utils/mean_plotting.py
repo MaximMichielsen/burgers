@@ -239,7 +239,9 @@ if __name__ == "__main__":
 
     plot_profile_comparisons(
         dns_profile_path=PROJECT_ROOT / "dns_data" / "curated" / "stat" / "mean_w.npy",
-        les_profiles_dir=(PROJECT_ROOT / "solver_data" / "base_les" / les_dir / "mean_profiles"),
+        les_profiles_dir=(
+            PROJECT_ROOT / "solver_data" / "base_les" / les_dir / "mean_profiles"
+        ),
         t_start=308.01,
         z_domain=(0.0, 2.0),
     )

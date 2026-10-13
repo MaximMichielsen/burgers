@@ -12,6 +12,7 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode
 from solvers.solver_coupled import SolverCoupled
+from utils.error_metrics import compute_error_metrics
 
 REWARD_CLIP = 50
 
@@ -288,9 +289,5 @@ class EnvironmentForcingDNS:
     @staticmethod
     def compute_distance_error(field: NDArray, target: NDArray) -> float:
         """Compute spatial L1 or RMS error (non-squared) between field and target vectors."""
-        if field.shape != target.shape:
-            raise ValueError(
-                f"Shape mismatch: field {field.shape} vs target {target.shape}"
-            )
-        # Root Mean Square Error (RMSE) provides a linear gradient standard
-        return float(np.sqrt(np.mean((field - target) ** 2)))
+        _, rms_error, _ = compute_error_metrics(field, target)
+        return rms_error

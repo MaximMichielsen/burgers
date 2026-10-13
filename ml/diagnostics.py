@@ -12,7 +12,7 @@ from ml.environment import EnvironmentForcingDNS
 from proofing.action_based.config import ProofMode
 from proofing.action_based.environment import EnvironmentProof
 from proofing.contextual_bandit_reformulation.environment import (
-    EnvironmentSingleActionTraining,
+    EnvironmentBanditTraining,
 )
 
 if TYPE_CHECKING:
@@ -337,7 +337,7 @@ def plot_diagnostic_metrics(trainer: TD3Trainer, save_dir: Path | None = None) -
 
 
 def _plot_actions_history(
-    env: EnvironmentForcingDNS | EnvironmentProof | EnvironmentSingleActionTraining,
+    env: EnvironmentForcingDNS | EnvironmentProof | EnvironmentBanditTraining,
     episodes: NDArray,
     proof_mode: str | None,
     save_dir: Path,

@@ -13,17 +13,20 @@ class ReferenceTrajectory:
         self,
         target_profile_path: Path,
         projected_w_path: Path,
+        reynolds_path: Path,
         n_les_nodes: int,
         target_time_index: int,
     ) -> None:
 
         self.target_profile_path = Path(target_profile_path)
         self.projected_w_path = Path(projected_w_path)
+        self.reynolds_path = Path(reynolds_path)
         self.n_les_nodes = n_les_nodes
         self.target_time_index = target_time_index
 
         self._current_step_idx: int = 0
         self._target_profile: NDArray | None = None
+        self._reynolds_profile: NDArray | None = None
         self._projected_w_data: NDArray | None = None
 
         self.load_data()
@@ -39,8 +42,17 @@ class ReferenceTrajectory:
                 f"Projected w field missing at {self.projected_w_path}"
             )
 
+        if not self.reynolds_path.exists():
+            raise FileNotFoundError(
+                f"Reynolds stress field missing at {self.reynolds_path}"
+            )
+
         # Static 1D target mean profile <u_DNS>_T
         raw_target_profile = np.load(self.target_profile_path).astype(np.float64)[
+            self.target_time_index
+        ]
+
+        raw_reynolds_profile = np.load(self.reynolds_path).astype(np.float64)[
             self.target_time_index
         ]
 
@@ -50,6 +62,7 @@ class ReferenceTrajectory:
             dns_grid = np.linspace(0.0, 1.0, n_dns_nodes)
             les_grid = np.linspace(0.0, 1.0, self.n_les_nodes)
             self._target_profile = np.interp(les_grid, dns_grid, raw_target_profile)
+            self._reynolds_profile = np.interp(les_grid, dns_grid, raw_reynolds_profile)
         else:
             self._target_profile = raw_target_profile
 
@@ -78,8 +91,6 @@ class ReferenceTrajectory:
         """Reset episode index to zero."""
         self._current_step_idx = 0
 
-    # todo: source of all problems???
-
     def set_step_index(self, step_idx: int) -> None:
         """Set the active step index."""
         self._current_step_idx = step_idx
@@ -94,3 +105,9 @@ class ReferenceTrajectory:
     def projected_solution(self) -> NDArray:
         """Returns instantaneous projected snapshot for the current step."""
         return self.query(self._current_step_idx)
+
+    @property
+    def reynolds_profile(self) -> NDArray:
+        if self._reynolds_profile is None:
+            raise RuntimeError("Reynolds profile is not loaded.")
+        return self._reynolds_profile
