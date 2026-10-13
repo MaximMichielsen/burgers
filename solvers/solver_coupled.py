@@ -69,6 +69,23 @@ class SolverCoupled(SolverBase):
 
         self.prescribed_action_trajectory = prescribed_action_trajectory
 
+        # Inside SolverCoupled.__init__
+
+        if (
+            hasattr(self.ann_config, "n_agent_steps_per_episode")
+            and self.ann_config.n_agent_steps_per_episode is not None
+        ):
+            self.n_agent_calls = self.ann_config.n_agent_steps_per_episode
+        else:
+            # Standard sequential RL: total steps divided by skip steps
+            n_skip = getattr(self.ann_config, "n_skip_steps", 1)
+            self.n_agent_calls = max(1, self.disc_config.n_timesteps // max(1, n_skip))
+
+        # Calculate exact step interval between policy evaluations
+        self.agent_eval_interval = max(
+            1, self.disc_config.n_timesteps // self.n_agent_calls
+        )
+
         # Load ANN only during inference/solver mode
         self.ann: TauANN | None = None
         if not self.training_mode:
@@ -83,15 +100,18 @@ class SolverCoupled(SolverBase):
     def advance_time_step(self) -> None:
         """Advance the solution by one time step: U^{n+1} ← U^n."""
         self.resolve_current_forcing()
+        self.update_running_mean()
 
         if self.prescribed_action_trajectory is not None:
             action = self.prescribed_action_trajectory[self.current_time_step]
             self.correction_coefficients = np.asarray(action, dtype=np.float64)
+
         elif not self.training_mode:
-            if (
-                self.correction_coefficients is None
-                or self.current_time_step % self.ann_config.n_skip_steps == 0
-            ):
+            should_eval_ann = self.correction_coefficients is None or (
+                self.current_time_step % self.agent_eval_interval == 0
+            )
+
+            if should_eval_ann:
                 self.correction_coefficients = self.get_ann_coefficients()
 
         new_solution = self.nr_iteration(self.solution, self.solution_previous)
@@ -133,13 +153,14 @@ class SolverCoupled(SolverBase):
 
     def get_ann_coefficients(self) -> NDArray:
         """Call ANN and receive correction coefficients."""
-        self.update_running_mean()
+        print("Invoking ANN corrections")
         state_array = self.create_input_stencil(mean_profile=self.mean_solution)
         state_tensor = torch.tensor(state_array, dtype=torch.float32).unsqueeze(0)
 
         with torch.no_grad():
             alpha_tensor = self.ann(state_tensor).squeeze(0)  # (output_dim,)
 
+        print(alpha_tensor.numpy().astype(np.float64))
         return alpha_tensor.numpy().astype(np.float64)
 
     def _coefficients_as_kwargs(self) -> dict[str, float]:

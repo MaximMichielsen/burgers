@@ -18,7 +18,7 @@ FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 TEMPORAL_DIR = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
 TRAINING_DIR = PROJECT_ROOT / "dns_data" / "training"
 
-n_nodes_les = 17
+n_nodes_les = 33
 n_nodes_dns = 513
 z_length = 2.0
 
@@ -26,11 +26,16 @@ dt = 1e-3
 t_start = 308.0101
 t_end = 309.0100
 
-n_episodes = 9
+n_episodes = 50
 proof_mode = ProofMode.a
 
+link = True
+
 run_dir = (
-    CURRENT_DIR / "solver_data" / "proof_experiments" / f"proof_of_concept_{n_episodes}"
+    CURRENT_DIR
+    / "solver_data"
+    / "proof_experiments"
+    / f"proof_of_concept_{n_episodes}_{n_nodes_les}_{link}"
 )
 
 run_dir.mkdir(parents=True, exist_ok=True)
@@ -78,8 +83,9 @@ ann_config = ANNBanditConfig(
     input_scope=Scope.GLOBAL,
     n_training_episodes=n_episodes,
     training_mode=True,
-    run_final_evaluation=False,
+    run_final_evaluation=True,
     n_skip_steps=1,
+    link_coefficients=link,
 )
 
 reference_trajectory = ReferenceTrajectory(

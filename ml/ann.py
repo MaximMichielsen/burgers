@@ -60,7 +60,8 @@ class TauANN(nn.Module):
         raw_out = self.network(state_input)
 
         if isinstance(self.config, ANNBanditConfig):
-            raw_out = raw_out.mean(dim=-1, keepdim=True).expand(-1, self.action_dim)
+            if self.config.link_coefficients:
+                raw_out = raw_out.mean(dim=-1, keepdim=True).expand(-1, self.action_dim)
 
         a_norm = torch.tanh(raw_out)
         return self.act_center + self.act_half * a_norm

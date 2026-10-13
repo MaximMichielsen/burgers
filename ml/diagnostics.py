@@ -11,7 +11,9 @@ from numpy._typing import NDArray
 from ml.environment import EnvironmentForcingDNS
 from proofing.action_based.config import ProofMode
 from proofing.action_based.environment import EnvironmentProof
-from proofing.contextual_bandit_reformulation.environment import EnvironmentSingleActionTraining
+from proofing.contextual_bandit_reformulation.environment import (
+    EnvironmentSingleActionTraining,
+)
 
 if TYPE_CHECKING:
     from ml.td3 import TD3Trainer
