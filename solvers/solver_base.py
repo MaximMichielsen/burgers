@@ -45,7 +45,7 @@ MAXIMUM_ITERATIONS_LES: int = 5
 class TauModel(str, Enum):
     TWO_PARAMS = "2"
     THREE_PARAMS = "3"
-    FOUR_PARAMS = "3_dt_augmented"
+    FOUR_PARAMS = "4"
 
     @property
     def output_dimensions(self) -> int:
@@ -1169,13 +1169,14 @@ if __name__ == "__main__":
     mms_problem = Problem(
         name="manufactured_problem",
         domain_length=2 * np.pi,
-        domain_timespan=2 * np.pi,
         reynolds=100,  # ← was reynolds=100; solver needs .viscosity directly
         initial_condition=np.sin,
         forcing=manufactured_forcing,
         forcing_is_steady=False,
         boundary_condition_type="fixed",
         boundary_condition_value=0,
+        t_start=0,
+        t_end=2 * np.pi,
     )
 
     disc_cfg = DiscretizationConfig(
@@ -1183,6 +1184,8 @@ if __name__ == "__main__":
         temporal_refinement=1,
         courant_les=0.5,
         domain_length=2 * np.pi,
+        t_start=0,
+        t_end=2 * np.pi,
     )
 
     solver = SolverBase(

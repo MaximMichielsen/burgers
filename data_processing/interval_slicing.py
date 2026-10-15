@@ -1,3 +1,8 @@
+"""
+Takes dataset sampled over t_start and t_final (308.0101 - 315.00) and creates interval windows.
+Computes mean and <w'w'> data from full set to slice.
+"""
+
 from pathlib import Path
 
 import numpy as np

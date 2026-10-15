@@ -6,6 +6,8 @@ from typing import Callable
 import numpy as np
 from numpy.typing import NDArray
 
+from setup.constants import T_ZERO
+
 
 @dataclass(frozen=True)
 class Problem:
@@ -36,9 +38,9 @@ class Problem:
     @property
     def forcing_start_step(self):
         index = int(
-            np.argmin(np.abs(self.forcing_times + 308.0101 - self.t_start))
+            np.argmin(np.abs(self.forcing_times + T_ZERO - self.t_start))
         )  # hardcoded, live with it :(
-        return index - 1 if index != 0 else index
+        return index
 
     @property
     def viscosity(self) -> float:

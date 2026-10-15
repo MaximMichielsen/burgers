@@ -1,6 +1,5 @@
 """
-File to read DNS data (.crd, .dat, .stat).
-Parses, saves binary files/metadata, and visualizes mesh, solution evolution, and statistics.
+Reads raw DNS data and splits these into a data file per stored variable.
 """
 
 import json

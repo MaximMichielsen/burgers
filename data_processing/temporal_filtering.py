@@ -1,3 +1,5 @@
+"""Down-filter the timestep to a chosen value."""
+
 import hashlib
 import json
 import os

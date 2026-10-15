@@ -1,3 +1,5 @@
+"""Project a dataset over a fine mesh to a coarse one using either l2 or h10 projection."""
+
 from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray

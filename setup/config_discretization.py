@@ -5,6 +5,9 @@ from math import ceil
 
 import numpy as np
 
+from setup.constants import DT_DNS
+from setup.problems import Problem
+
 DNS_TO_LES_RATIO = 6
 
 
@@ -18,39 +21,25 @@ class DiscretizationConfig:
     Setting this parameter for the simulation should follow from Problem!
     """
 
+    problem: Problem
     n_nodes_les: int
     n_nodes_dns: int
-    temporal_refinement: int
-    domain_length: float
-    t_start: float
-    t_end: float
+    dt_les: float
 
-    courant_les: float | None = None
-    set_dt_les: float | None = None
     suppress_file_logging: bool = False
 
     def __post_init__(self) -> None:
-        if self.courant_les and self.set_dt_les is None:
-            raise TypeError("Courant LES and set_dt_les cannot both be None!")
-
         self.n_elements_les: int = self.n_nodes_les - 1
         self.n_elements_dns: int = self.n_nodes_dns - 1
 
-        self.h_les: float = self.domain_length / self.n_elements_les
-        self.h_dns: float = self.domain_length / self.n_elements_dns
+        self.h_les: float = self.problem.domain_length / self.n_elements_les
+        self.h_dns: float = self.problem.domain_length / self.n_elements_dns
 
-        self.dt_les: float = (
-            self.set_dt_les
-            if self.set_dt_les is not None
-            else self.courant_les * self.h_les
-        )
-        self.dt_dns: float = self.dt_les / self.temporal_refinement
+        self.courant_les = self.dt_les / self.h_les
+        self.dt_dns: float = DT_DNS
 
-        self.mesh_les = np.linspace(0, self.domain_length, self.n_nodes_les)
-        self.mesh_dns = np.linspace(0, self.domain_length, self.n_nodes_dns)
+        self.mesh_les = np.linspace(0, self.problem.domain_length, self.n_nodes_les)
+        self.mesh_dns = np.linspace(0, self.problem.domain_length, self.n_nodes_dns)
 
         self.n_wavenumber_bins: int = (self.n_nodes_les - 1) // 2
-
-        self.domain_timespan = self.t_end - self.t_start
-
-        self.n_timesteps = ceil(self.domain_timespan / self.dt_les)
+        self.n_timesteps = ceil(self.problem.domain_timespan / self.dt_les)
