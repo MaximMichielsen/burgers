@@ -11,7 +11,9 @@ from numpy.typing import NDArray
 from setup.constants import T_ZERO
 
 
-def interval_mean(cumulative: NDArray, counts: NDArray, window_index: int, width: int = 1) -> NDArray:
+def interval_mean(
+    cumulative: NDArray, counts: NDArray, window_index: int, width: int = 1
+) -> NDArray:
     """Mean profile over window (k-width -> k) from cumulative-mean snapshots.
 
     Args:
@@ -31,9 +33,7 @@ def interval_mean(cumulative: NDArray, counts: NDArray, window_index: int, width
             f"Sample count must increase: {n_start} -> {n_end} at window {window_index}"
         )
 
-    weighted_diff = (
-        n_end * cumulative[window_index] - n_start * cumulative[start_index]
-    )
+    weighted_diff = n_end * cumulative[window_index] - n_start * cumulative[start_index]
     return weighted_diff / (n_end - n_start)
 
 
@@ -46,7 +46,9 @@ def interval_variance(
 ) -> NDArray:
     """Variance (e.g. <w'w'>) over window (k-width -> k)."""
     raw_second_moment = cumulative_variance + cumulative_mean**2
-    interval_second_moment = interval_mean(raw_second_moment, counts, window_index, width=width)
+    interval_second_moment = interval_mean(
+        raw_second_moment, counts, window_index, width=width
+    )
     window_mean = interval_mean(cumulative_mean, counts, window_index, width=width)
     return interval_second_moment - window_mean**2
 
@@ -113,7 +115,9 @@ if __name__ == "__main__":
             w_mean = interval_mean(w_cum, counts, k, width=2)
             w_var = interval_variance(w_cum, ww_cum, counts, k, width=2)
 
-            save_interval_profile(w_mean, "w_mean", times, k, save_dir, T_START, width=2)
+            save_interval_profile(
+                w_mean, "w_mean", times, k, save_dir, T_START, width=2
+            )
             save_interval_profile(w_var, "ww", times, k, save_dir, T_START, width=2)
         except ValueError:
             pass

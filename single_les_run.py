@@ -7,28 +7,30 @@ from ml.reference_scheduler import ReferenceTrajectory
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
+from utils.forcing_pathing import (
+    get_forcing_path,
+    get_times_path,
+    get_velocity_profiles_path,
+)
+from utils.profile_plotting import plot_profile_comparisons
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-PROJECTED_DIR = PROJECT_ROOT / "dns_data" / "projected"
-TEMPORAL_PROJECTED_DIR = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
+MEAN_PROFILE_DIR = PROJECT_ROOT / "dns_data" / "intervals"
 
-# Parameters from bandit training
-n_nodes_les = 33
+n_nodes_les = 17
 n_nodes_dns = 513
 z_length = 2.0
 
 dt = 1e-3
-t_start = 314.01
-t_end = 315.0
-
-external_coefficients = np.array([1, 1])
+t_start = 308.0101
+t_end = 309.01
 
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS
 
 # Data loading logic from bandit training
-forcing_projected = np.load(TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy")
-times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
+forcing_projected = np.load(get_forcing_path(PROJECT_ROOT, n_nodes_les, dt))
+times_forcing = np.load(get_times_path(PROJECT_ROOT, dt))
 
 problem = Problem(
     name="tcf_1d",
@@ -45,39 +47,46 @@ problem = Problem(
 )
 
 disc_config = DiscretizationConfig(
+    problem=problem,
     n_nodes_les=n_nodes_les,
     n_nodes_dns=n_nodes_dns,
-    temporal_refinement=1,
-    set_dt_les=dt,
-    domain_length=z_length,
-    t_start=t_start,
-    t_end=t_end,
+    dt_les=dt,
 )
 
-aaa = PROJECT_ROOT / "dns_data" / "intervals"
-
 reference_trajectory = ReferenceTrajectory(
-    target_profile_dir=aaa,
-    projected_w_path=PROJECTED_DIR / f"w_linear_{n_nodes_les}.npy",
+    mean_target_profile_dir=MEAN_PROFILE_DIR,
+    projected_w_path=get_velocity_profiles_path(PROJECT_ROOT, n_nodes_les),
     times_path=PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy",
-    n_les_nodes=n_nodes_les,
+    n_nodes_les=n_nodes_les,
     t_start=t_start,
     t_end=t_end,
 )
 
 problem = replace(problem, initial_condition=reference_trajectory.initial_condition)
 
+master_path = (
+    PROJECT_ROOT
+    / "solver_data"
+    / "test"
+    / "base_les"
+    / f"t_{t_start}_{t_end}"
+    / f"n{n_nodes_les}_p{tau_model.output_dimensions}_dt{dt}"
+)
+
 solver_les = SolverBase(
     problem=problem,
     disc_config=disc_config,
     simulation_mode=simulation_mode,
-    master_path=PROJECT_ROOT
-    / "solver_data"
-    / "base_les_2"
-    / f"t_{t_start}_{t_end}"
-    / f"n{n_nodes_les}_p{tau_model.output_dimensions}_dt{dt}",
+    master_path=master_path,
     tau_model=tau_model,
-    external_correction_coefficients=external_coefficients,
 )
 solver_les.run_simulation()
 solver_les.post_plotting()
+
+plot_profile_comparisons(
+    intervals_dir=MEAN_PROFILE_DIR,
+    les_base_dir=master_path,
+    t_start=t_start,
+    z_domain=(0.0, 2.0),
+)
+print(f"[SUCCESS] Plotting completed for {master_path}")

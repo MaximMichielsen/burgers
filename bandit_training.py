@@ -113,10 +113,10 @@ ann_config = ANNBanditConfig(
 )
 
 reference_trajectory = ReferenceTrajectory(
-    target_profile_dir=target_profile_dir,
+    mean_target_profile_dir=target_profile_dir,
     projected_w_path=w_field_path,
     times_path=times_path,
-    n_les_nodes=n_nodes_les,
+    n_nodes_les=n_nodes_les,
     t_start=t_start,
     t_end=t_end,
     t_start_test=t_start_test,

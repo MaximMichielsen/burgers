@@ -11,10 +11,10 @@ class ReferenceTrajectory:
 
     def __init__(
         self,
-        target_profile_dir: Path,
+        mean_target_profile_dir: Path,
         projected_w_path: Path,
         times_path: Path,
-        n_les_nodes: int,
+        n_nodes_les: int,
         t_start: float,
         t_end: float,
         t_start_test: float | None = None,
@@ -22,9 +22,9 @@ class ReferenceTrajectory:
         test_mode: bool = False,
     ) -> None:
 
-        self.target_mean_profile_dir = Path(target_profile_dir)
+        self.target_mean_profile_dir = Path(mean_target_profile_dir)
         self.projected_w_path = Path(projected_w_path)
-        self.n_les_nodes = n_les_nodes
+        self.n_les_nodes = n_nodes_les
         self.t_start = t_start
         self.t_end = t_end
 

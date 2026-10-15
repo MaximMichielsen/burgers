@@ -95,7 +95,7 @@ ann_config = ShortMDPConfig(
 reference_trajectory = ReferenceTrajectory(
     target_profile_path=target_profile_path,
     projected_w_path=w_field_path,
-    n_les_nodes=n_nodes_les,
+    n_nodes_les=n_nodes_les,
     target_time_index=0,
 )
 

@@ -40,6 +40,7 @@ def compute_energy_spectrum(
 
     return wavenumbers, spectrum
 
+
 def compute_error_metrics(
     field: NDArray, target: NDArray
 ) -> tuple[float, float, float]:
