@@ -11,12 +11,12 @@ and subgrid-scale (SGS) stabilization models:
 """
 
 import csv
-
 import json
 import logging
 import sys
 from contextlib import contextmanager
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from time import perf_counter
 from typing import Callable, Any, Sequence, Generator
@@ -25,16 +25,15 @@ import numpy as np
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
-from enum import Enum
 
-from setup.config_discretization import DiscretizationConfig
-from archived.utils.diagnostics import (
+from utils.diagnostics import (
     compute_energy,
     compute_dissipation,
     compute_energy_spectrum,
 )
+
+from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
-from archived.utils.pipeline_utils import RunPaths
 
 TOLERANCE_RESIDUAL: float = 1e-6
 TOLERANCE_UPDATE: float = 1e-6
@@ -56,16 +55,6 @@ class TauModel(str, Enum):
                 return 3
             case TauModel.FOUR_PARAMS:
                 return 4
-
-    def get_path(self, paths: RunPaths) -> Path:
-        """Resolve output path given an initialized RunPaths instance."""
-        match self:
-            case TauModel.TWO_PARAMS:
-                return paths.les_two
-            case TauModel.THREE_PARAMS:
-                return paths.les_three
-            case TauModel.FOUR_PARAMS:
-                return paths.les_four
 
 
 class SimulationMode(str, Enum):
@@ -175,6 +164,7 @@ class SolverBase:
         )
 
         # initial condition
+        assert problem.initial_condition is not None
         self.initial_condition: NDArray = self.set_initial_condition(
             problem.initial_condition
         )
@@ -362,7 +352,10 @@ class SolverBase:
         points, weights = self.gauss_legendre(3)
         gradient_basis = self.basis_functions_gradient()
 
-        element_idx = np.where((element == self.elements).all(axis=1))[0]
+        match_indices = np.where(np.all(self.elements == np.asarray(element), axis=1))[
+            0
+        ]
+        element_idx = int(match_indices[0]) if match_indices.size > 0 else None
 
         tau_e = (
             self.compute_tau(
@@ -532,17 +525,34 @@ class SolverBase:
         external_coefficients: NDArray | None = None,
     ) -> float:
         """Dispatch to the configured tau model. u_e: nodal values for the element (length 2)."""
-        if self.tau_model == "2":
+        if self.tau_model == TauModel.TWO_PARAMS:
             return self.tau_model_two_params(u_e, c=external_coefficients)
-        elif self.tau_model == "3" and u_x_e is not None:
-            return self.tau_model_three_params(u_e, u_x_e)
-        elif self.tau_model == "3_dt_augmented" and u_x_e is not None:
-            return self.tau_model_three_dt_aug(u_e, u_x_e)
+        elif self.tau_model == TauModel.THREE_PARAMS and u_x_e is not None:
+            return self.tau_model_three_params(u_e, u_x_e, c=external_coefficients)
+        elif self.tau_model == TauModel.FOUR_PARAMS and u_x_e is not None:
+            return self.tau_model_four_params(u_e, u_x_e, c=external_coefficients)
         raise ValueError(f"Unknown tau_model {self.tau_model!r}")
 
     def tau_model_two_params(self, u_e: NDArray, c: NDArray | None = None) -> float:
         """τ = [ (2⟨ū⟩_e/h)² + (4ν/h²)² ]^(-1/2), ⟨ū⟩_e = element-averaged u."""
-        c = c if c is not None else np.ones(2)
+
+        # 1. Validate u_e shape/length to prevent IndexError
+        if u_e is None or len(u_e) < 2:
+            raise ValueError(
+                "Input 'u_e' must contain at least 2 elements for averaging."
+            )
+
+        # 2. Validate and standardize correction coefficients shape
+        if c is not None:
+            c_arr = np.asarray(c)
+            if c_arr.shape != (2,):
+                raise ValueError(
+                    "Shape of correction coefficients is not congruent with chosen tau model (expected shape: (2,))."
+                )
+        else:
+            c_arr = np.ones(2)
+
+        # Compute terms safely
         u_bar_e = 0.5 * (u_e[0] + u_e[1])
         base_terms = np.array(
             [
@@ -550,18 +560,36 @@ class SolverBase:
                 4.0 * self.viscosity / (self.element_size**2),
             ]
         )
-        return float(np.sum((c * base_terms) ** 2) ** -0.5)
+
+        return float(np.sum((c_arr * base_terms) ** 2) ** -0.5)
 
     def tau_model_three_params(
         self,
         u_e: NDArray,
-        u_x_e,
+        u_x_e: NDArray,
         c: NDArray | None = None,
         alpha: float = 0.099,
         beta: float = 9.39,
         gamma: float = 2.16,
     ) -> float:
-        c = c if c is not None else np.ones(3)
+        """τ for a 3-parameter model incorporating velocity, viscosity, and gradient terms."""
+
+        # 1. Validate u_e shape/length
+        if u_e is None or len(u_e) < 2:
+            raise ValueError(
+                "Input 'u_e' must contain at least 2 elements for averaging."
+            )
+
+        # 2. Validate and standardize correction coefficients shape (expected: length 3)
+        if c is not None:
+            c_arr = np.asarray(c)
+            if c_arr.shape != (3,):
+                raise ValueError(
+                    "Shape of correction coefficients is not congruent with chosen tau model (expected shape: (3,))."
+                )
+        else:
+            c_arr = np.ones(3)
+
         u_bar_e = 0.5 * (u_e[0] + u_e[1])
 
         base_terms = np.array(
@@ -571,19 +599,41 @@ class SolverBase:
                 gamma * u_x_e,
             ]
         )
-        return float(np.sum((c * base_terms) ** 2) ** -0.5)
 
-    def tau_model_three_dt_aug(
+        denominator_squared = np.sum((c_arr * base_terms) ** 2)
+        if denominator_squared < 1e-12:
+            return 0.0  # Physically shuts off tau without dividing by zero
+
+        return float(denominator_squared**-0.5)
+
+    def tau_model_four_params(
         self,
         u_e: NDArray,
-        u_x_e,
+        u_x_e: NDArray,
         c: NDArray | None = None,
         alpha: float = 0.099,
         beta: float = 9.39,
         gamma: float = 2.16,
         delta: float = 1.0,
     ) -> float:
-        c = c if c is not None else np.ones(4)
+        """τ for a 4-parameter model incorporating velocity, viscosity, gradient, and time-derivative terms."""
+
+        # 1. Validate u_e shape/length
+        if u_e is None or len(u_e) < 2:
+            raise ValueError(
+                "Input 'u_e' must contain at least 2 elements for averaging."
+            )
+
+        # 2. Validate and standardize correction coefficients shape (expected: length 4)
+        if c is not None:
+            c_arr = np.asarray(c)
+            if c_arr.shape != (4,):
+                raise ValueError(
+                    "Shape of correction coefficients is not congruent with chosen tau model (expected shape: (4,))."
+                )
+        else:
+            c_arr = np.ones(4)
+
         u_bar_e = 0.5 * (u_e[0] + u_e[1])
 
         base_terms = np.array(
@@ -595,12 +645,11 @@ class SolverBase:
             ]
         )
 
-        denom_sq = np.sum((c * base_terms) ** 2)
+        denominator_squared = np.sum((c_arr * base_terms) ** 2)
+        if denominator_squared < 1e-12:
+            return 0.0  # Physically shuts off tau without dividing by zero
 
-        if denom_sq < 1e-12:
-            return 0.0  # Physically shuts off tau without diving by zero
-
-        return float(denom_sq**-0.5)
+        return float(denominator_squared**-0.5)
 
     def compute_reynolds_stress(self) -> NDArray:
         """Compute Reynolds stress <u'u'>."""
@@ -1169,7 +1218,7 @@ if __name__ == "__main__":
     mms_problem = Problem(
         name="manufactured_problem",
         domain_length=2 * np.pi,
-        reynolds=100,  # ← was reynolds=100; solver needs .viscosity directly
+        reynolds=100,
         initial_condition=np.sin,
         forcing=manufactured_forcing,
         forcing_is_steady=False,
@@ -1177,22 +1226,16 @@ if __name__ == "__main__":
         boundary_condition_value=0,
         t_start=0,
         t_end=2 * np.pi,
+        forcing_times=None,
     )
 
-    disc_cfg = DiscretizationConfig(
-        n_nodes_les=16,
-        temporal_refinement=1,
-        courant_les=0.5,
-        domain_length=2 * np.pi,
-        t_start=0,
-        t_end=2 * np.pi,
-    )
+    disc_cfg = DiscretizationConfig(mms_problem, n_nodes_les=16, dt_les=0.1)
 
     solver = SolverBase(
         problem=mms_problem,
         disc_config=disc_cfg,
-        simulation_mode="no_model",
-        tau_model="2",
+        simulation_mode=SimulationMode.NO_MODEL,
+        tau_model=TauModel.TWO_PARAMS,
         master_path=path,
     )
 

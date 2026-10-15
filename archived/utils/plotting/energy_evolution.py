@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
 from numpy.typing import NDArray
 
-from archived.utils.diagnostics import (
+from utils.diagnostics import (
     compute_energy,
     compute_dissipation,
     compute_energy_spectrum,

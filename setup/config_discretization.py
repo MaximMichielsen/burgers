@@ -5,27 +5,19 @@ from math import ceil
 
 import numpy as np
 
-from setup.constants import DT_DNS
+from setup.constants import DT_DNS, N_NODES_DNS
 from setup.problems import Problem
-
-DNS_TO_LES_RATIO = 6
 
 
 @dataclass
 class DiscretizationConfig:
-    """Spatial and temporal discretization parameters for both DNS and LES grids.
-
-    Derives all mesh and time-step quantities from the LES element count,
-    Courant number, and DNS-to-LES refinement ratios.
-    Domain length only to be used internally for calculating element size,
-    Setting this parameter for the simulation should follow from Problem!
-    """
+    """Spatial and temporal discretization parameters for both DNS and LES grids."""
 
     problem: Problem
     n_nodes_les: int
-    n_nodes_dns: int
     dt_les: float
 
+    n_nodes_dns: int = N_NODES_DNS
     suppress_file_logging: bool = False
 
     def __post_init__(self) -> None:

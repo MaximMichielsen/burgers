@@ -18,7 +18,7 @@ from ml.ann import ReplayBuffer, TauANN, save_tau_ann
 from ml.ann_config import TauANNConfig, TD3Hyperparameters
 from ml.diagnostics import plot_diagnostic_metrics
 from ml.environment import EnvironmentForcingDNS
-from ml.les_caching import (
+from utils.les_caching import (
     LESCacheKey,
     resolve_les_baseline_cache,
     LESCacheStatus,
@@ -41,7 +41,7 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode, SolverBase
 from solvers.solver_coupled import SolverCoupled
-from utils.error_metrics import compute_error_metrics
+from utils.diagnostics import compute_error_metrics
 
 EPISODE_PENALTY_CLIP = -10000
 

@@ -19,7 +19,7 @@ class Problem:
     t_end: float
     reynolds: float
     initial_condition: Callable | NDArray | None
-    forcing_times: NDArray
+    forcing_times: NDArray | None
     forcing: Callable | NDArray | None
     forcing_is_steady: bool
     boundary_condition_type: str

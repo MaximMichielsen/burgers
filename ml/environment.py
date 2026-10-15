@@ -12,7 +12,7 @@ from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode
 from solvers.solver_coupled import SolverCoupled
-from utils.error_metrics import compute_error_metrics
+from utils.diagnostics import compute_error_metrics
 
 REWARD_CLIP = 50
 

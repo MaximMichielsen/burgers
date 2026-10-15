@@ -295,7 +295,7 @@ class SolverCoupled(SolverBase):
         elif self.tau_model == TauModel.THREE_PARAMS and u_x_e is not None:
             return self.tau_model_three_params(u_e, u_x_e, c)
         elif self.tau_model == TauModel.FOUR_PARAMS and u_x_e is not None:
-            return self.tau_model_three_dt_aug(u_e, u_x_e, c)
+            return self.tau_model_four_params(u_e, u_x_e, c)
         raise ValueError(
             f"Invalid tau model selection or missing gradient: {self.tau_model}"
         )
