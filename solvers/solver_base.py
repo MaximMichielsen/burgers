@@ -186,6 +186,17 @@ class SolverBase:
         # forcing
         self.forcing: NDArray | Callable | None = problem.forcing
         self.forcing_is_steady: bool = problem.forcing_is_steady
+        if (
+            hasattr(problem, "forcing_times")
+            and problem.forcing_times is not None
+            and not self.forcing_is_steady
+        ):
+            self.forcing_start_step = int(
+                np.argmin(np.abs(problem.forcing_times + 308.0101 - problem.t_start))
+            )
+        else:
+            self.forcing_start_step = getattr(problem, "forcing_start_step", 0)
+
         self.forcing_current: NDArray | None = None
 
         # output

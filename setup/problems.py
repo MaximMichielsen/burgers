@@ -38,7 +38,7 @@ class Problem:
         index = int(
             np.argmin(np.abs(self.forcing_times + 308.0101 - self.t_start))
         )  # hardcoded, live with it :(
-        return index
+        return index - 1 if index != 0 else index
 
     @property
     def viscosity(self) -> float:

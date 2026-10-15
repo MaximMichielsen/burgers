@@ -26,10 +26,10 @@ z_length = 2.0
 dt = 1e-3
 t_start = 312.01
 t_end = 313.01
-t_start_test = t_end
-t_end_test = 314.01
+t_start_test = 314.01
+t_end_test = 315.0
 
-n_episodes = 1
+n_episodes = 10
 proof_mode = ProofMode.a
 
 link = True
@@ -43,7 +43,7 @@ run_dir = (
     / "proof_experiments"
     / "testing_testing"
     / sub_dir
-    / f"t_{t_start}_{t_end}"
+    / f"train_{t_start}_{t_end}_test_{t_start_test}_{t_end_test}"
     / f"proof_of_concept_{n_episodes}_{n_nodes_les}_{link}_{dt}"
 )
 

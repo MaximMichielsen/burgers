@@ -1,4 +1,5 @@
 import copy
+import random
 import time
 from dataclasses import fields, replace
 from math import ceil
@@ -226,6 +227,7 @@ class TD3Trainer:
         hp: TD3Hyperparameters | TD3BanditHyperparameters | None = None,
         baseline_path: Path | None = None,
         test_problem: Problem | None = None,
+        train_intervals: list[tuple[float, float]] | None = None,
     ):
 
         if hp is None:
@@ -253,6 +255,8 @@ class TD3Trainer:
         )
         self.baseline_run_dir: Path | None = None
         self.baseline_test_dir: Path | None = None
+
+        self.train_intervals = train_intervals
 
         self.episodes_ran: int = 0
 
@@ -385,6 +389,32 @@ class TD3Trainer:
             )
 
         while episode < self.ann_config.n_training_episodes and not stop_training:
+            if self.train_intervals:
+                ep_t_start, ep_t_end = random.choice(self.train_intervals)
+                self.reference_trajectory.set_active_training_interval(
+                    ep_t_start, ep_t_end
+                )
+                self.problem = replace(
+                    self.problem,
+                    t_start=ep_t_start,
+                    t_end=ep_t_end,
+                    initial_condition=self.reference_trajectory.initial_condition,
+                )
+                self.disc_config = replace(
+                    self.disc_config,
+                    t_start=ep_t_start,
+                    t_end=ep_t_end,
+                )
+                env.problem = self.problem
+
+                self.run_baseline_evaluation(is_testing=False)
+                if isinstance(self.ann_config, ANNBanditConfig):
+                    env.baseline_path = self.baseline_run_dir
+
+                self._log(
+                    f"  [INTERVAL] Active Episode Interval: [{ep_t_start} - {ep_t_end}] (span: {ep_t_end - ep_t_start:.2f}s)"
+                )
+
             ep_start_time = time.time()
             state = env.reset()
             initial_state = state.copy()  # Cache for diagnostic check
@@ -627,7 +657,7 @@ class TD3Trainer:
         self.solver.post_processing()
         write_les_parameters(target_cache_dir, cache_key)
 
-        _, _, baseline_w_l2_error, baseline_w_rms_error = self.plot_profile_comparison(
+        baseline_w_l2_error, baseline_w_rms_error, _, _ = self.plot_profile_comparison(
             env=None,
             solver=self.solver,
             episode=None,
@@ -638,7 +668,7 @@ class TD3Trainer:
         self.baseline_w_l2_error = baseline_w_l2_error
         self.baseline_w_rms_error = baseline_w_rms_error
 
-        _, _, baseline_reynolds_l2_error, baseline_reynolds_rms_error = (
+        baseline_reynolds_l2_error, baseline_reynolds_rms_error, _, _ = (
             self.plot_reynolds_stress_comparison(
                 env=None,
                 solver=self.solver,
@@ -1034,6 +1064,16 @@ class TD3Trainer:
             f"[{self.test_problem.t_start} - {self.test_problem.t_end}]",
         )
         self.print_footer(w)
+
+        if self.train_intervals:
+            self.print_section("Stochastic Training Intervals Pool", w)
+            for idx, interval in enumerate(self.train_intervals):
+                span = interval[1] - interval[0]
+                self.print_row(
+                    f"Interval {idx + 1}",
+                    f"[{interval[0]} - {interval[1]}] ({span:.2f}s)",
+                )
+            self.print_footer(w)
 
     def plot_error_evaluation_evolution(self, show_plot: bool = False) -> None:
         """Visualize the evolution of episode errors in a 2x2 grid (separating L2 and RMS)."""

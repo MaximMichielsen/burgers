@@ -18,8 +18,8 @@ n_nodes_dns = 513
 z_length = 2.0
 
 dt = 1e-3
-t_start = 308.0101
-t_end = 309.01
+t_start = 314.01
+t_end = 315.0
 timespan = t_end - t_start
 
 external_coefficients = np.array([1, 1])
@@ -34,7 +34,6 @@ times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
 problem = Problem(
     name="tcf_1d",
     domain_length=z_length,
-    domain_timespan=timespan,
     reynolds=100.0,
     initial_condition=None,
     forcing=forcing_projected,
@@ -43,6 +42,7 @@ problem = Problem(
     boundary_condition_type="fixed",
     boundary_condition_value=0.0,
     t_start=t_start,
+    t_end=t_end,
 )
 
 disc_config = DiscretizationConfig(
@@ -51,7 +51,8 @@ disc_config = DiscretizationConfig(
     temporal_refinement=1,
     set_dt_les=dt,
     domain_length=z_length,
-    domain_timespan=timespan,
+    t_start=t_start,
+    t_end=t_end,
 )
 
 aaa = PROJECT_ROOT / "dns_data" / "intervals"

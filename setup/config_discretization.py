@@ -22,7 +22,8 @@ class DiscretizationConfig:
     n_nodes_dns: int
     temporal_refinement: int
     domain_length: float
-    domain_timespan: float
+    t_start: float
+    t_end: float
 
     courant_les: float | None = None
     set_dt_les: float | None = None
@@ -49,5 +50,7 @@ class DiscretizationConfig:
         self.mesh_dns = np.linspace(0, self.domain_length, self.n_nodes_dns)
 
         self.n_wavenumber_bins: int = (self.n_nodes_les - 1) // 2
+
+        self.domain_timespan = self.t_end - self.t_start
 
         self.n_timesteps = ceil(self.domain_timespan / self.dt_les)

@@ -164,6 +164,18 @@ class ReferenceTrajectory:
             self._start_test_idx if self._test_mode else self._train_start_idx
         )
 
+    def set_active_training_interval(self, t_start: float, t_end: float) -> None:
+        """Dynamically updates the training interval and reloads corresponding profiles and indices."""
+        self.t_start = t_start
+        self.t_end = t_end
+        if not self._test_mode:
+            self._load_profiles()
+            snapshot_times = np.load(self.w_field_times_path)
+            self._train_start_idx = int(
+                np.argmin(np.abs(snapshot_times - self.t_start))
+            )
+            self._start_idx = self._train_start_idx
+
     def query(self, step_idx: int) -> NDArray:
         """Query projected solution field at a specific timestep index."""
         if self._projected_w_data is None:
