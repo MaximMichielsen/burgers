@@ -26,12 +26,14 @@ z_length = 2.0
 dt = 1e-3
 t_start = 312.01
 t_end = 313.01
+t_start_test = t_end
+t_end_test = 314.01
 
 n_episodes = 1
 proof_mode = ProofMode.a
 
 link = True
-use_reynolds_signal = True
+use_reynolds_signal = False
 
 sub_dir = "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
 
@@ -39,6 +41,7 @@ run_dir = (
     CURRENT_DIR
     / "solver_data"
     / "proof_experiments"
+    / "testing_testing"
     / sub_dir
     / f"t_{t_start}_{t_end}"
     / f"proof_of_concept_{n_episodes}_{n_nodes_les}_{link}_{dt}"
@@ -61,7 +64,6 @@ times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
 problem = Problem(
     name="tcf_1d",
     domain_length=z_length,
-    domain_timespan=timespan,
     reynolds=100.0,
     initial_condition=None,
     forcing=forcing_projected,
@@ -70,6 +72,21 @@ problem = Problem(
     boundary_condition_type="fixed",
     boundary_condition_value=0.0,
     t_start=t_start,
+    t_end=t_end,
+)
+
+test_problem = Problem(
+    name="tcf_1d",
+    domain_length=z_length,
+    reynolds=100.0,
+    initial_condition=None,
+    forcing=forcing_projected,
+    forcing_times=times_forcing,
+    forcing_is_steady=False,
+    boundary_condition_type="fixed",
+    boundary_condition_value=0.0,
+    t_start=t_start_test,
+    t_end=t_end_test,
 )
 
 disc_config = DiscretizationConfig(
@@ -102,6 +119,8 @@ reference_trajectory = ReferenceTrajectory(
     n_les_nodes=n_nodes_les,
     t_start=t_start,
     t_end=t_end,
+    t_start_test=t_start_test,
+    t_end_test=t_end_test,
 )
 
 trainer = TD3Trainer(
@@ -110,9 +129,11 @@ trainer = TD3Trainer(
     ann_config,
     master_path=run_dir,
     reference_trajectory=reference_trajectory,
+    test_problem=test_problem,
 )
 
 # Execute training and plot diagnostics
 trainer.run_training()
+trainer.run_testing()
 
 print(f"\n[SUCCESS] Mode '{proof_mode.value}' proof experiment completed.")

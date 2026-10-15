@@ -6,10 +6,10 @@ import numpy as np
 
 
 def plot_profile_comparisons(
-        intervals_dir: Path,
-        les_profiles_dir: Path,
-        t_start: float,
-        z_domain: tuple[float, float] = (0.0, 2.0),
+    intervals_dir: Path,
+    les_profiles_dir: Path,
+    t_start: float,
+    z_domain: tuple[float, float] = (0.0, 2.0),
 ) -> list[tuple[float, float, float]]:
     """Plot each LES mean profile against the corresponding interval DNS reference
     from `dns_data/intervals/` and save one figure per file.
@@ -32,12 +32,15 @@ def plot_profile_comparisons(
 
         # Find the matching interval DNS file in intervals_dir (w_mean_{t_start}_{t_end}.npy)
         matching_dns_files = [
-            f for f in intervals_dir.glob("w_mean_*.npy")
+            f
+            for f in intervals_dir.glob("w_mean_*.npy")
             if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
         ]
 
         if not matching_dns_files:
-            print(f"[Warning] No matching interval DNS reference found for t_end = {t_end}")
+            print(
+                f"[Warning] No matching interval DNS reference found for t_end = {t_end}"
+            )
             continue
 
         dns_profile_path = matching_dns_files[0]
@@ -109,8 +112,8 @@ def plot_profile_comparisons(
         ax.legend(loc="upper right", frameon=True, framealpha=0.9, fontsize=9.5)
 
         score_text = (
-                rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}"
-                + f"\nRel. Error: {relative_l2_error:.2f}%"
+            rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}"
+            + f"\nRel. Error: {relative_l2_error:.2f}%"
         )
         ax.text(
             0.03,
@@ -137,10 +140,10 @@ def plot_profile_comparisons(
 
 
 def plot_reynolds_stress_profile(
-        intervals_dir: Path,
-        les_profiles_dir: Path,
-        t_start: float,
-        z_domain: tuple[float, float] = (0.0, 2.0),
+    intervals_dir: Path,
+    les_profiles_dir: Path,
+    t_start: float,
+    z_domain: tuple[float, float] = (0.0, 2.0),
 ) -> None:
     """Plot Reynolds stress profile, compared to interval DNS profile (`ww_*.npy`)."""
     if not les_profiles_dir.exists():
@@ -158,12 +161,15 @@ def plot_reynolds_stress_profile(
 
         # Find matching Reynolds stress interval DNS file (ww_{t_start}_{t_end}.npy)
         matching_dns_files = [
-            f for f in intervals_dir.glob("ww_*.npy")
+            f
+            for f in intervals_dir.glob("ww_*.npy")
             if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
         ]
 
         if not matching_dns_files:
-            print(f"[Warning] No matching interval Reynolds stress DNS reference found for t_end = {t_end}")
+            print(
+                f"[Warning] No matching interval Reynolds stress DNS reference found for t_end = {t_end}"
+            )
             continue
 
         dns_profile_path = matching_dns_files[0]
@@ -233,8 +239,8 @@ def plot_reynolds_stress_profile(
         ax.legend(loc="best", frameon=True, framealpha=0.9, fontsize=9.5)
 
         score_text = (
-                rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}"
-                + f"\nRel. Error: {relative_l2_error:.2f}%"
+            rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}"
+            + f"\nRel. Error: {relative_l2_error:.2f}%"
         )
         ax.text(
             0.03,
@@ -254,7 +260,9 @@ def plot_reynolds_stress_profile(
         )
 
         plt.tight_layout()
-        plt.savefig(les_profiles_dir / f"reynolds_profile_comparison_{t_end:.2f}.png", dpi=300)
+        plt.savefig(
+            les_profiles_dir / f"reynolds_profile_comparison_{t_end:.2f}.png", dpi=300
+        )
         plt.close(fig)
 
     return
@@ -271,7 +279,9 @@ if __name__ == "__main__":
 
     les_dir = f"n{n_nodes}_p{parameters}_dt{dt}"
     intervals_dir = PROJECT_ROOT / "dns_data" / "intervals"
-    master_path = PROJECT_ROOT / "solver_data" / "base_les_2" / f"t_{t_start}_{t_end}" / les_dir
+    master_path = (
+        PROJECT_ROOT / "solver_data" / "base_les_2" / f"t_{t_start}_{t_end}" / les_dir
+    )
 
     plot_profile_comparisons(
         intervals_dir=intervals_dir,

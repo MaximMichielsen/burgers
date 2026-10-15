@@ -41,10 +41,10 @@ def discover_intervals(intervals_dir: Path) -> list[tuple[float, float]]:
 
 
 def plot_profile_comparisons(
-        intervals_dir: Path,
-        les_profiles_dir: Path,
-        t_start: float,
-        z_domain: tuple[float, float] = (0.0, 2.0),
+    intervals_dir: Path,
+    les_profiles_dir: Path,
+    t_start: float,
+    z_domain: tuple[float, float] = (0.0, 2.0),
 ) -> None:
     """Plot each LES mean profile against the corresponding interval DNS reference."""
     if not les_profiles_dir.exists():
@@ -58,7 +58,8 @@ def plot_profile_comparisons(
 
         t_end = float(match.group(1))
         matching_dns_files = [
-            f for f in intervals_dir.glob("w_mean_*.npy")
+            f
+            for f in intervals_dir.glob("w_mean_*.npy")
             if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
         ]
 
@@ -80,19 +81,41 @@ def plot_profile_comparisons(
 
         fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
         ax.axhline(0, color="black", linestyle="--", linewidth=0.8, alpha=0.7, zorder=1)
-        ax.plot(mesh_dns, mean_profile_dns, color="royalblue", linestyle="-", linewidth=1.2,
-                label=f"DNS Reference ({len(mesh_dns)} pts)", zorder=2)
-        ax.plot(mesh_les, les_mean, color="tab:orange", linestyle="--", linewidth=1.0, marker="o",
-                markevery=max(1, len(mesh_les) // 16), markersize=5, markerfacecolor="white", markeredgewidth=1.2,
-                label=f"LES Model ({len(mesh_les)} pts)", zorder=3)
+        ax.plot(
+            mesh_dns,
+            mean_profile_dns,
+            color="royalblue",
+            linestyle="-",
+            linewidth=1.2,
+            label=f"DNS Reference ({len(mesh_dns)} pts)",
+            zorder=2,
+        )
+        ax.plot(
+            mesh_les,
+            les_mean,
+            color="tab:orange",
+            linestyle="--",
+            linewidth=1.0,
+            marker="o",
+            markevery=max(1, len(mesh_les) // 16),
+            markersize=5,
+            markerfacecolor="white",
+            markeredgewidth=1.2,
+            label=f"LES Model ({len(mesh_les)} pts)",
+            zorder=3,
+        )
 
         all_data = np.concatenate([mean_profile_dns, les_mean])
         y_min, y_max = all_data.min(), all_data.max()
         y_range = y_max - y_min if y_max != y_min else 1.0
         ax.set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
 
-        ax.set_title(r"Mean Velocity Profile Comparison $\langle w \rangle$ " + f"({time_interval_str})", fontsize=13,
-                     pad=10)
+        ax.set_title(
+            r"Mean Velocity Profile Comparison $\langle w \rangle$ "
+            + f"({time_interval_str})",
+            fontsize=13,
+            pad=10,
+        )
         ax.set_xlabel(r"Domain Coordinate $z$", fontsize=11)
         ax.set_ylabel(r"Mean Velocity $\langle w \rangle$", fontsize=11)
         ax.set_xlim(z_domain)
@@ -100,10 +123,26 @@ def plot_profile_comparisons(
         ax.minorticks_on()
         ax.legend(loc="upper right", frameon=True, framealpha=0.9, fontsize=9.5)
 
-        score_text = rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}" + f"\nRel. Error: {relative_l2_error:.2f}%"
-        ax.text(0.03, 0.05, score_text, transform=ax.transAxes, fontsize=9.5, verticalalignment="bottom",
-                horizontalalignment="left",
-                bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="gray", alpha=0.85), zorder=5)
+        score_text = (
+            rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}"
+            + f"\nRel. Error: {relative_l2_error:.2f}%"
+        )
+        ax.text(
+            0.03,
+            0.05,
+            score_text,
+            transform=ax.transAxes,
+            fontsize=9.5,
+            verticalalignment="bottom",
+            horizontalalignment="left",
+            bbox=dict(
+                boxstyle="round,pad=0.5",
+                facecolor="white",
+                edgecolor="gray",
+                alpha=0.85,
+            ),
+            zorder=5,
+        )
 
         plt.tight_layout()
         plt.savefig(les_profiles_dir / f"profile_comparison_{t_end:.2f}.png", dpi=300)
@@ -111,10 +150,10 @@ def plot_profile_comparisons(
 
 
 def plot_reynolds_stress_profile(
-        intervals_dir: Path,
-        les_profiles_dir: Path,
-        t_start: float,
-        z_domain: tuple[float, float] = (0.0, 2.0),
+    intervals_dir: Path,
+    les_profiles_dir: Path,
+    t_start: float,
+    z_domain: tuple[float, float] = (0.0, 2.0),
 ) -> None:
     """Plot Reynolds stress profile compared to the interval DNS profile."""
     if not les_profiles_dir.exists():
@@ -128,8 +167,10 @@ def plot_reynolds_stress_profile(
 
         t_end = float(match.group(1))
         matching_dns_files = [
-            f for f in intervals_dir.glob("ww_*.npy")
-            if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end:.2f}.npy")
+            f
+            for f in intervals_dir.glob("ww_*.npy")
+            if f.name.endswith(f"_{t_end:.2f}.npy")
+            or f.name.endswith(f"_{t_end:.2f}.npy")
         ]
 
         if not matching_dns_files:
@@ -150,19 +191,41 @@ def plot_reynolds_stress_profile(
 
         fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
         ax.axhline(0, color="black", linestyle="--", linewidth=0.8, alpha=0.7, zorder=1)
-        ax.plot(mesh_dns, reynolds_dns, color="mediumseagreen", linestyle="-", linewidth=1.2,
-                label=f"DNS Reference ({len(mesh_dns)} pts)", zorder=2)
-        ax.plot(mesh_les, les_reynolds, color="crimson", linestyle="--", linewidth=1.0, marker="o",
-                markevery=max(1, len(mesh_les) // 16), markersize=5, markerfacecolor="white", markeredgewidth=1.2,
-                label=f"LES Model ({len(mesh_les)} pts)", zorder=3)
+        ax.plot(
+            mesh_dns,
+            reynolds_dns,
+            color="mediumseagreen",
+            linestyle="-",
+            linewidth=1.2,
+            label=f"DNS Reference ({len(mesh_dns)} pts)",
+            zorder=2,
+        )
+        ax.plot(
+            mesh_les,
+            les_reynolds,
+            color="crimson",
+            linestyle="--",
+            linewidth=1.0,
+            marker="o",
+            markevery=max(1, len(mesh_les) // 16),
+            markersize=5,
+            markerfacecolor="white",
+            markeredgewidth=1.2,
+            label=f"LES Model ({len(mesh_les)} pts)",
+            zorder=3,
+        )
 
         all_data = np.concatenate([reynolds_dns, les_reynolds])
         y_min, y_max = all_data.min(), all_data.max()
         y_range = y_max - y_min if y_max != y_min else 1.0
         ax.set_ylim(y_min - 0.1 * y_range, y_max + 0.1 * y_range)
 
-        ax.set_title(r"Reynolds Stress Profile Comparison $\langle w'w' \rangle$ " + f"({time_interval_str})",
-                     fontsize=13, pad=10)
+        ax.set_title(
+            r"Reynolds Stress Profile Comparison $\langle w'w' \rangle$ "
+            + f"({time_interval_str})",
+            fontsize=13,
+            pad=10,
+        )
         ax.set_xlabel(r"Domain Coordinate $z$", fontsize=11)
         ax.set_ylabel(r"Reynolds Stress $\langle w'w' \rangle$", fontsize=11)
         ax.set_xlim(z_domain)
@@ -170,13 +233,31 @@ def plot_reynolds_stress_profile(
         ax.minorticks_on()
         ax.legend(loc="best", frameon=True, framealpha=0.9, fontsize=9.5)
 
-        score_text = rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}" + f"\nRel. Error: {relative_l2_error:.2f}%"
-        ax.text(0.03, 0.05, score_text, transform=ax.transAxes, fontsize=9.5, verticalalignment="bottom",
-                horizontalalignment="left",
-                bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor="gray", alpha=0.85), zorder=5)
+        score_text = (
+            rf"$\mathrm{{L}}_2$ Error: {l2_error:.4e}"
+            + f"\nRel. Error: {relative_l2_error:.2f}%"
+        )
+        ax.text(
+            0.03,
+            0.05,
+            score_text,
+            transform=ax.transAxes,
+            fontsize=9.5,
+            verticalalignment="bottom",
+            horizontalalignment="left",
+            bbox=dict(
+                boxstyle="round,pad=0.5",
+                facecolor="white",
+                edgecolor="gray",
+                alpha=0.85,
+            ),
+            zorder=5,
+        )
 
         plt.tight_layout()
-        plt.savefig(les_profiles_dir / f"reynolds_profile_comparison_{t_end:.2f}.png", dpi=300)
+        plt.savefig(
+            les_profiles_dir / f"reynolds_profile_comparison_{t_end:.2f}.png", dpi=300
+        )
         plt.close(fig)
 
 
@@ -188,14 +269,18 @@ if __name__ == "__main__":
 
     for t_start, t_end in intervals:
         timespan = t_end - t_start
-        print(f"\n==============================================")
-        print(f"Running Interval: t in [{t_start}, {t_end}] (duration: {timespan:.4f}s)")
-        print(f"==============================================")
+        print("\n==============================================")
+        print(
+            f"Running Interval: t in [{t_start}, {t_end}] (duration: {timespan:.4f}s)"
+        )
+        print("==============================================")
 
         for n_nodes_les in n_nodes_list:
             print(f"--- Running LES with n_nodes_les = {n_nodes_les} ---")
 
-            forcing_projected = np.load(TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy")
+            forcing_projected = np.load(
+                TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy"
+            )
 
             problem = Problem(
                 name="tcf_1d",
@@ -229,12 +314,14 @@ if __name__ == "__main__":
                 t_end=t_end,
             )
 
-            problem = replace(problem, initial_condition=reference_trajectory.initial_condition)
+            problem = replace(
+                problem, initial_condition=reference_trajectory.initial_condition
+            )
 
             master_path = (
-                    batch_output_dir
-                    / f"t_{t_start}_{t_end}"
-                    / f"n{n_nodes_les}_p{tau_model.output_dimensions}_dt{dt}"
+                batch_output_dir
+                / f"t_{t_start}_{t_end}"
+                / f"n{n_nodes_les}_p{tau_model.output_dimensions}_dt{dt}"
             )
 
             solver_les = SolverBase(
@@ -263,6 +350,8 @@ if __name__ == "__main__":
                 t_start=t_start,
                 z_domain=(0.0, z_length),
             )
-            print(f"[COMPLETED] n_nodes={n_nodes_les} for interval [{t_start}, {t_end}]")
+            print(
+                f"[COMPLETED] n_nodes={n_nodes_les} for interval [{t_start}, {t_end}]"
+            )
 
     print("\n[ALL BATCH RUNS COMPLETED SUCCESSFULLY]")

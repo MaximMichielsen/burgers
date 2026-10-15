@@ -225,6 +225,7 @@ class TD3Trainer:
         reference_trajectory: ReferenceTrajectory,
         hp: TD3Hyperparameters | TD3BanditHyperparameters | None = None,
         baseline_path: Path | None = None,
+        test_problem: Problem | None = None,
     ):
 
         if hp is None:
@@ -238,6 +239,7 @@ class TD3Trainer:
         self.problem = replace(
             problem, initial_condition=reference_trajectory.initial_condition
         )
+        self.test_problem = test_problem
         self.disc_config = disc_config
         self.ann_config: (
             TauANNConfig | ANNConfigProof | ANNBanditConfig | ShortMDPConfig
@@ -250,6 +252,7 @@ class TD3Trainer:
             else self.master_path.parent / "baseline"
         )
         self.baseline_run_dir: Path | None = None
+        self.baseline_test_dir: Path | None = None
 
         self.episodes_ran: int = 0
 
@@ -578,13 +581,16 @@ class TD3Trainer:
         )
         return current_min, current_max
 
-    def run_baseline_evaluation(self) -> None:
+    def run_baseline_evaluation(self, is_testing: bool = False) -> None:
         """Runs baseline evaluation with cache checking logic.
 
         If CACHE HIT: Does nothing and reuses existing artifacts.
         If CACHE MISS: Runs SolverBase, saves output to cache dir, and plots baseline profile.
         """
-        cache_key = self._build_les_cache_key()
+        if is_testing:
+            cache_key = self._build_les_cache_key(problem=self.test_problem)
+        else:
+            cache_key = self._build_les_cache_key()
         cache_result = resolve_les_baseline_cache(self.baseline_dir, cache_key)
 
         if (
@@ -605,8 +611,13 @@ class TD3Trainer:
         )
         self.baseline_run_dir = target_cache_dir
 
+        if is_testing:
+            problem = self.test_problem
+        else:
+            problem = self.problem
+
         self.solver = SolverBase(
-            problem=self.problem,
+            problem=problem,
             disc_config=self.disc_config,
             master_path=target_cache_dir,
             tau_model=self.ann_config.tau_model,
@@ -678,6 +689,48 @@ class TD3Trainer:
         self.baseline_reynolds_l2_error = baseline_reynolds_l2_error
         self.baseline_reynolds_rms_error = baseline_reynolds_rms_error
 
+    def run_testing(self):
+        if self.test_problem is None:
+            raise TypeError("Test problem not received!")
+        self.reference_trajectory.test_mode = True
+        self.test_problem = replace(
+            self.test_problem,
+            initial_condition=self.reference_trajectory.initial_condition,
+        )
+
+        self.run_baseline_evaluation(is_testing=True)
+
+        self.solver = SolverCoupled(
+            problem=self.test_problem,
+            disc_config=self.disc_config,
+            ann_config=replace(self.ann_config, training_mode=False),
+            master_path=self.master_path / "testing",
+            tau_model=self.ann_config.tau_model,
+            simulation_mode=SimulationMode.TAU_BASED,
+            prescribed_action_trajectory=None,
+        )
+
+        self.solver.run_simulation()
+        self.solver.post_processing()
+
+        self.plot_profile_comparison(
+            env=None,
+            solver=self.solver,
+            episode=None,
+            dns_trajectory=self.reference_trajectory.target_profile,
+            evaluation_mode=True,
+            is_testing_plot=True,
+        )
+
+        self.plot_reynolds_stress_comparison(
+            env=None,
+            solver=self.solver,
+            episode=None,
+            dns_reynolds_profile=self.reference_trajectory.reynolds_profile,
+            evaluation_mode=True,
+            is_testing_plot=True,
+        )
+
     def run_diagnostic_plotting(self, save_path: Path | None = None) -> Path:
         """Trigger diagnostic plot generation for the trainer instance."""
         if save_path is None:
@@ -687,18 +740,20 @@ class TD3Trainer:
         plot_diagnostic_metrics(trainer=self, save_dir=save_path)
         return save_path
 
-    def _build_les_cache_key(self) -> LESCacheKey:
+    def _build_les_cache_key(self, problem: Problem | None = None) -> LESCacheKey:
         """Construct LESCacheKey from problem and discretization configurations."""
+        if problem is None:
+            problem = self.problem
         return LESCacheKey(
-            problem_name=getattr(self.problem, "name", "unknown_problem"),
-            domain_length=getattr(self.problem, "domain_length", 0.0),
-            viscosity=getattr(self.problem, "viscosity", 0.0),
-            bc_type=getattr(self.problem, "boundary_condition_type", "fixed"),
-            bc_value=getattr(self.problem, "boundary_condition_value", 0),
+            problem_name=getattr(problem, "name", "unknown_problem"),
+            domain_length=getattr(problem, "domain_length", 0.0),
+            viscosity=getattr(problem, "viscosity", 0.0),
+            bc_type=getattr(problem, "boundary_condition_type", "fixed"),
+            bc_value=getattr(problem, "boundary_condition_value", 0),
             n_nodes=getattr(self.disc_config, "n_nodes_les", 0),
             dt=getattr(self.disc_config, "dt_les", 0.0),
-            t_start=getattr(self.problem, "t_start", 0.0),
-            t_end=getattr(self.problem, "t_end", 0.0),
+            t_start=getattr(problem, "t_start", 0.0),
+            t_end=getattr(problem, "t_end", 0.0),
             n_params=getattr(self.ann_config, "n_coefficients", 0),
         )
 
@@ -971,8 +1026,12 @@ class TD3Trainer:
         # 4. Time-Blocking
         self.print_section("Time-Block", w)
         self.print_row(
-            "Time Range",
-            f"[{self.problem.t_start} - {self.problem.t_start + self.problem.domain_timespan}]",
+            "Training Range",
+            f"[{self.problem.t_start} - {self.problem.t_end}]",
+        )
+        self.print_row(
+            "Test Range",
+            f"[{self.test_problem.t_start} - {self.test_problem.t_end}]",
         )
         self.print_footer(w)
 
@@ -1274,6 +1333,7 @@ class TD3Trainer:
         dns_reynolds_profile: NDArray | None = None,
         save_dir: Path | None = None,
         evaluation_mode: bool = False,
+        is_testing_plot: bool = False,
     ) -> tuple[float, float, float, float]:
 
         try:
@@ -1467,6 +1527,8 @@ class TD3Trainer:
         # 5. Resolve Output Directory & File Name
         if save_dir is not None:
             out_dir = save_dir
+        elif is_testing_plot:
+            out_dir = self.master_path / "testing"
         elif env is not None:
             out_dir = self.master_path / "profile_comparisons"
         elif isinstance(solver, SolverCoupled):
@@ -1482,6 +1544,8 @@ class TD3Trainer:
             filename = (
                 f"reynolds_comparison_ep{episode if episode is not None else 0:03d}.png"
             )
+        elif is_testing_plot:
+            filename = "reynolds_comparison_testing.png"
         elif isinstance(solver, SolverCoupled):
             filename = "reynolds_comparison_evaluation.png"
         elif isinstance(solver, SolverBase):
@@ -1511,6 +1575,7 @@ class TD3Trainer:
         dns_trajectory: NDArray | None = None,
         save_dir: Path | None = None,
         evaluation_mode: bool = False,
+        is_testing_plot: bool = False,
     ) -> tuple[float, float, float, float]:
         """Plot comparison of the mean velocity profile against DNS reference.
 
@@ -1707,6 +1772,8 @@ class TD3Trainer:
         # 5. Resolve Output Directory & File Name
         if save_dir is not None:
             out_dir = save_dir
+        elif is_testing_plot:
+            out_dir = self.master_path / "testing"
         elif env is not None:
             out_dir = self.master_path / "profile_comparisons"
         elif isinstance(solver, SolverCoupled):
@@ -1722,6 +1789,8 @@ class TD3Trainer:
             filename = (
                 f"profile_comparison_ep{episode if episode is not None else 0:03d}.png"
             )
+        elif is_testing_plot:
+            filename = "profile_comparison_testing.png"
         elif isinstance(solver, SolverCoupled):
             filename = "profile_comparison_evaluation.png"
         elif isinstance(solver, SolverBase):
