@@ -35,16 +35,20 @@ def get_coarsened_forcing(
     cache_key = generate_temporal_cache_key(
         dns_forcing_file_path, dt_les, n_modes, dt_dns
     )
-    cache_file = f"cache_forcing_{cache_key}.npy"
+    cache_file = save_dir / f"cache_forcing_{cache_key}.npy"
+    times_cache_file = save_dir / f"cache_times_{cache_key}.npy"
 
-    if os.path.exists(cache_file):
-        print(f"[Cache HIT] Loading downsampled data from {cache_file}")
-        return np.load(cache_file)
+    if cache_file.exists() and times_cache_file.exists():
+        print(f"[Cache HIT] Loading downsampled data and times from {save_dir}")
+        forcing_les = np.load(cache_file)
+        times = np.load(times_cache_file)
+        return forcing_les, times
 
     print("[Cache MISS] Computing POD and coarsening time series...")
 
     # 1. Load raw DNS data
     forcing_dns = np.load(dns_forcing_file_path)  # Shape: (T_dns, Spatial_Nodes)
+    T_dns = forcing_dns.shape[0]
 
     # 2. Perform Temporal POD / SVD
     # X = U @ S @ Vt
@@ -65,15 +69,19 @@ def get_coarsened_forcing(
     )
     U_subsampled = U_filtered[::stride, :]
 
+    # Generate downsampled time indexing array aligned with DNS time axis
+    times = np.arange(0, T_dns, stride) * dt_dns
+
     # 5. Reconstruct coarsened forcing time-series at dt_les
     forcing_les = U_subsampled @ np.diag(S_trunc) @ Vt_trunc
 
     # 6. Save to cache
     save_dir.mkdir(parents=True, exist_ok=True)
-    np.save(save_dir / cache_file, forcing_les)
-    print(f"[Cache SAVED] Saved processed forcing to {save_dir / cache_file}")
+    np.save(cache_file, forcing_les)
+    np.save(times_cache_file, times)
+    print(f"[Cache SAVED] Saved processed forcing and times to {save_dir}")
 
-    return forcing_les
+    return forcing_les, times
 
 
 if __name__ == "__main__":
@@ -88,9 +96,10 @@ if __name__ == "__main__":
     generate_temporal_cache_key(
         dns_file_path=forcing_dns_path, dt_les=dt_les, n_modes=n_modes
     )
-    get_coarsened_forcing(
+    forcing_les, times = get_coarsened_forcing(
         dns_forcing_file_path=forcing_dns_path,
         save_dir=save_dir,
         dt_les=dt_les,
         n_modes=n_modes,
     )
+    print(f"Forcing shape: {forcing_les.shape}, Times shape: {times.shape}")

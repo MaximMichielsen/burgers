@@ -34,8 +34,10 @@ class EnvironmentBanditTraining(EnvironmentForcingDNS):
         )
 
         self.action_history: list[NDArray] = []
-        self.baseline_reward: float | None = None
+        self.baseline_w_reward: float | None = None
         self.baseline_path = baseline_path
+
+        self.baseline_reynolds_reward: float | None = None
 
     def step(self, action: NDArray) -> tuple[NDArray, float, bool, dict]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done, info)."""
@@ -92,10 +94,26 @@ class EnvironmentBanditTraining(EnvironmentForcingDNS):
         penalty = self.compute_distance_error(
             field=mean_solution, target=self.reference_trajectory.target_profile
         )
-        if self.baseline_reward is None:
+        if self.baseline_w_reward is None:
             self.compute_baseline_reward(baseline_path=self.baseline_path)
 
-        normalized_penalty = self.baseline_reward - penalty
+        normalized_penalty = self.baseline_w_reward - penalty
+
+        if self.ann_config.include_reynolds_stress_reward_signal:
+            reynolds_profile = self.solver.compute_reynolds_stress()
+            penalty_reynolds = self.compute_distance_error(
+                field=reynolds_profile,
+                target=self.reference_trajectory.reynolds_profile,
+            )
+            normalized_reynolds_penalty = (
+                self.baseline_reynolds_reward - penalty_reynolds
+            )
+            return (
+                self.ann_config.w_field_reward_weight * normalized_penalty
+                + self.ann_config.reynolds_field_reward_weight
+                * normalized_reynolds_penalty
+            )
+
         return normalized_penalty * 100
 
     def compute_baseline_reward(self, baseline_path: Path) -> None:
@@ -103,7 +121,16 @@ class EnvironmentBanditTraining(EnvironmentForcingDNS):
         mean_profile = np.load(
             baseline_path / "mean_profiles" / f"mean_w_{self.problem.t_end}.npy"
         )
-        penalty = self.compute_distance_error(
+        reynold_profile = np.load(
+            baseline_path
+            / "reynolds_profiles"
+            / f"reynolds_stress_profile_{self.problem.t_end}.npy"
+        )
+        penalty_w = self.compute_distance_error(
             field=mean_profile, target=self.reference_trajectory.target_profile
         )
-        self.baseline_reward = penalty
+        penalty_reynolds = self.compute_distance_error(
+            field=reynold_profile, target=self.reference_trajectory.reynolds_profile
+        )
+        self.baseline_w_reward = penalty_w
+        self.baseline_reynolds_reward = penalty_reynolds

@@ -82,6 +82,10 @@ class TauANNConfig:
 
     training_mode: bool
 
+    include_reynolds_stress_reward_signal: bool = False
+    w_field_reward_weight: float = 1.0
+    reynolds_field_reward_weight: float = 0.2
+
     max_action: float = MAX_ACTION
     min_action: float = MIN_ACTION
 

@@ -105,7 +105,7 @@ def filter_forcing(
 
     if save_path is not None:
         save_path.mkdir(parents=True, exist_ok=True)
-        save_file = save_path / f"forcing_{mode.lower()}_{les_resolution}"
+        save_file = save_path / f"forcing_{mode.lower()}_{les_resolution}.npy"
         np.save(save_file, filtered_forcing)
 
     return filtered_forcing
@@ -126,18 +126,31 @@ def nodal_project(
 
 
 if __name__ == "__main__":
-    forcing_path = (
-        PROJECT_ROOT
-        / "dns_data"
-        / "temporal"
-        / "unprojected"
-        / "cache_forcing_f01c9f43049633787bc4f3814e74d3b8.npy"
-    )
+    cache_hash = "f01c9f43049633787bc4f3814e74d3b8"
+    cache_dir = PROJECT_ROOT / "dns_data" / "temporal" / "unprojected"
+
+    forcing_path = cache_dir / f"cache_forcing_{cache_hash}.npy"
+    times_cache_path = cache_dir / "cache_times_14345be5a4b6bfe79589d174a50bade1.npy"
+
     filtered_path = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
     n_nodes_les = [9, 17, 33, 65]
     forcing_filter = "l2"
+
     if forcing_path.exists():
         forcing_dns = np.load(forcing_path)
+
+        # Load and save the times array with a normal name
+        if times_cache_path.exists():
+            times = np.load(times_cache_path)
+            filtered_path.mkdir(parents=True, exist_ok=True)
+            times_save_path = filtered_path / "times.npy"
+            np.save(times_save_path, times)
+            print(
+                f"Times array successfully saved to {times_save_path} (shape: {times.shape})"
+            )
+        else:
+            print(f"Times cache file not found at {times_cache_path}")
+
         for n_nodes in n_nodes_les:
             l2_data = filter_forcing(
                 forcing_dns,
@@ -151,21 +164,4 @@ if __name__ == "__main__":
                 f"Forcing filtering complete ({n_nodes}). Outputs saved to {filtered_path}"
             )
     else:
-        print(f"Forcing file not found at {FORCING_PATH}")
-
-    quit()
-    if W_FIELD_PATH.exists():
-        w_dns = np.load(W_FIELD_PATH)
-        mesh_dns_ = np.linspace(0.0, 2.0, 513)
-
-        for nodes in n_nodes_les:
-            mesh_les_ = np.linspace(0.0, 2.0, nodes)
-
-            w_projected = nodal_project(w_dns, mesh_les_, mesh_dns_)
-            ic_projected = w_projected[0]
-
-            np.save(FILTERED_PATH / f"w_linear_{nodes}.npy", w_projected)
-            np.save(FILTERED_PATH / f"ic_linear_{nodes}.npy", ic_projected)
-            print(f"W filtering complete ({nodes}). Outputs saved to {FILTERED_PATH}")
-    else:
-        print("no w field")
+        print(f"Forcing file not found at {forcing_path}")

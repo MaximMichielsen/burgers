@@ -141,6 +141,7 @@ class SolverBase:
         self.time_elapsed: float = 0.0
         self.prev_elapsed = 0.0
         self.current_time_step: int = 0
+        self.forcing_start_step: int = problem.forcing_start_step
         self.simulation_done: bool = False
         self.domain_timespan: float = problem.domain_timespan
         self._dt: float = (
@@ -722,7 +723,7 @@ class SolverBase:
         elif self.forcing is None:
             self.forcing_current = np.zeros_like(self.solution)
         else:
-            self.forcing_current = self.forcing[self.current_time_step]
+            self.forcing_current = self.forcing[self.current_time_step + self.forcing_start_step]
 
     def _extract_snapshot(self) -> None:
         """Store current solution and forcing as a snapshot."""

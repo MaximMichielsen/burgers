@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Callable
 
+import numpy as np
 from numpy.typing import NDArray
 
 from setup.forcings import (
@@ -23,7 +24,8 @@ class Problem:
     domain_length: float
     domain_timespan: float
     reynolds: float
-    initial_condition: Callable | NDArray
+    initial_condition: Callable | NDArray | None
+    forcing_times: NDArray
     forcing: Callable | NDArray | None
     forcing_is_steady: bool
     boundary_condition_type: str
@@ -33,6 +35,11 @@ class Problem:
     t_start: float = 0.0
 
     @property
+    def forcing_start_step(self):
+        index = int(np.argmin(np.abs(self.forcing_times + 308.0101 - self.t_start))) # hardcoded, live with it :(
+        return index
+
+    @property
     def viscosity(self) -> float:
         """Kinematic viscosity derived from Re and domain length."""
         return self.domain_length / self.reynolds
@@ -40,74 +47,3 @@ class Problem:
     @property
     def t_end(self) -> float:
         return self.t_start + self.domain_timespan
-
-
-pipeline_test = Problem(
-    name="pipeline_test",
-    domain_length=1.0,
-    domain_timespan=0.5,
-    reynolds=20,
-    initial_condition=uniform_initial_condition,
-    forcing=uniform_steady_forcing,
-    forcing_is_steady=True,
-    boundary_condition_type="fixed",
-    boundary_condition_value=1.0,
-)
-
-robijns_one = Problem(
-    name="robijns_one",
-    domain_length=1.0,
-    domain_timespan=2.0,
-    reynolds=100,
-    initial_condition=uniform_initial_condition,
-    forcing=uniform_steady_forcing,
-    forcing_is_steady=True,
-    boundary_condition_type="dirichlet",
-    boundary_condition_value=1.0,
-)
-
-raj_one = Problem(
-    name="raj_one",
-    domain_length=1.0,
-    domain_timespan=1.0,
-    reynolds=100,
-    initial_condition=zero_initial_condition,
-    forcing=uniform_steady_forcing,
-    forcing_is_steady=True,
-    boundary_condition_type="dirichlet",
-    boundary_condition_value=0.0,
-)
-
-raj_two = Problem(
-    name="raj_two",
-    domain_length=1.0,
-    domain_timespan=4.0,
-    reynolds=100,
-    initial_condition=uniform_initial_condition,
-    forcing=compute_sine_forcing,
-    forcing_is_steady=False,
-    boundary_condition_type="dirichlet",
-    boundary_condition_value=1.0,
-)
-
-raj_three = Problem(
-    name="raj_three",
-    domain_length=1.0,
-    domain_timespan=1.0,
-    reynolds=100,
-    initial_condition=uniform_initial_condition,
-    forcing=uniform_steady_forcing,
-    forcing_is_steady=True,
-    boundary_condition_type="dirichlet",
-    boundary_condition_value=1.0,
-)
-
-
-class Problems:
-    """Namespace for all problem definitions."""
-
-    pipeline_test = pipeline_test
-    robijns_one = robijns_one
-    raj_one = raj_one
-    raj_two = raj_two
-    raj_three = raj_three

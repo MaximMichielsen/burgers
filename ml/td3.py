@@ -235,7 +235,9 @@ class TD3Trainer:
             else:
                 self.hp = TD3Hyperparameters()
 
-        self.problem = problem
+        self.problem = replace(
+            problem, initial_condition=reference_trajectory.initial_condition
+        )
         self.disc_config = disc_config
         self.ann_config: (
             TauANNConfig | ANNConfigProof | ANNBanditConfig | ShortMDPConfig
@@ -625,12 +627,14 @@ class TD3Trainer:
         self.baseline_w_l2_error = baseline_w_l2_error
         self.baseline_w_rms_error = baseline_w_rms_error
 
-        _, _, baseline_reynolds_l2_error, baseline_reynolds_rms_error = self.plot_reynolds_stress_comparison(
-            env=None,
-            solver=self.solver,
-            episode=None,
-            dns_reynolds_profile=self.reference_trajectory.reynolds_profile,
-            save_dir=target_cache_dir,
+        _, _, baseline_reynolds_l2_error, baseline_reynolds_rms_error = (
+            self.plot_reynolds_stress_comparison(
+                env=None,
+                solver=self.solver,
+                episode=None,
+                dns_reynolds_profile=self.reference_trajectory.reynolds_profile,
+                save_dir=target_cache_dir,
+            )
         )
 
         self.baseline_reynolds_l2_error = baseline_reynolds_l2_error
@@ -661,12 +665,14 @@ class TD3Trainer:
         self.baseline_w_l2_error = baseline_w_l2_error
         self.baseline_w_rms_error = baseline_w_rms_error
 
-        _, _, baseline_reynolds_l2_error, baseline_reynolds_rms_error = self.plot_reynolds_stress_comparison(
-            env=None,
-            solver=self.solver,
-            episode=None,
-            dns_reynolds_profile=self.reference_trajectory.reynolds_profile,
-            evaluation_mode=True,
+        _, _, baseline_reynolds_l2_error, baseline_reynolds_rms_error = (
+            self.plot_reynolds_stress_comparison(
+                env=None,
+                solver=self.solver,
+                episode=None,
+                dns_reynolds_profile=self.reference_trajectory.reynolds_profile,
+                evaluation_mode=True,
+            )
         )
 
         self.baseline_reynolds_l2_error = baseline_reynolds_l2_error
@@ -761,10 +767,8 @@ class TD3Trainer:
         self._log("  [POST-PROCESSING & PLOTTING ARTIFACTS]")
         self.plot_history_breakdown(env=env, show_plot=False)
 
-        w_l2_error, w_rms_error, _, _ = (
-            self.plot_profile_comparison(
-                env=env, episode=episode, show_plot=False, solver=None
-            )
+        w_l2_error, w_rms_error, _, _ = self.plot_profile_comparison(
+            env=env, episode=episode, show_plot=False, solver=None
         )
 
         self.w_l2_error_history.append(w_l2_error)
@@ -991,7 +995,9 @@ class TD3Trainer:
         reynolds_baseline_l2_error = self.baseline_reynolds_l2_error
         reynolds_baseline_rms_error = self.baseline_reynolds_rms_error
 
-        fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12, 10), dpi=300, sharex=True)
+        fig, axs = plt.subplots(
+            nrows=2, ncols=2, figsize=(12, 10), dpi=300, sharex=True
+        )
 
         # Cohesive, modern color palette
         color_velocity = "#2563eb"  # Vibrant Blue
@@ -999,7 +1005,13 @@ class TD3Trainer:
 
         # --- Subplot (0, 0): Velocity Field L2 Error ---
         ax1 = axs[0, 0]
-        ax1.plot(episodes, w_l2_errors, color=color_velocity, linewidth=1.8, label="Velocity L2 Error")
+        ax1.plot(
+            episodes,
+            w_l2_errors,
+            color=color_velocity,
+            linewidth=1.8,
+            label="Velocity L2 Error",
+        )
         ax1.axhline(
             w_baseline_l2_error,
             color=color_velocity,
@@ -1008,14 +1020,22 @@ class TD3Trainer:
             linewidth=1.5,
             label="Baseline L2",
         )
-        ax1.set_title("Velocity Field - L2 Error", fontsize=11, fontweight="bold", pad=8)
+        ax1.set_title(
+            "Velocity Field - L2 Error", fontsize=11, fontweight="bold", pad=8
+        )
         ax1.set_ylabel("Error Value", fontsize=10, fontweight="medium")
         ax1.grid(True, linestyle=":", alpha=0.6)
         ax1.legend(frameon=True, facecolor="white", framealpha=0.9, fontsize=8.5)
 
         # --- Subplot (0, 1): Reynolds L2 Error ---
         ax2 = axs[0, 1]
-        ax2.plot(episodes, reynolds_l2_errors, color=color_reynolds, linewidth=1.8, label="Reynolds L2 Error")
+        ax2.plot(
+            episodes,
+            reynolds_l2_errors,
+            color=color_reynolds,
+            linewidth=1.8,
+            label="Reynolds L2 Error",
+        )
         ax2.axhline(
             reynolds_baseline_l2_error,
             color=color_reynolds,
@@ -1030,7 +1050,13 @@ class TD3Trainer:
 
         # --- Subplot (1, 0): Velocity Field RMS Error ---
         ax3 = axs[1, 0]
-        ax3.plot(episodes, w_rms_errors, color=color_velocity, linewidth=1.8, label="Velocity RMS Error")
+        ax3.plot(
+            episodes,
+            w_rms_errors,
+            color=color_velocity,
+            linewidth=1.8,
+            label="Velocity RMS Error",
+        )
         ax3.axhline(
             w_baseline_rms_error,
             color=color_velocity,
@@ -1039,7 +1065,9 @@ class TD3Trainer:
             linewidth=1.5,
             label="Baseline RMS",
         )
-        ax3.set_title("Velocity Field - RMS Error", fontsize=11, fontweight="bold", pad=8)
+        ax3.set_title(
+            "Velocity Field - RMS Error", fontsize=11, fontweight="bold", pad=8
+        )
         ax3.set_xlabel("Episode", fontsize=10, fontweight="medium")
         ax3.set_ylabel("Error Value", fontsize=10, fontweight="medium")
         ax3.grid(True, linestyle=":", alpha=0.6)
@@ -1047,7 +1075,13 @@ class TD3Trainer:
 
         # --- Subplot (1, 1): Reynolds RMS Error ---
         ax4 = axs[1, 1]
-        ax4.plot(episodes, reynolds_rms_errors, color=color_reynolds, linewidth=1.8, label="Reynolds RMS Error")
+        ax4.plot(
+            episodes,
+            reynolds_rms_errors,
+            color=color_reynolds,
+            linewidth=1.8,
+            label="Reynolds RMS Error",
+        )
         ax4.axhline(
             reynolds_baseline_rms_error,
             color=color_reynolds,
@@ -1307,7 +1341,11 @@ class TD3Trainer:
         )
 
         baseline_file = None
-        baseline_l2_error, baseline_rms_error, baseline_relative_error = None, None, None
+        baseline_l2_error, baseline_rms_error, baseline_relative_error = (
+            None,
+            None,
+            None,
+        )
 
         if evaluation_mode and getattr(self, "baseline_run_dir", None) is not None:
             reynolds_profiles_dir = self.baseline_run_dir / "reynolds_profiles"
@@ -1546,7 +1584,11 @@ class TD3Trainer:
         )
 
         baseline_file = None
-        baseline_l2_error, baseline_rms_error, baseline_relative_error = None, None, None
+        baseline_l2_error, baseline_rms_error, baseline_relative_error = (
+            None,
+            None,
+            None,
+        )
 
         if evaluation_mode and getattr(self, "baseline_run_dir", None) is not None:
             mean_profiles_dir = self.baseline_run_dir / "mean_profiles"

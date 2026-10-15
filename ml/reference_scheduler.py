@@ -11,19 +11,29 @@ class ReferenceTrajectory:
 
     def __init__(
         self,
-        target_profile_path: Path,
+        target_profile_dir: Path,
         projected_w_path: Path,
-        reynolds_path: Path,
+        times_path: Path,
         n_les_nodes: int,
-        target_time_index: int,
+        t_start: float,
+        t_end: float,
     ) -> None:
 
-        self.target_profile_path = Path(target_profile_path)
+        self.target_mean_profile_dir = Path(target_profile_dir)
         self.projected_w_path = Path(projected_w_path)
-        self.reynolds_path = Path(reynolds_path)
         self.n_les_nodes = n_les_nodes
-        self.target_time_index = target_time_index
+        self.t_start = t_start
+        self.t_end = t_end
 
+        self.mean_w_path = (
+            self.target_mean_profile_dir / f"w_mean_{self.t_start}_{self.t_end}.npy"
+        )
+        self.reynolds_path = (
+            self.target_mean_profile_dir / f"ww_{self.t_start}_{self.t_end}.npy"
+        )
+        self.w_field_times_path = times_path
+
+        self._start_idx: int = 0
         self._current_step_idx: int = 0
         self._target_profile: NDArray | None = None
         self._reynolds_profile: NDArray | None = None
@@ -33,28 +43,22 @@ class ReferenceTrajectory:
 
     def load_data(self) -> None:
         """Loads reference datasets into memory and project target profile if needed."""
-        if not self.target_profile_path.exists():
+        if not self.mean_w_path.exists():
             raise FileNotFoundError(
-                f"Target profile missing at {self.target_profile_path}"
+                f"Target profile directory missing at {self.mean_w_path}"
+            )
+        if not self.reynolds_path.exists():
+            raise FileNotFoundError(
+                f"Reynolds stress field missing at {self.reynolds_path}"
             )
         if not self.projected_w_path.exists():
             raise FileNotFoundError(
                 f"Projected w field missing at {self.projected_w_path}"
             )
 
-        if not self.reynolds_path.exists():
-            raise FileNotFoundError(
-                f"Reynolds stress field missing at {self.reynolds_path}"
-            )
-
         # Static 1D target mean profile <u_DNS>_T
-        raw_target_profile = np.load(self.target_profile_path).astype(np.float64)[
-            self.target_time_index
-        ]
-
-        raw_reynolds_profile = np.load(self.reynolds_path).astype(np.float64)[
-            self.target_time_index
-        ]
+        raw_target_profile = np.load(self.mean_w_path)
+        raw_reynolds_profile = np.load(self.reynolds_path)
 
         # Nodal projection (linear interpolation) if DNS grid size != LES node count
         n_dns_nodes = raw_target_profile.shape[-1]
@@ -78,6 +82,20 @@ class ReferenceTrajectory:
                 f"mismatches LES grid ({self.n_les_nodes})."
             )
 
+        snapshot_times = np.load(self.w_field_times_path)
+        if len(snapshot_times) != len(self._projected_w_data):
+            raise ValueError(
+                f"Times ({len(snapshot_times)}) and projected w "
+                f"({len(self._projected_w_data)}) have different lengths."
+            )
+        self._start_idx = int(np.argmin(np.abs(snapshot_times - self.t_start)))
+        max_offset = np.median(np.diff(snapshot_times))
+        if abs(snapshot_times[self._start_idx] - self.t_start) > max_offset:
+            raise ValueError(
+                f"t_start={self.t_start} is not covered by the projected field "
+                f"(range {snapshot_times[0]} to {snapshot_times[-1]})."
+            )
+
     def query(self, step_idx: int) -> NDArray:
         """Query projected solution field at a specific timestep index."""
         if self._projected_w_data is None:
@@ -88,12 +106,17 @@ class ReferenceTrajectory:
         return np.asarray(self._projected_w_data[safe_idx], dtype=np.float64)
 
     def reset(self) -> None:
-        """Reset episode index to zero."""
-        self._current_step_idx = 0
+        """Reset episode index to start index."""
+        self._current_step_idx = self._start_idx
 
     def set_step_index(self, step_idx: int) -> None:
         """Set the active step index."""
         self._current_step_idx = step_idx
+
+    @property
+    def initial_condition(self) -> NDArray:
+        """Projected (nodal) w field at t_start."""
+        return self.query(self._start_idx)
 
     @property
     def target_profile(self) -> NDArray:

@@ -17,50 +17,55 @@ CURRENT_DIR = Path(__file__).resolve().parent
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
 TEMPORAL_DIR = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
 TRAINING_DIR = PROJECT_ROOT / "dns_data" / "training"
+TEMPORAL_PROJECTED_DIR = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
 
 n_nodes_les = 17
 n_nodes_dns = 513
 z_length = 2.0
 
 dt = 1e-3
-t_start = 308.0101
-t_end = 309.0100
+t_start = 312.01
+t_end = 313.01
 
-n_episodes = 12
+n_episodes = 1
 proof_mode = ProofMode.a
 
 link = True
+use_reynolds_signal = True
+
+sub_dir = "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
 
 run_dir = (
     CURRENT_DIR
     / "solver_data"
     / "proof_experiments"
-    / f"proof_of_concept_{n_episodes}_{n_nodes_les}_{link}"
+    / sub_dir
+    / f"t_{t_start}_{t_end}"
+    / f"proof_of_concept_{n_episodes}_{n_nodes_les}_{link}_{dt}"
 )
 
 run_dir.mkdir(parents=True, exist_ok=True)
 
 tau_model = TauModel.TWO_PARAMS
 
-ic_les = np.load(FILTERED_DIR / f"ic_linear_{n_nodes_les}.npy")
-forcing_projected = np.load(TEMPORAL_DIR / f"forcing_l2_{n_nodes_les}.npy")
-
 timespan = t_end - t_start
 
 ann_path = run_dir / "ann_model.pt"
-target_profile_path = TRAINING_DIR / f"n{n_nodes_les}" / "training" / "stat_mean_w.npy"
-w_field_path = (
-    TRAINING_DIR / f"n{n_nodes_les}" / "training" / f"w_field_{n_nodes_les}.npy"
-)
-reynolds_path = PROJECT_ROOT / "dns_data" / "curated" / "stat" / "mean_reynolds_w.npy"
+target_profile_dir = PROJECT_ROOT / "dns_data" / "intervals"
+w_field_path = PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
+# Load times and forcing
+times_path = PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy"
+forcing_projected = np.load(TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy")
+times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
 
 problem = Problem(
     name="tcf_1d",
     domain_length=z_length,
     domain_timespan=timespan,
     reynolds=100.0,
-    initial_condition=ic_les,
+    initial_condition=None,
     forcing=forcing_projected,
+    forcing_times=times_forcing,
     forcing_is_steady=False,
     boundary_condition_type="fixed",
     boundary_condition_value=0.0,
@@ -87,14 +92,16 @@ ann_config = ANNBanditConfig(
     run_final_evaluation=True,
     n_skip_steps=1,
     link_coefficients=link,
+    include_reynolds_stress_reward_signal=use_reynolds_signal,
 )
 
 reference_trajectory = ReferenceTrajectory(
-    target_profile_path=target_profile_path,
+    target_profile_dir=target_profile_dir,
     projected_w_path=w_field_path,
-    reynolds_path=reynolds_path,
+    times_path=times_path,
     n_les_nodes=n_nodes_les,
-    target_time_index=0,
+    t_start=t_start,
+    t_end=t_end,
 )
 
 trainer = TD3Trainer(
