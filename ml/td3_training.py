@@ -103,6 +103,11 @@ class TD3Trainer:
         self.train_intervals = train_intervals
         self.test_interval = test_interval
 
+        if self.train_intervals:
+            self.interval_counts = np.zeros(len(self.train_intervals))
+        else:
+            self.interval_counts = np.array([])
+
         # Initialize reference trajectory interval if train intervals are provided
         if self.train_intervals and len(self.train_intervals) > 0:
             init_t_start, init_t_end = self.train_intervals[0]
@@ -241,7 +246,10 @@ class TD3Trainer:
 
         while episode < self.ann_config.n_training_episodes and not stop_training:
             if self.train_intervals:
-                ep_t_start, ep_t_end = random.choice(self.train_intervals)
+                idx = random.randrange(len(self.train_intervals))
+                self.interval_counts[idx] += 1
+                ep_t_start, ep_t_end = self.train_intervals[idx]
+
                 self.reference_trajectory.set_active_training_interval(
                     ep_t_start, ep_t_end
                 )
@@ -433,6 +441,7 @@ class TD3Trainer:
 
         self.plot_reward_evolution()
         self.plot_error_evaluation_evolution()
+        self.plot_interval_count()
         self.run_diagnostic_plotting()
 
         return agent.actor
@@ -598,18 +607,18 @@ class TD3Trainer:
         )
 
     def plot_combined_profile_comparison(
-            self,
-            env: EnvironmentForcingDNS | EnvironmentBanditTraining | None,
-            solver: SolverCoupled | SolverBase | None,
-            episode: int | None,
-            show_plot: bool = False,
-            dns_trajectory: NDArray | None = None,
-            dns_reynolds_profile: NDArray | None = None,
-            raw_dns_trajectory: NDArray | None = None,
-            raw_reynolds_profile: NDArray | None = None,
-            save_dir: Path | None = None,
-            evaluation_mode: bool = False,
-            is_testing_plot: bool = False,
+        self,
+        env: EnvironmentForcingDNS | EnvironmentBanditTraining | None,
+        solver: SolverCoupled | SolverBase | None,
+        episode: int | None,
+        show_plot: bool = False,
+        dns_trajectory: NDArray | None = None,
+        dns_reynolds_profile: NDArray | None = None,
+        raw_dns_trajectory: NDArray | None = None,
+        raw_reynolds_profile: NDArray | None = None,
+        save_dir: Path | None = None,
+        evaluation_mode: bool = False,
+        is_testing_plot: bool = False,
     ) -> tuple[float, float, float, float, float, float, float, float]:
         """Plot comparison of both mean velocity profile and Reynolds stress profile in a 2x1 vertical subplot grid."""
 
@@ -637,8 +646,8 @@ class TD3Trainer:
             mean_profile_dns = env.reference_trajectory.target_profile
             reynolds_dns = env.reference_trajectory.reynolds_profile
             if (
-                    env.reference_trajectory._raw_target_profile is not None
-                    and env.reference_trajectory._raw_reynolds_profile is not None
+                env.reference_trajectory._raw_target_profile is not None
+                and env.reference_trajectory._raw_reynolds_profile is not None
             ):
                 raw_profile_dns = env.reference_trajectory._raw_target_profile
                 raw_reynolds_dns = env.reference_trajectory._raw_reynolds_profile
@@ -654,8 +663,8 @@ class TD3Trainer:
             return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
         if (
-                les_mean.shape != mean_profile_dns.shape
-                or les_reynolds.shape != reynolds_dns.shape
+            les_mean.shape != mean_profile_dns.shape
+            or les_reynolds.shape != reynolds_dns.shape
         ):
             raise ValueError(
                 "Shape mismatch between LES profiles and DNS reference targets."
@@ -741,8 +750,8 @@ class TD3Trainer:
             reynolds_profiles_dir = self.baseline_run_dir / "reynolds_profiles"
             baseline_mean_file = mean_profiles_dir / f"mean_w_{self.problem.t_end}.npy"
             baseline_ww_file = (
-                    reynolds_profiles_dir
-                    / f"reynolds_stress_profile_{self.problem.t_end}.npy"
+                reynolds_profiles_dir
+                / f"reynolds_stress_profile_{self.problem.t_end}.npy"
             )
 
             if baseline_mean_file.exists():
@@ -947,9 +956,7 @@ class TD3Trainer:
         else:
             plt.close(fig)
 
-        self._log(
-            f"  * Saved 2x1 profile comparison -> {output_plot_path}"
-        )
+        self._log(f"  * Saved 2x1 profile comparison -> {output_plot_path}")
 
         return (
             mean_l2,
@@ -961,6 +968,7 @@ class TD3Trainer:
             baseline_ww_l2,
             baseline_ww_rms,
         )
+
     def _execute_episodic_post_processing(
         self, env: Any, episode: int, do_solver_post_processing: bool = False
     ) -> None:
@@ -1404,3 +1412,71 @@ class TD3Trainer:
         save_path = self.master_path / "reward_components_weighted.png"
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         plt.close(fig_weighted)
+
+    def plot_interval_count(self) -> None:
+        """Bar chart of training intervals on a timeline with the test interval highlighted."""
+        if not self.train_intervals and not self.test_interval:
+            raise ValueError("No intervals provided.")
+
+        fig, ax = plt.subplots(figsize=(10, 6), dpi=300, constrained_layout=True)
+
+        # Professional color scheme
+        train_color = "#2a6f97"  # Steel Blue
+        test_color = "#e07a5f"  # Muted Terracotta
+
+        # 1. Plot training intervals as true timeline bars (width = interval duration)
+        if self.train_intervals:
+            for i, (start, end) in enumerate(self.train_intervals):
+                count = self.interval_counts[i] if i < len(self.interval_counts) else 0
+                width = end - start
+                ax.bar(
+                    start,
+                    count,
+                    width=width,
+                    align="edge",
+                    color=train_color,
+                    edgecolor="#1d3557",
+                    linewidth=0.8,
+                    zorder=3,
+                    label="Training Interval" if i == 0 else ""
+                )
+
+        # 2. Highlight the test interval using a shaded vertical span right where it belongs
+        if self.test_interval is not None:
+            test_start, test_end = self.test_interval
+            ax.axvspan(
+                test_start,
+                test_end,
+                color=test_color,
+                alpha=0.35,
+                zorder=2,
+                label="Test Interval"
+            )
+            ax.axvline(test_start, color=test_color, linestyle="--", linewidth=1.2, zorder=4)
+            ax.axvline(test_end, color=test_color, linestyle="--", linewidth=1.2, zorder=4)
+
+        # Major ticks per 1 unit for both X (time) and Y (counts)
+        ax.xaxis.set_major_locator(plt.MultipleLocator(1))
+        ax.yaxis.set_major_locator(plt.MultipleLocator(1))
+
+        # Style consistency with profile comparisons
+        ax.axhline(0, color="black", linestyle="--", linewidth=0.5, alpha=0.4, zorder=1)
+        ax.minorticks_on()
+        ax.tick_params(
+            which="both", direction="in", top=True, right=True, length=4, width=0.8
+        )
+        ax.tick_params(which="minor", length=2, width=0.5)
+
+        ax.set_xlabel(r"Time / Simulation Domain ($t$) [s]", fontsize=11)
+        ax.set_ylabel("Selection Count [-]", fontsize=11)
+
+        # Grid lines explicitly on major ticks (per 1) for both axes
+        ax.grid(True, which="major", linestyle=":", alpha=0.6, zorder=0)
+
+        ax.legend(loc="upper right", frameon=True, facecolor="white", framealpha=0.9, fontsize=9.5)
+
+        # Save to master path
+        plot_path = self.master_path / "interval_counts.png"
+        fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        self._log(f"  * Saved interval count plot -> {plot_path.name}")

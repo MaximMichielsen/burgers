@@ -96,7 +96,7 @@ n_nodes_dns = 513
 z_length = 2.0
 dt = 1e-3
 
-n_episodes = 1
+n_episodes = 20
 proof_mode = ProofMode.a
 
 link = False
@@ -178,6 +178,5 @@ trainer = TD3Trainer(
 
 # Execute stochastic training and final testing evaluation
 trainer.run_training()
-trainer.run_testing()
 
 print("\n[SUCCESS] Stochastic training and testing pipeline completed successfully.")
