@@ -783,9 +783,10 @@ class SolverBase:
         elif self.forcing is None:
             self.forcing_current = np.zeros_like(self.solution)
         else:
-            self.forcing_current = self.forcing[
-                self.current_time_step + self.forcing_start_step
-            ]
+            idx = self.current_time_step + self.forcing_start_step
+            if idx >= len(self.forcing):
+                idx = len(self.forcing) - 1  # Clamp to the last valid index
+            self.forcing_current = self.forcing[idx]
 
     def _extract_snapshot(self) -> None:
         """Store current solution and forcing as a snapshot."""

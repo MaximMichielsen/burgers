@@ -12,8 +12,8 @@ from numpy.typing import NDArray
 from setup.config_discretization import DiscretizationConfig
 from solvers.solver_base import TauModel
 
-MAX_ACTION = 1.4
-MIN_ACTION = 0.6
+MAX_ACTION = 3.0
+MIN_ACTION = 0.5
 
 SMOOTHING_FACTOR = 0.002
 
@@ -28,14 +28,6 @@ class Scope(str, Enum):
 class TauANNHyperparameters:
     """Hyperparameters tied directly to the ANN, regardless of training mechanism."""
 
-    max_action: float = MAX_ACTION
-    min_action: float = MIN_ACTION + 1e-6
-
-    init_factor_stochastic: float = 0.2
-
-    init_max_action: float = 1.0 + (MAX_ACTION - 1.0) * init_factor_stochastic
-    init_min_action: float = 1.0 - (1.0 - MIN_ACTION) * init_factor_stochastic
-
     smoothing_factor = SMOOTHING_FACTOR
     burn_in_steps = 0
 
@@ -44,6 +36,8 @@ class TauANNHyperparameters:
     weight_spectral = 0.0
     weight_action = 0.0
     gamma = 5.0 / 3.0
+
+    critic_mse: bool = False
 
 
 @dataclass
@@ -88,6 +82,10 @@ class TauANNConfig:
 
     max_action: float = MAX_ACTION
     min_action: float = MIN_ACTION
+
+    init_bound_factor: float = 0.2
+    init_upper_bound_action: float = 1.0 + (MAX_ACTION - 1.0) * init_bound_factor
+    init_lower_bound_action: float = 1.0 - (1.0 - MIN_ACTION) * init_bound_factor
 
     smoothing_factor: float = SMOOTHING_FACTOR
 

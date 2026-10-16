@@ -37,9 +37,7 @@ class Problem:
 
     @property
     def forcing_start_step(self):
-        index = int(
-            np.argmin(np.abs(self.forcing_times + T_ZERO - self.t_start))
-        )  # hardcoded, live with it :(
+        index = int(np.argmin(np.abs(self.forcing_times + T_ZERO - self.t_start)))
         return index
 
     @property

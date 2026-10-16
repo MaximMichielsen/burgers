@@ -28,8 +28,8 @@ class TauANN(nn.Module):
 
         self.config = config
         self.hyperparameters = hyperparams
-        self.max_action = hyperparams.max_action
-        self.min_action = hyperparams.min_action
+        self.max_action = config.max_action
+        self.min_action = config.min_action
         self.state_dim = config.state_dimension
         self.action_dim = config.action_dimension
         self.hidden_dim = config.hidden_dimension

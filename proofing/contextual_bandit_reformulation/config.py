@@ -9,7 +9,7 @@ BANDIT_MAX_ACTION = 5.0
 
 @dataclass
 class ANNBanditConfig(TauANNConfig):
-    link_coefficients: bool = True
+    link_coefficients: bool = False
     n_random_episodes = 8
     n_skip_steps = 0
     proof_mode = "a"

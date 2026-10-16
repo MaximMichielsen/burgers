@@ -4,7 +4,7 @@ import numpy as np
 
 from ml.ann_config import Scope
 from ml.reference_scheduler import ReferenceTrajectory
-from ml.td3 import TD3Trainer
+from ml.td3_training import TD3Trainer
 from proofing.action_based.config import ProofMode
 from proofing.contextual_bandit_reformulation.config import ANNBanditConfig
 from setup.config_discretization import DiscretizationConfig

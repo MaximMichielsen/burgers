@@ -16,7 +16,7 @@ from proofing.contextual_bandit_reformulation.environment import (
 )
 
 if TYPE_CHECKING:
-    from ml.td3 import TD3Trainer
+    from ml.td3_training import TD3Trainer
 
 
 def moving_average(data: np.ndarray | list[float], window_size: int = 50) -> np.ndarray:

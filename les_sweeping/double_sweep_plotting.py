@@ -6,31 +6,37 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- Publication-Quality Global Settings ---
-plt.rcParams.update({
-    "text.usetex": False,
-    "font.family": "serif",
-    "font.serif": ["Computer Modern Roman", "Times New Roman"],
-    "mathtext.fontset": "cm",
-    "axes.labelsize": 11,
-    "xtick.labelsize": 10,
-    "ytick.labelsize": 10,
-    "legend.fontsize": 9,
-    "axes.linewidth": 0.8,
-})
+plt.rcParams.update(
+    {
+        "text.usetex": False,
+        "font.family": "serif",
+        "font.serif": ["Computer Modern Roman", "Times New Roman"],
+        "mathtext.fontset": "cm",
+        "axes.labelsize": 11,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "legend.fontsize": 9,
+        "axes.linewidth": 0.8,
+    }
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INTERVALS_DIR = PROJECT_ROOT / "dns_data" / "intervals"
 
 
 def create_profile_sweep_plot(
-        sweep_tag: str,
-        varied_coeff_name: str,
-        fixed_coeff_val: float,
-        z_domain: tuple[float, float] = (0.0, 2.0),
+    sweep_tag: str,
+    varied_coeff_name: str,
+    fixed_coeff_val: float,
+    z_domain: tuple[float, float] = (0.0, 2.0),
 ):
-    base_sweep_dir = PROJECT_ROOT / "solver_data" / "les_sweeps" / f"double_sweep_{sweep_tag}"
+    base_sweep_dir = (
+        PROJECT_ROOT / "solver_data" / "les_sweeps" / f"double_sweep_{sweep_tag}"
+    )
     if not base_sweep_dir.exists():
-        print(f"[Warning] Directory {base_sweep_dir} does not exist. Run simulations first.")
+        print(
+            f"[Warning] Directory {base_sweep_dir} does not exist. Run simulations first."
+        )
         return
 
     # Dynamically locate the time directory (e.g., t_308.0101_309.01)
@@ -84,7 +90,8 @@ def create_profile_sweep_plot(
 
         # Locate matching interval DNS reference file
         matching_dns = [
-            f for f in INTERVALS_DIR.glob("w_mean_*.npy")
+            f
+            for f in INTERVALS_DIR.glob("w_mean_*.npy")
             if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
         ]
         if not matching_dns:
@@ -95,13 +102,22 @@ def create_profile_sweep_plot(
 
         # Create figure matching publication layout (dual panels)
         fig, (ax1, ax2) = plt.subplots(
-            1, 2, figsize=(13, 5), dpi=300, constrained_layout=True, gridspec_kw={"width_ratios": [1.3, 1]}
+            1,
+            2,
+            figsize=(13, 5),
+            dpi=300,
+            constrained_layout=True,
+            gridspec_kw={"width_ratios": [1.3, 1]},
         )
 
         for ax in (ax1, ax2):
-            ax.axhline(0, color="black", linestyle="--", linewidth=0.5, alpha=0.4, zorder=1)
+            ax.axhline(
+                0, color="black", linestyle="--", linewidth=0.5, alpha=0.4, zorder=1
+            )
             ax.minorticks_on()
-            ax.tick_params(which="both", direction="in", top=True, right=True, length=4, width=0.8)
+            ax.tick_params(
+                which="both", direction="in", top=True, right=True, length=4, width=0.8
+            )
             ax.tick_params(which="minor", length=2, width=0.5)
 
         ax1.set_xlim(z_domain)
@@ -127,8 +143,9 @@ def create_profile_sweep_plot(
 
             dns_interp = np.interp(mesh_les, mesh_dns, mean_profile_dns)
             rel_err = (
-                              np.linalg.norm(les_mean - dns_interp) / (np.linalg.norm(dns_interp) + 1e-12)
-                      ) * 100.0
+                np.linalg.norm(les_mean - dns_interp)
+                / (np.linalg.norm(dns_interp) + 1e-12)
+            ) * 100.0
             l2_errors.append((var_val, rel_err))
 
             ax1.plot(
@@ -142,15 +159,24 @@ def create_profile_sweep_plot(
 
         other_coeff_name = "c_2" if varied_coeff_name == "c1" else "c_1"
         ax1.set_title(
-            r"(a) Mean Velocity Profile Sweep $\langle w \rangle$ " + f"(${other_coeff_name}={fixed_coeff_val}$)",
-            fontsize=11, pad=8, loc="left"
+            r"(a) Mean Velocity Profile Sweep $\langle w \rangle$ "
+            + f"(${other_coeff_name}={fixed_coeff_val}$)",
+            fontsize=11,
+            pad=8,
+            loc="left",
         )
         ax1.set_xlabel(r"Wall-normal coordinate $z$", fontsize=11)
         ax1.set_ylabel(r"$\langle w \rangle$", fontsize=11)
 
         y_min, y_max = ax1.get_ylim()
         ax1.set_ylim(y_min, y_max * 1.15)
-        ax1.legend(loc="upper right", frameon=True, edgecolor="none", facecolor="white", framealpha=0.9)
+        ax1.legend(
+            loc="upper right",
+            frameon=True,
+            edgecolor="none",
+            facecolor="white",
+            framealpha=0.9,
+        )
 
         # Attach Colorbar to Left Plot cleanly
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
@@ -162,7 +188,13 @@ def create_profile_sweep_plot(
         if l2_errors:
             coeffs_arr, errs_arr = zip(*l2_errors)
             ax2.plot(
-                coeffs_arr, errs_arr, color="#1b4965", marker="o", markersize=3, linewidth=1.4, linestyle="-"
+                coeffs_arr,
+                errs_arr,
+                color="#1b4965",
+                marker="o",
+                markersize=3,
+                linewidth=1.4,
+                linestyle="-",
             )
 
             # Highlight Optimal Point
@@ -175,7 +207,7 @@ def create_profile_sweep_plot(
                 markersize=7,
                 linestyle="",
                 label=f"Optimal ({coeffs_arr[min_idx]:.2f}): {errs_arr[min_idx]:.1f}%",
-                zorder=4
+                zorder=4,
             )
 
             # Highlight Baseline (Coefficient = 1.0) if present in sweep range
@@ -199,7 +231,7 @@ def create_profile_sweep_plot(
                     markersize=6,
                     linestyle="",
                     zorder=4,
-                    label=f"Baseline (1.0): {base_err:.1f}%"
+                    label=f"Baseline (1.0): {base_err:.1f}%",
                 )
 
             ax2.set_xlim(varied_coeffs.min() - 0.2, varied_coeffs.max() + 0.2)
@@ -209,14 +241,22 @@ def create_profile_sweep_plot(
             padding = (err_max - err_min) * 0.15 if err_max != err_min else 2.0
             ax2.set_ylim(max(0, err_min - padding), err_max + padding)
 
-        ax2.set_title(r"(b) Relative Error vs. Coefficient", fontsize=11, pad=8, loc="left")
+        ax2.set_title(
+            r"(b) Relative Error vs. Coefficient", fontsize=11, pad=8, loc="left"
+        )
         ax2.set_xlabel(f"Coefficient ${varied_coeff_name}$", fontsize=11)
         ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=11)
 
-        ax2.legend(loc="upper right", frameon=True, edgecolor="none", facecolor="white", framealpha=0.9)
+        ax2.legend(
+            loc="upper right",
+            frameon=True,
+            edgecolor="none",
+            facecolor="white",
+            framealpha=0.9,
+        )
 
         # Save figure cleanly
-        output_plot_path = output_dir / f"profile_sweep_{sweep_tag}_{t_end:.2f}.png"
+        output_plot_path = output_dir / f"profile_sweep_{t_start}_{t_end:.2f}.png"
         plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
         print(f"[Saved] {output_plot_path.name}")

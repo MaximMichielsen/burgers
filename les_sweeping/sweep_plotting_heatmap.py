@@ -6,17 +6,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- Publication-Quality Global Settings ---
-plt.rcParams.update({
-    "text.usetex": False,
-    "font.family": "serif",
-    "font.serif": ["Computer Modern Roman", "Times New Roman"],
-    "mathtext.fontset": "cm",
-    "axes.labelsize": 11,
-    "xtick.labelsize": 10,
-    "ytick.labelsize": 10,
-    "legend.fontsize": 9,
-    "axes.linewidth": 0.8,
-})
+plt.rcParams.update(
+    {
+        "text.usetex": False,
+        "font.family": "serif",
+        "font.serif": ["Computer Modern Roman", "Times New Roman"],
+        "mathtext.fontset": "cm",
+        "axes.labelsize": 11,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "legend.fontsize": 9,
+        "axes.linewidth": 0.8,
+    }
+)
 
 # Directory Setup matching single_sweep_2.py structure
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -26,7 +28,9 @@ base_sweep_dir = PROJECT_ROOT / "solver_data" / "les_sweeps" / "single_sweep"
 # Dynamically locate the time directory (e.g., t_308.0101_309.01)
 time_dirs = sorted(base_sweep_dir.glob("t_*"))
 if not time_dirs:
-    raise FileNotFoundError(f"No time interval directories found under {base_sweep_dir}")
+    raise FileNotFoundError(
+        f"No time interval directories found under {base_sweep_dir}"
+    )
 solver_data_dir = time_dirs[0]
 
 # Parse t_start and folder-level info from directory name safely
@@ -58,9 +62,9 @@ if len(coeffs) == 0:
 frame_files = {}
 for coeff in coeffs:
     profiles_dir = (
-            solver_data_dir
-            / f"les_n{n_nodes_les}_p{tau_params}_dt_{dt}_coeff_{coeff:.1f}"
-            / "mean_profiles"
+        solver_data_dir
+        / f"les_n{n_nodes_les}_p{tau_params}_dt_{dt}_coeff_{coeff:.1f}"
+        / "mean_profiles"
     )
     if profiles_dir.exists():
         for les_path in profiles_dir.glob("mean_w_*.npy"):
@@ -83,7 +87,8 @@ for filename in sorted(frame_files.keys()):
 
     # Locate matching interval DNS reference file
     matching_dns = [
-        f for f in INTERVALS_DIR.glob("w_mean_*.npy")
+        f
+        for f in INTERVALS_DIR.glob("w_mean_*.npy")
         if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
     ]
     if not matching_dns:
@@ -94,13 +99,20 @@ for filename in sorted(frame_files.keys()):
 
     # Create figure matching publication layout (no suptitle, clean dual panels)
     fig, (ax1, ax2) = plt.subplots(
-        1, 2, figsize=(13, 5), dpi=300, constrained_layout=True, gridspec_kw={"width_ratios": [1.3, 1]}
+        1,
+        2,
+        figsize=(13, 5),
+        dpi=300,
+        constrained_layout=True,
+        gridspec_kw={"width_ratios": [1.3, 1]},
     )
 
     for ax in (ax1, ax2):
         ax.axhline(0, color="black", linestyle="--", linewidth=0.5, alpha=0.4, zorder=1)
         ax.minorticks_on()
-        ax.tick_params(which="both", direction="in", top=True, right=True, length=4, width=0.8)
+        ax.tick_params(
+            which="both", direction="in", top=True, right=True, length=4, width=0.8
+        )
         ax.tick_params(which="minor", length=2, width=0.5)
 
     ax1.set_xlim(z_domain)
@@ -139,13 +151,24 @@ for filename in sorted(frame_files.keys()):
             zorder=3,
         )
 
-    ax1.set_title(r"(a) Mean Velocity Profile Sweep $\langle w \rangle$", fontsize=11, pad=8, loc="left")
+    ax1.set_title(
+        r"(a) Mean Velocity Profile Sweep $\langle w \rangle$",
+        fontsize=11,
+        pad=8,
+        loc="left",
+    )
     ax1.set_xlabel(r"Wall-normal coordinate $z$", fontsize=11)
     ax1.set_ylabel(r"$\langle w \rangle$", fontsize=11)
 
     y_min, y_max = ax1.get_ylim()
     ax1.set_ylim(y_min, y_max * 1.15)
-    ax1.legend(loc="upper right", frameon=True, edgecolor="none", facecolor="white", framealpha=0.9)
+    ax1.legend(
+        loc="upper right",
+        frameon=True,
+        edgecolor="none",
+        facecolor="white",
+        framealpha=0.9,
+    )
 
     # Attach Colorbar to Left Plot cleanly
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
@@ -157,7 +180,13 @@ for filename in sorted(frame_files.keys()):
     if l2_errors:
         coeffs_arr, errs_arr = zip(*l2_errors)
         ax2.plot(
-            coeffs_arr, errs_arr, color="#1b4965", marker="o", markersize=3, linewidth=1.4, linestyle="-"
+            coeffs_arr,
+            errs_arr,
+            color="#1b4965",
+            marker="o",
+            markersize=3,
+            linewidth=1.4,
+            linestyle="-",
         )
 
         # Highlight Optimal Point
@@ -170,7 +199,7 @@ for filename in sorted(frame_files.keys()):
             markersize=7,
             linestyle="",
             label=f"Optimal ({coeffs_arr[min_idx]:.1f}): {errs_arr[min_idx]:.1f}%",
-            zorder=4
+            zorder=4,
         )
 
         # Highlight Baseline (Coefficient = 1.0)
@@ -197,7 +226,7 @@ for filename in sorted(frame_files.keys()):
                 markersize=6,
                 zorder=4,
                 linestyle="",
-                label=f"Baseline (1.0): {base_err:.1f}%"
+                label=f"Baseline (1.0): {base_err:.1f}%",
             )
 
         ax2.set_xlim(coeffs.min() - 0.2, coeffs.max() + 0.2)
@@ -211,7 +240,13 @@ for filename in sorted(frame_files.keys()):
     ax2.set_xlabel("External Coefficient", fontsize=11)
     ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=11)
 
-    ax2.legend(loc="upper right", frameon=True, edgecolor="none", facecolor="white", framealpha=0.9)
+    ax2.legend(
+        loc="upper right",
+        frameon=True,
+        edgecolor="none",
+        facecolor="white",
+        framealpha=0.9,
+    )
 
     # Save figure cleanly
     output_plot_path = output_dir / f"profile_sweep_{t_start:.2f}_{t_end:.2f}.png"

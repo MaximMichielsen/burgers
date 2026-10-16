@@ -18,14 +18,14 @@ MEAN_PROFILE_DIR = PROJECT_ROOT / "dns_data" / "intervals"
 
 
 def run_offset_les_simulation(
-        external_coeff_val: float,
-        n_nodes_les: int = 17,
-        z_length: float = 2.0,
-        dt: float = 1e-3,
-        t_start: float = 308.0101,
-        t_end: float = 309.01,
-        simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
-        tau_model: TauModel = TauModel.TWO_PARAMS,
+    external_coeff_val: float,
+    n_nodes_les: int = 17,
+    z_length: float = 2.0,
+    dt: float = 1e-3,
+    t_start: float = 308.0101,
+    t_end: float = 309.01,
+    simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
+    tau_model: TauModel = TauModel.TWO_PARAMS,
 ):
     external_coefficients = np.ones(tau_model.output_dimensions) * external_coeff_val
 
@@ -69,12 +69,12 @@ def run_offset_les_simulation(
     problem = replace(problem, initial_condition=reference_trajectory.initial_condition)
 
     master_path = (
-            PROJECT_ROOT
-            / "solver_data"
-            / "les_sweeps"
-            / "single_sweep"
-            / f"t_{t_start}_{t_end}"
-            / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}_dt_{dt}_coeff_{external_coeff_val:.1f}"
+        PROJECT_ROOT
+        / "solver_data"
+        / "les_sweeps"
+        / "single_sweep"
+        / f"t_{t_start}_{t_end}"
+        / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}_dt_{dt}_coeff_{external_coeff_val:.1f}"
     )
 
     solver_les = SolverBase(
@@ -96,7 +96,9 @@ def run_offset_les_simulation(
         t_start=t_start,
         z_domain=(0.0, z_length),
     )
-    print(f"[SUCCESS] Completed simulation and plotting for coefficient {external_coeff_val}")
+    print(
+        f"[SUCCESS] Completed simulation and plotting for coefficient {external_coeff_val}"
+    )
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import numpy as np
 
 from ml.ann_config import Scope
 from ml.reference_scheduler import ReferenceTrajectory
-from ml.td3 import TD3Trainer
+from ml.td3_training import TD3Trainer
 from proofing.action_based.config import ProofMode
 from proofing.contextual_bandit_reformulation.config import ANNBanditConfig
 from setup.config_discretization import DiscretizationConfig
@@ -85,19 +85,18 @@ base_intervals = [
     (314.01, 315.0),
 ]
 
-train_intervals, (t_start_test, t_end_test) = generate_training_and_testing_intervals(
+train_intervals, test_interval = generate_training_and_testing_intervals(
     base_intervals, max_duration=1.0
 )
 
-# Initial fallback training bounds for setup (overwritten stochastically per episode)
-t_start, t_end = train_intervals[0]
+t_start, t_end = train_intervals[0]  # fallback
 
 n_nodes_les = 17
 n_nodes_dns = 513
 z_length = 2.0
 dt = 1e-3
 
-n_episodes = 4
+n_episodes = 1
 proof_mode = ProofMode.a
 
 link = False
@@ -111,14 +110,13 @@ run_dir = (
     / "proof_experiments"
     / "stochastic_intervals"
     / sub_dir
-    / f"test_{t_start_test}_{t_end_test}"
+    / f"test_{test_interval[0]}_{test_interval[1]}"
     / f"proof_of_concept_{n_episodes}_{n_nodes_les}_{link}_{dt}"
 )
 
 run_dir.mkdir(parents=True, exist_ok=True)
 
 tau_model = TauModel.TWO_PARAMS
-timespan = t_end - t_start
 
 ann_path = run_dir / "ann_model.pt"
 target_profile_dir = PROJECT_ROOT / "dns_data" / "intervals"
@@ -140,29 +138,11 @@ problem = Problem(
     t_start=t_start,
     t_end=t_end,
 )
-
-test_problem = Problem(
-    name="tcf_1d",
-    domain_length=z_length,
-    reynolds=100.0,
-    initial_condition=None,
-    forcing=forcing_projected,
-    forcing_times=times_forcing,
-    forcing_is_steady=False,
-    boundary_condition_type="fixed",
-    boundary_condition_value=0.0,
-    t_start=t_start_test,
-    t_end=t_end_test,
-)
-
 disc_config = DiscretizationConfig(
+    problem=problem,
     n_nodes_les=n_nodes_les,
     n_nodes_dns=n_nodes_dns,
-    temporal_refinement=1,
-    set_dt_les=dt,
-    domain_length=z_length,
-    t_start=t_start,
-    t_end=t_end,
+    dt_les=dt,
 )
 
 ann_config = ANNBanditConfig(
@@ -184,10 +164,6 @@ reference_trajectory = ReferenceTrajectory(
     projected_w_path=w_field_path,
     times_path=times_path,
     n_nodes_les=n_nodes_les,
-    t_start=t_start,
-    t_end=t_end,
-    t_start_test=t_start_test,
-    t_end_test=t_end_test,
 )
 
 trainer = TD3Trainer(
@@ -196,7 +172,7 @@ trainer = TD3Trainer(
     ann_config,
     master_path=run_dir,
     reference_trajectory=reference_trajectory,
-    test_problem=test_problem,
+    test_interval=test_interval,
     train_intervals=train_intervals,  # Passes the stochastic interval pool
 )
 

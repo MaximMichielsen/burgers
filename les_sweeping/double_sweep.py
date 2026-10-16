@@ -99,7 +99,9 @@ def run_offset_les_simulation(
         t_start=t_start,
         z_domain=(0.0, z_length),
     )
-    print(f"[SUCCESS] Completed simulation and plotting for c1 = {c1:.2f}, c2 = {c2:.2f}")
+    print(
+        f"[SUCCESS] Completed simulation and plotting for c1 = {c1:.2f}, c2 = {c2:.2f}"
+    )
 
 
 if __name__ == "__main__":

@@ -15,63 +15,35 @@ class ReferenceTrajectory:
         projected_w_path: Path,
         times_path: Path,
         n_nodes_les: int,
-        t_start: float,
-        t_end: float,
-        t_start_test: float | None = None,
-        t_end_test: float | None = None,
-        test_mode: bool = False,
     ) -> None:
 
         self.target_mean_profile_dir = Path(mean_target_profile_dir)
         self.projected_w_path = Path(projected_w_path)
+        self.w_field_times_path = Path(times_path)
         self.n_les_nodes = n_nodes_les
-        self.t_start = t_start
-        self.t_end = t_end
 
-        self.t_start_test = t_start_test
-        self.t_end_test = t_end_test
+        self.t_start: float | None = None
+        self.t_end: float | None = None
+        self.t_start_test: float | None = None
+        self.t_end_test: float | None = None
 
-        self.mean_w_path = (
-            self.target_mean_profile_dir / f"w_mean_{self.t_start}_{self.t_end}.npy"
-        )
-        self.reynolds_path = (
-            self.target_mean_profile_dir / f"ww_{self.t_start}_{self.t_end}.npy"
-        )
-        self.w_field_times_path = times_path
-
-        self._test_mode = test_mode
-
+        self._is_test_mode: bool = False
         self._start_idx: int = 0
         self._train_start_idx: int = 0
-        self._start_test_idx: int = 0
+        self._test_start_idx: int = 0
         self._current_step_idx: int = 0
+
         self._target_profile: NDArray | None = None
         self._reynolds_profile: NDArray | None = None
+        self._raw_target_profile: NDArray | None = None
+        self._raw_reynolds_profile: NDArray | None = None
         self._projected_w_data: NDArray | None = None
 
         self.load_data()
 
-    @property
-    def test_mode(self) -> bool:
-        return self._test_mode
-
-    @test_mode.setter
-    def test_mode(self, value: bool) -> None:
-        self._test_mode = value
-        if self._test_mode:
-            self._start_idx = self._start_test_idx
-        else:
-            self._start_idx = self._train_start_idx
-        # Reload profiles when switching modes to use test intervals if applicable
-        self._load_profiles()
-
-    def _load_profiles(self) -> None:
+    def _load_profiles(self, is_test: bool) -> None:
         """Helper to load correct mean and Reynolds profiles depending on training vs testing mode."""
-        if (
-            self._test_mode
-            and self.t_start_test is not None
-            and self.t_end_test is not None
-        ):
+        if is_test and self.t_start_test is not None and self.t_end_test is not None:
             mean_w_path = (
                 self.target_mean_profile_dir
                 / f"w_mean_{self.t_start_test}_{self.t_end_test}.npy"
@@ -80,13 +52,15 @@ class ReferenceTrajectory:
                 self.target_mean_profile_dir
                 / f"ww_{self.t_start_test}_{self.t_end_test}.npy"
             )
-        else:
+        elif not is_test and self.t_start is not None and self.t_end is not None:
             mean_w_path = (
                 self.target_mean_profile_dir / f"w_mean_{self.t_start}_{self.t_end}.npy"
             )
             reynolds_path = (
                 self.target_mean_profile_dir / f"ww_{self.t_start}_{self.t_end}.npy"
             )
+        else:
+            raise RuntimeError("Training or testing intervals are not properly set.")
 
         if not mean_w_path.exists():
             raise FileNotFoundError(f"Target profile missing at {mean_w_path}")
@@ -102,26 +76,47 @@ class ReferenceTrajectory:
             les_grid = np.linspace(0.0, 1.0, self.n_les_nodes)
             self._target_profile = np.interp(les_grid, dns_grid, raw_target_profile)
             self._reynolds_profile = np.interp(les_grid, dns_grid, raw_reynolds_profile)
+            self._raw_target_profile = raw_target_profile
+            self._raw_reynolds_profile = raw_reynolds_profile
         else:
             self._target_profile = raw_target_profile
             self._reynolds_profile = raw_reynolds_profile
 
     def load_data(self) -> None:
-        """Loads reference datasets into memory and project target profile if needed."""
+        """Loads reference datasets into memory and validates dimensions."""
         if not self.projected_w_path.exists():
             raise FileNotFoundError(
                 f"Projected w field missing at {self.projected_w_path}"
             )
-
-        # Load appropriate profiles initially
-        self._load_profiles()
 
         # Time-resolved projected field (Memory-mapped query interface)
         self._projected_w_data = np.load(self.projected_w_path, mmap_mode="r").astype(
             np.float64
         )
 
-        # Shape validation
+        snapshot_times = np.load(self.w_field_times_path)
+        if len(snapshot_times) != len(self._projected_w_data):
+            raise ValueError(
+                f"Times ({len(snapshot_times)}) and projected w "
+                f"({len(self._projected_w_data)}) have different lengths."
+            )
+
+        # Load initial profiles if training intervals are provided at init
+        if self.t_start is not None and self.t_end is not None:
+            self._load_profiles(is_test=False)
+            self._train_start_idx = int(
+                np.argmin(np.abs(snapshot_times - self.t_start))
+            )
+
+            max_offset = np.median(np.diff(snapshot_times))
+            if abs(snapshot_times[self._train_start_idx] - self.t_start) > max_offset:
+                raise ValueError(
+                    f"t_start={self.t_start} is not covered by the projected field "
+                    f"(range {snapshot_times[0]} to {snapshot_times[-1]})."
+                )
+            self._start_idx = self._train_start_idx
+
+        # Shape validation if target profile is already loaded
         if (
             self._target_profile is not None
             and self._target_profile.shape[-1] != self.n_les_nodes
@@ -131,50 +126,31 @@ class ReferenceTrajectory:
                 f"mismatches LES grid ({self.n_les_nodes})."
             )
 
-        snapshot_times = np.load(self.w_field_times_path)
-        if len(snapshot_times) != len(self._projected_w_data):
-            raise ValueError(
-                f"Times ({len(snapshot_times)}) and projected w "
-                f"({len(self._projected_w_data)}) have different lengths."
-            )
-
-        self._train_start_idx = int(np.argmin(np.abs(snapshot_times - self.t_start)))
-        if self.t_start_test is not None:
-            self._start_test_idx = int(
-                np.argmin(np.abs(snapshot_times - self.t_start_test))
-            )
-
-        max_offset = np.median(np.diff(snapshot_times))
-        if abs(snapshot_times[self._train_start_idx] - self.t_start) > max_offset:
-            raise ValueError(
-                f"t_start={self.t_start} is not covered by the projected field "
-                f"(range {snapshot_times[0]} to {snapshot_times[-1]})."
-            )
-        if (
-            self.t_start_test is not None
-            and abs(snapshot_times[self._start_test_idx] - self.t_start_test)
-            > max_offset
-        ):
-            raise ValueError(
-                f"t_start_test={self.t_start_test} is not covered by the projected field "
-                f"(range {snapshot_times[0]} to {snapshot_times[-1]})."
-            )
-
-        self._start_idx = (
-            self._start_test_idx if self._test_mode else self._train_start_idx
-        )
-
     def set_active_training_interval(self, t_start: float, t_end: float) -> None:
         """Dynamically updates the training interval and reloads corresponding profiles and indices."""
         self.t_start = t_start
         self.t_end = t_end
-        if not self._test_mode:
-            self._load_profiles()
-            snapshot_times = np.load(self.w_field_times_path)
-            self._train_start_idx = int(
-                np.argmin(np.abs(snapshot_times - self.t_start))
-            )
-            self._start_idx = self._train_start_idx
+        self._is_test_mode = False
+
+        self._load_profiles(is_test=False)
+
+        snapshot_times = np.load(self.w_field_times_path)
+        self._train_start_idx = int(np.argmin(np.abs(snapshot_times - self.t_start)))
+        self._start_idx = self._train_start_idx
+
+    def set_testing_interval(self, t_start: float, t_end: float) -> None:
+        """Dynamically updates the testing interval and reloads corresponding profiles and indices."""
+        self.t_start_test = t_start
+        self.t_end_test = t_end
+        self._is_test_mode = True
+
+        self._load_profiles(is_test=True)
+
+        snapshot_times = np.load(self.w_field_times_path)
+        self._test_start_idx = int(
+            np.argmin(np.abs(snapshot_times - self.t_start_test))
+        )
+        self._start_idx = self._test_start_idx
 
     def query(self, step_idx: int) -> NDArray:
         """Query projected solution field at a specific timestep index."""
@@ -186,7 +162,7 @@ class ReferenceTrajectory:
         return np.asarray(self._projected_w_data[safe_idx], dtype=np.float64)
 
     def reset(self) -> None:
-        """Reset episode index to start index."""
+        """Reset episode index to start index (based on active train/test mode)."""
         self._current_step_idx = self._start_idx
 
     def set_step_index(self, step_idx: int) -> None:
