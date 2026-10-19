@@ -319,7 +319,7 @@ class SolverCoupled(SolverBase):
         history_time = self.time_steps[:n_steps]
 
         if self.ann_config.output_scope == Scope.GLOBAL:
-            history_coeffs = raw_history.reshape(n_steps, 1, n_coeffs)
+            history_coeffs = self.correction_coefficients_history
 
         elif self.ann_config.output_scope == Scope.HYBRID:
             n_local = self.ann_config.n_local_action_groups  # e.g., 4
@@ -481,190 +481,107 @@ class SolverCoupled(SolverBase):
             plt.close(fig)
 
     def plot_correction_coefficients_evolution(
-        self,
-        history_time: NDArray,
-        history_coefficients: NDArray,
-        style: str = "lines",
-        ma_window: int = 50,
-        heatmap_bins: int = 500,
-        show_plot: bool = False,
+            self,
+            history_time: NDArray,
+            history_coefficients: NDArray,
+            style: str = "lines",
+            ma_window: int = 50,
+            heatmap_bins: int = 500,
+            show_plot: bool = False,
     ) -> None:
-        """Plots the temporal evolution of coefficients over time with boundary-aware smoothing."""
-        if style not in ("lines", "heatmap", "both"):
-            raise ValueError(
-                f"Invalid style: {style!r}. Choose 'lines', 'heatmap', or 'both'."
-            )
+        """Plots the temporal evolution of coefficients over time."""
+        history_coeffs_arr = np.asarray(history_coefficients)
 
-        n_steps, total_channels, n_coeffs = history_coefficients.shape
+        # If history_coeffs has extra dimensions (like groups/channels), take the mean or global part,
+        # or handle standard 2D shape (n_steps, n_coeffs).
+        if history_coeffs_arr.ndim == 3:
+            # If it has shape (n_steps, n_groups, n_coeffs), average or take the first group/global
+            # Here we take mean across spatial groups to get a single representative line per coefficient.
+            history_coeffs_arr = history_coeffs_arr.mean(axis=1)
+
+        n_steps, n_coeffs = history_coeffs_arr.shape
         param_names = ["Advection", "Viscosity", "Diffusion", "Time"][:n_coeffs]
 
-        # Resolve labels for line and heatmap plotting
-        if self.ann_config.output_scope == Scope.HYBRID:
-            group_labels = ["Global Base"] + [
-                f"Group {g}" for g in range(total_channels - 1)
-            ]
-        else:
-            group_labels = [f"Group {g}" for g in range(total_channels)]
+        n_rows = 1 if n_coeffs <= 2 else 2
+        n_cols = min(n_coeffs, 2)
+        fig, axes = plt.subplots(
+            n_rows,
+            n_cols,
+            figsize=(5 * n_cols, 3.5 * n_rows),
+            sharex=True,
+            sharey=True,
+        )
+        axes_list = np.atleast_1d(axes).flatten()
 
-        styles_to_render = ["lines", "heatmap"] if style == "both" else [style]
+        for c_idx, name in enumerate(param_names):
+            if c_idx >= n_coeffs:
+                break
+            ax = axes_list[c_idx]
+            raw_signal = history_coeffs_arr[:, c_idx]
 
-        for current_style in styles_to_render:
-            if current_style == "lines":
-                n_rows = 1 if n_coeffs <= 2 else 2
-                n_cols = min(n_coeffs, 2)
-                fig, axes = plt.subplots(
-                    n_rows,
-                    n_cols,
-                    figsize=(5 * n_cols, 3.5 * n_rows),
-                    sharex=True,
-                    sharey=True,
+            # 1. Plot raw signal transparently in background
+            ax.plot(
+                history_time,
+                raw_signal,
+                linestyle="-",
+                color="tab:blue",
+                linewidth=0.8,
+                alpha=0.25,
+                zorder=2,
+            )
+
+            # 2. Compute boundary-safe moving average
+            if ma_window > 1 and len(raw_signal) >= ma_window:
+                smoothed_signal = uniform_filter1d(
+                    raw_signal, size=ma_window, mode="nearest"
                 )
-                axes_list = np.atleast_1d(axes).flatten()
-
-                for c_idx, name in enumerate(param_names):
-                    ax = axes_list[c_idx]
-                    for ch in range(total_channels):
-                        is_global = (
-                            self.ann_config.output_scope == Scope.HYBRID and ch == 0
-                        )
-                        raw_signal = history_coefficients[:, ch, c_idx]
-
-                        # 1. Plot raw signal transparently in background
-                        line_raw = ax.plot(
-                            history_time,
-                            raw_signal,
-                            linestyle="--" if is_global else "-",
-                            color="black" if is_global else None,
-                            linewidth=0.8,
-                            alpha=0.25,
-                            zorder=2,
-                        )
-
-                        # 2. Compute boundary-safe moving average (mode='nearest' prevents 0-dips)
-                        if ma_window > 1 and len(raw_signal) >= ma_window:
-                            smoothed_signal = uniform_filter1d(
-                                raw_signal, size=ma_window, mode="nearest"
-                            )
-                            line_color = line_raw[0].get_color()
-
-                            ax.plot(
-                                history_time,
-                                smoothed_signal,
-                                label=f"{group_labels[ch]} (MA)"
-                                if c_idx == 0
-                                else None,
-                                linestyle="--" if is_global else "-",
-                                color=line_color,
-                                linewidth=2.2 if is_global else 1.8,
-                                zorder=5 if is_global else 3,
-                            )
-                        else:
-                            line_raw[0].set_alpha(1.0)
-                            line_raw[0].set_label(group_labels[ch])
-
-                    ax.set_title(name, fontsize=11, fontweight="bold")
-                    ax.set_ylabel("Coefficient Value")
-                    ax.grid(True, linestyle=":", alpha=0.6)
-                    if c_idx == 0:
-                        ax.legend(loc="best", frameon=True)
-
-                for ax in axes_list[-n_cols:]:
-                    ax.set_xlabel("Time (t)")
-
-                fig.suptitle(
-                    f"Temporal Evolution of Corrections ({self.ann_config.output_scope.value})",
-                    fontsize=13,
-                    fontweight="bold",
+                ax.plot(
+                    history_time,
+                    smoothed_signal,
+                    label=f"{name} (MA)",
+                    linestyle="-",
+                    color="tab:blue",
+                    linewidth=2.0,
+                    zorder=3,
                 )
-                fig.tight_layout(rect=[0, 0, 1, 0.95])
-
-            elif current_style == "heatmap":
-                n_rows = 1 if n_coeffs <= 2 else 2
-                n_cols = min(n_coeffs, 2)
-                fig, axes = plt.subplots(
-                    n_rows,
-                    n_cols,
-                    figsize=(5 * n_cols, 3.8 * n_rows),
-                    sharex=True,
-                    sharey=True,
-                    layout="constrained",
-                )
-                axes_list = np.atleast_1d(axes).flatten()
-
-                for c_idx, name in enumerate(param_names):
-                    ax = axes_list[c_idx]
-                    raw_data = history_coefficients[:, :, c_idx].T  # (channels, steps)
-
-                    # 3. Downsample dense time dimension into temporal bins using average pooling
-                    if n_steps > heatmap_bins:
-                        bin_size = n_steps // heatmap_bins
-                        trimmed_steps = bin_size * heatmap_bins
-                        data_reshaped = raw_data[:, :trimmed_steps].reshape(
-                            total_channels, heatmap_bins, bin_size
-                        )
-                        binned_data = data_reshaped.mean(axis=2)
-                    else:
-                        binned_data = raw_data
-
-                    # 4. Apply 1D temporal Gaussian smoothing across time axis
-                    smoothed_heatmap = gaussian_filter1d(
-                        binned_data, sigma=1.5, axis=1, mode="nearest"
-                    )
-
-                    im = ax.imshow(
-                        smoothed_heatmap,
-                        aspect="auto",
-                        origin="lower",
-                        extent=[
-                            history_time[0],
-                            history_time[-1],
-                            -0.5,
-                            total_channels - 0.5,
-                        ],
-                        cmap="magma",
-                        interpolation="none",  # Clean pixel rendering post-downsampling
-                        vmin=self.ann_config.min_action,
-                        vmax=self.ann_config.max_action,
-                    )
-                    ax.set_title(name, fontsize=11, fontweight="bold")
-                    ax.set_yticks(range(total_channels))
-                    ax.set_yticklabels(group_labels)
-
-                    for g_line in range(total_channels - 1):
-                        line_color = (
-                            "cyan"
-                            if (
-                                self.ann_config.output_scope == Scope.HYBRID
-                                and g_line == 0
-                            )
-                            else "white"
-                        )
-                        ax.axhline(
-                            g_line + 0.5, color=line_color, linewidth=1.5, alpha=0.9
-                        )
-
-                for ax in axes_list[-n_cols:]:
-                    ax.set_xlabel("Time (t)")
-
-                fig.colorbar(
-                    im,
-                    ax=axes_list.tolist(),
-                    orientation="vertical",
-                    label="Coefficient Value",
-                    shrink=0.85,
-                )
-                fig.suptitle(
-                    f"Spatio-Temporal Maps of Corrections ({self.ann_config.output_scope.value})",
-                    fontsize=13,
-                    fontweight="bold",
-                )
-
-            filename = f"post_plotting_{self.ann_config.output_scope.value}_corrections_{current_style}.png"
-            save_path = self.master_path / filename
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
-            print(f"  * Saved evolution plot ({current_style:<7s}) -> {filename}")
-
-            if show_plot:
-                plt.show()
             else:
-                plt.close(fig)
+                ax.plot(
+                    history_time,
+                    raw_signal,
+                    label=name,
+                    linestyle="-",
+                    color="tab:blue",
+                    linewidth=2.0,
+                    zorder=3,
+                )
+
+            ax.set_title(name, fontsize=11, fontweight="bold")
+            ax.set_ylabel("Coefficient Value")
+            ax.grid(True, linestyle=":", alpha=0.6)
+            ax.legend(loc="best", frameon=True)
+
+        for ax in axes_list[-n_cols:]:
+            ax.set_xlabel("Time (t)")
+
+        fig.suptitle(
+            "Temporal Evolution of Correction Coefficients",
+            fontsize=13,
+            fontweight="bold",
+        )
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+        filename = f"post_plotting_{self.ann_config.output_scope.value}_corrections_evolution.png"
+        save_path = self.master_path / filename
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"  * Saved evolution plot -> {filename}")
+
+        correction_history_file = self.master_path / "correction_history.txt"
+
+        with open(correction_history_file, mode="w") as f:
+            for correction in self.correction_coefficients_history:
+                f.write(", ".join(map(str, correction)))
+
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)

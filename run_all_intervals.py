@@ -11,7 +11,7 @@ from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
 from utils.forcing_pathing import (
     get_forcing_path,
-    get_times_path,
+    get_forcing_times_path,
     get_velocity_profiles_path,
 )
 from utils.profile_plotting import plot_profile_comparisons
@@ -19,7 +19,7 @@ from utils.profile_plotting import plot_profile_comparisons
 PROJECT_ROOT = Path(__file__).resolve().parent
 MEAN_PROFILE_DIR = PROJECT_ROOT / "dns_data" / "intervals"
 
-n_nodes_les = 33
+n_nodes_les = 17
 n_nodes_dns = 513
 z_length = 2.0
 dt = 1e-3
@@ -29,14 +29,12 @@ tau_model = TauModel.TWO_PARAMS
 
 
 def discover_intervals(intervals_dir: Path) -> list[tuple[float, float]]:
-    """Dynamically discover t_start and t_end pairs from w_mean interval files[cite: 5]."""
+    """Dynamically discover t_start and t_end float pairs from interval files."""
     intervals = []
     for f in sorted(intervals_dir.glob("w_mean_*.npy")):
-        match = re.search(r"w_mean_(\d+\.\d+)_(\d+\.\d+)\.npy$", f.name)
+        match = re.search(r"w_mean_(.+?)_(.+?)\.npy$", f.name)
         if match:
-            t_start = float(match.group(1))
-            t_end = float(match.group(2))
-            intervals.append((t_start, t_end))
+            intervals.append((float(match.group(1)), float(match.group(2))))
     return intervals
 
 
@@ -45,7 +43,7 @@ if __name__ == "__main__":
 
     # Load shared forcing data once
     forcing_projected = np.load(get_forcing_path(PROJECT_ROOT, n_nodes_les, dt))
-    times_forcing = np.load(get_times_path(PROJECT_ROOT, dt))
+    times_forcing = np.load(get_forcing_times_path(PROJECT_ROOT, dt))
 
     # Target directory for centralizing profile comparison plots
     profiles_output_dir = PROJECT_ROOT / "solver_data" / "base_les" / "profiles"
@@ -83,17 +81,17 @@ if __name__ == "__main__":
         reference_trajectory = ReferenceTrajectory(
             mean_target_profile_dir=MEAN_PROFILE_DIR,
             projected_w_path=get_velocity_profiles_path(PROJECT_ROOT, n_nodes_les),
-            times_path=times_forcing,
+            times_path=r"C:\Users\poopy\PycharmProjects\burgers\dns_data\curated\dat\times.npy",
             n_nodes_les=n_nodes_les,
-            t_start=t_start,
-            t_end=t_end,
         )
+
+        # Pass floats safely for array subtraction in ReferenceTrajectory
+        reference_trajectory.set_active_training_interval(t_start, t_end)
 
         problem = replace(
             problem, initial_condition=reference_trajectory.initial_condition
         )
 
-        # Output structure matching the single LES run convention
         master_path = (
             PROJECT_ROOT
             / "solver_data"
@@ -110,11 +108,10 @@ if __name__ == "__main__":
             tau_model=tau_model,
         )
 
-        # Run simulation and post-processing
+        # Actually execute the solver simulation and post-processing
         solver_les.run_simulation()
         solver_les.post_plotting()
 
-        # Generate publication-quality combined profile comparison plot
         plot_profile_comparisons(
             intervals_dir=MEAN_PROFILE_DIR,
             les_base_dir=master_path,
@@ -122,7 +119,6 @@ if __name__ == "__main__":
             z_domain=(0.0, z_length),
         )
 
-        # Copy the generated comparison plot into the centralized profiles folder
         source_plot = (
             master_path
             / "combined_comparisons"

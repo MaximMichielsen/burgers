@@ -156,9 +156,11 @@ class TD3Trainer:
 
         self.baseline_w_l2_error: float = 0
         self.baseline_w_rms_error: float = 0
+        self.baseline_w_rel_error: float = 0
 
         self.baseline_reynolds_l2_error: float = 0
         self.baseline_reynolds_rms_error: float = 0
+        self.baseline_reynolds_rel_error: float = 0
 
         self.mean_actions: list[float] = []
         self.action_deviation_history = []
@@ -213,6 +215,7 @@ class TD3Trainer:
             )
 
         self.env = env
+        self.env.reset()
         agent = TD3Agent(ann_config=self.ann_config, hp=self.hp)
 
         replay_buffer = ReplayBuffer(
@@ -263,8 +266,10 @@ class TD3Trainer:
                 env.problem = self.problem
 
                 self.run_baseline_evaluation()
+
                 if isinstance(self.ann_config, ANNBanditConfig):
                     env.baseline_path = self.baseline_run_dir
+                    self.env.compute_baseline_reward(baseline_path=env.baseline_path)
 
                 self._log(
                     f"  [INTERVAL] Active Episode Interval: [{ep_t_start} - {ep_t_end}] (span: {ep_t_end - ep_t_start:.2f}s)"
@@ -457,6 +462,37 @@ class TD3Trainer:
         )
         return current_min, current_max
 
+    def _load_baseline_metrics(self) -> None:
+        """Helper to load baseline error metrics from cache files on cache hit or miss."""
+        if self.baseline_run_dir is None:
+            return
+        mean_profiles_dir = self.baseline_run_dir / "mean_profiles"
+        reynolds_profiles_dir = self.baseline_run_dir / "reynolds_profiles"
+        baseline_mean_file = mean_profiles_dir / f"mean_w_{self.problem.t_end}.npy"
+        baseline_ww_file = (
+            reynolds_profiles_dir / f"reynolds_stress_profile_{self.problem.t_end}.npy"
+        )
+
+        mesh_les = self.disc_config.mesh_les
+        mean_profile_dns = self.reference_trajectory.target_profile
+        reynolds_dns = self.reference_trajectory.reynolds_profile
+
+        if baseline_mean_file.exists():
+            baseline_mean = np.load(baseline_mean_file)
+            if mesh_les.shape == baseline_mean.shape:
+                l2, rms, rel = compute_error_metrics(baseline_mean, mean_profile_dns)
+                self.baseline_w_l2_error = l2
+                self.baseline_w_rms_error = rms
+                self.baseline_w_rel_error = rel
+
+        if baseline_ww_file.exists():
+            baseline_ww = np.load(baseline_ww_file)
+            if mesh_les.shape == baseline_ww.shape:
+                l2, rms, rel = compute_error_metrics(baseline_ww, reynolds_dns)
+                self.baseline_reynolds_l2_error = l2
+                self.baseline_reynolds_rms_error = rms
+                self.baseline_reynolds_rel_error = rel
+
     def run_baseline_evaluation(self) -> None:
         """Runs baseline evaluation with cache checking logic."""
         cache_key = self._build_les_cache_key()
@@ -474,6 +510,7 @@ class TD3Trainer:
                 }. Skipping simulation."
             )
             self.baseline_run_dir = cache_result.cache_dir
+            self._load_baseline_metrics()
             return
 
         target_cache_dir = self.baseline_dir / cache_key.dir_to_name()
@@ -516,10 +553,7 @@ class TD3Trainer:
             save_dir=target_cache_dir,
         )
 
-        self.baseline_w_l2_error = baseline_w_l2
-        self.baseline_w_rms_error = baseline_w_rms
-        self.baseline_reynolds_l2_error = baseline_reynolds_l2
-        self.baseline_reynolds_rms_error = baseline_reynolds_rms
+        self._load_baseline_metrics()
 
     def run_evaluation(self):
         self.solver = SolverCoupled(
@@ -555,10 +589,7 @@ class TD3Trainer:
             evaluation_mode=True,
         )
 
-        self.baseline_w_l2_error = baseline_w_l2
-        self.baseline_w_rms_error = baseline_w_rms
-        self.baseline_reynolds_l2_error = baseline_reynolds_l2
-        self.baseline_reynolds_rms_error = baseline_reynolds_rms
+        self._load_baseline_metrics()
 
     def run_testing(self) -> None:
         """Runs testing evaluation over the specified test interval using the trained model."""
@@ -605,6 +636,10 @@ class TD3Trainer:
             evaluation_mode=True,
             is_testing_plot=True,
         )
+
+        metadata_path = self.master_path / "metadata.txt"
+        with open(metadata_path, mode="w") as f:
+            f.write(f"Baseline cache key: {self.baseline_run_dir}")
 
     def plot_combined_profile_comparison(
         self,
@@ -689,9 +724,10 @@ class TD3Trainer:
             )
             ax.tick_params(which="minor", length=2, width=0.5)
 
-        # Professional Color Palette (Colorblind-safe & publication-refined)[cite: 5]
+        # Professional Color Palette (Colorblind-safe & publication-refined)
         color_dns_1, color_les_1 = "#1b4965", "#e76f51"  # Mean Profile
         color_dns_2, color_les_2 = "#2a9d8f", "#b7094c"  # Reynolds Stress
+        color_baseline = "#8b5cf6"  # Vibrant Purple (Standout Baseline)
 
         mesh_les = self.disc_config.mesh_les
 
@@ -744,6 +780,8 @@ class TD3Trainer:
             0.0,
             0.0,
         )
+        has_baseline_mean = False
+        has_baseline_ww = False
 
         if evaluation_mode and getattr(self, "baseline_run_dir", None) is not None:
             mean_profiles_dir = self.baseline_run_dir / "mean_profiles"
@@ -757,45 +795,45 @@ class TD3Trainer:
             if baseline_mean_file.exists():
                 baseline_mean = np.load(baseline_mean_file)
                 if mesh_les.shape == baseline_mean.shape:
-                    baseline_mean_l2, baseline_mean_rms, _ = compute_error_metrics(
-                        baseline_mean, mean_profile_dns
+                    baseline_mean_l2, baseline_mean_rms, baseline_mean_rel = (
+                        compute_error_metrics(baseline_mean, mean_profile_dns)
                     )
+                    has_baseline_mean = True
                     ax1.plot(
                         mesh_les,
                         baseline_mean,
-                        color="tab:green",
+                        color=color_baseline,
                         linestyle="--",
-                        linewidth=1.0,
-                        marker="x",
+                        linewidth=1.4,
+                        marker="^",
                         markevery=max(1, len(mesh_les) // 16),
-                        markersize=4,
+                        markersize=4.5,
                         markerfacecolor="white",
-                        markeredgewidth=1.2,
+                        markeredgewidth=1.1,
                         label=f"Baseline Model ({len(mesh_les)} pts)",
                         zorder=3,
-                        alpha=0.8,
                     )
 
             if baseline_ww_file.exists():
                 baseline_ww = np.load(baseline_ww_file)
                 if mesh_les.shape == baseline_ww.shape:
-                    baseline_ww_l2, baseline_ww_rms, _ = compute_error_metrics(
-                        baseline_ww, reynolds_dns
+                    baseline_ww_l2, baseline_ww_rms, baseline_ww_rel = (
+                        compute_error_metrics(baseline_ww, reynolds_dns)
                     )
+                    has_baseline_ww = True
                     ax2.plot(
                         mesh_les,
                         baseline_ww,
-                        color="blueviolet",
+                        color=color_baseline,
                         linestyle="--",
-                        linewidth=1.0,
-                        marker="x",
+                        linewidth=1.4,
+                        marker="^",
                         markevery=max(1, len(mesh_les) // 16),
-                        markersize=4,
+                        markersize=4.5,
                         markerfacecolor="white",
-                        markeredgewidth=1.2,
+                        markeredgewidth=1.1,
                         label=f"Baseline Model ({len(mesh_les)} pts)",
                         zorder=3,
-                        alpha=0.8,
                     )
 
         # --- Time Interval Label Integration ---
@@ -823,9 +861,14 @@ class TD3Trainer:
             framealpha=0.9,
         )
 
-        score_text1 = (
-            f"$L_2$: {mean_l2:.2e} | RMSE: {mean_rmse:.2e} | Rel. Err: {mean_rel:.1f}%"
-        )
+        if has_baseline_mean:
+            score_text1 = (
+                f"$L_2$: {mean_l2:.2e} | RMSE: {mean_rmse:.2e} | "
+                f"Rel. Err: {mean_rel:.1f}% (vs. baseline: {baseline_mean_rel:.1f}%)"
+            )
+        else:
+            score_text1 = f"$L_2$: {mean_l2:.2e} | RMSE: {mean_rmse:.2e} | Rel. Err: {mean_rel:.1f}%"
+
         ax1.text(
             0.5,
             0.03,
@@ -901,9 +944,16 @@ class TD3Trainer:
             framealpha=0.9,
         )
 
-        score_text2 = (
-            f"$L_2$: {ww_l2:.2e} | RMSE: {ww_rmse:.2e} | Rel. Err: {ww_rel:.1f}%"
-        )
+        if has_baseline_ww:
+            score_text2 = (
+                f"$L_2$: {ww_l2:.2e} | RMSE: {ww_rmse:.2e} | "
+                f"Rel. Err: {ww_rel:.1f}% (vs. baseline: {baseline_ww_rel:.1f}%)"
+            )
+        else:
+            score_text2 = (
+                f"$L_2$: {ww_l2:.2e} | RMSE: {ww_rmse:.2e} | Rel. Err: {ww_rel:.1f}%"
+            )
+
         ax2.text(
             0.5,
             0.03,
@@ -1213,6 +1263,8 @@ class TD3Trainer:
             f"[{self.ann_config.min_action}, {self.ann_config.max_action}]",
         )
         self.print_row("Training Episodes", self.ann_config.n_training_episodes)
+        self.print_row("N Agent Calls", self.env.solver.n_agent_calls)
+        self.print_row("Agent Interval", self.env.solver.agent_eval_interval)
         self.print_footer(w)
 
         if print_hyperparameters and hasattr(self, "hp"):
@@ -1438,7 +1490,7 @@ class TD3Trainer:
                     edgecolor="#1d3557",
                     linewidth=0.8,
                     zorder=3,
-                    label="Training Interval" if i == 0 else ""
+                    label="Training Interval" if i == 0 else "",
                 )
 
         # 2. Highlight the test interval using a shaded vertical span right where it belongs
@@ -1450,10 +1502,14 @@ class TD3Trainer:
                 color=test_color,
                 alpha=0.35,
                 zorder=2,
-                label="Test Interval"
+                label="Test Interval",
             )
-            ax.axvline(test_start, color=test_color, linestyle="--", linewidth=1.2, zorder=4)
-            ax.axvline(test_end, color=test_color, linestyle="--", linewidth=1.2, zorder=4)
+            ax.axvline(
+                test_start, color=test_color, linestyle="--", linewidth=1.2, zorder=4
+            )
+            ax.axvline(
+                test_end, color=test_color, linestyle="--", linewidth=1.2, zorder=4
+            )
 
         # Major ticks per 1 unit for both X (time) and Y (counts)
         ax.xaxis.set_major_locator(plt.MultipleLocator(1))
@@ -1473,7 +1529,13 @@ class TD3Trainer:
         # Grid lines explicitly on major ticks (per 1) for both axes
         ax.grid(True, which="major", linestyle=":", alpha=0.6, zorder=0)
 
-        ax.legend(loc="upper right", frameon=True, facecolor="white", framealpha=0.9, fontsize=9.5)
+        ax.legend(
+            loc="upper right",
+            frameon=True,
+            facecolor="white",
+            framealpha=0.9,
+            fontsize=9.5,
+        )
 
         # Save to master path
         plot_path = self.master_path / "interval_counts.png"

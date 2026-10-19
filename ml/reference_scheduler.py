@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from setup.constants import Z_LENGTH_DNS
+
 
 class ReferenceTrajectory:
     """Manages reference target profiles and projected snapshots for RL rewards."""
@@ -72,8 +74,8 @@ class ReferenceTrajectory:
 
         n_dns_nodes = raw_target_profile.shape[-1]
         if n_dns_nodes != self.n_les_nodes:
-            dns_grid = np.linspace(0.0, 1.0, n_dns_nodes)
-            les_grid = np.linspace(0.0, 1.0, self.n_les_nodes)
+            dns_grid = np.linspace(0.0, Z_LENGTH_DNS, n_dns_nodes)
+            les_grid = np.linspace(0.0, Z_LENGTH_DNS, self.n_les_nodes)
             self._target_profile = np.interp(les_grid, dns_grid, raw_target_profile)
             self._reynolds_profile = np.interp(les_grid, dns_grid, raw_reynolds_profile)
             self._raw_target_profile = raw_target_profile

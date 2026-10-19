@@ -26,12 +26,19 @@ def interval_mean(
     if start_index < 0:
         return cumulative[window_index].copy()
 
+    # Check for resets / sample drops strictly inside the window span
+    for i in range(max(1, start_index + 1), window_index + 1):
+        if counts[i] < counts[i - 1]:
+            if width > 1:
+                raise ValueError(
+                    f"Multi-step window [{start_index} -> {window_index}] spans across reset at index {i}. Skipping."
+                )
+
     n_end = counts[window_index]
     n_start = counts[start_index]
+
     if n_end <= n_start:
-        raise ValueError(
-            f"Sample count must increase: {n_start} -> {n_end} at window {window_index}"
-        )
+        return cumulative[window_index]
 
     weighted_diff = n_end * cumulative[window_index] - n_start * cumulative[start_index]
     return weighted_diff / (n_end - n_start)
@@ -62,13 +69,18 @@ def save_interval_profile(
     t_start: float,
     width: int = 1,
 ) -> Path:
-    """Save a window profile as <name>_<start>_<end>.npy supporting custom widths."""
+    """Save a window profile using standard Python float string conversion to match ReferenceTrajectory."""
     start_index = window_index - width
-    window_start = t_start if start_index < 0 else times[start_index]
-    window_end = times[window_index]
+
+    window_start = t_start if start_index < 0 else float(times[start_index])
+    window_end = float(times[window_index])
+
+    # Use standard str() conversion so it matches ReferenceTrajectory's naming (e.g., 315.0 instead of 315.00)
+    start_str = str(t_start) if start_index < 0 else str(window_start)
+    end_str = str(window_end)
 
     save_dir.mkdir(parents=True, exist_ok=True)
-    save_path = save_dir / f"{name}_{window_start}_{window_end}.npy"
+    save_path = save_dir / f"{name}_{start_str}_{end_str}.npy"
     np.save(save_path, profile)
     return save_path
 
@@ -88,29 +100,24 @@ if __name__ == "__main__":
     times = np.load(times_path)
 
     counts = np.array([9995, 19996, 10001, 20002, 30003, 40004, 49904])
-
-    windows = np.array([window for window in range(len(times))])
-    mask = windows != 2
-    windows_1s = windows[mask]
-
     T_START = T_ZERO
 
     # 1. Compute and save 1-second interval profiles (width = 1)
-    for k in windows_1s:
-        w_mean = interval_mean(w_cum, counts, k, width=1)
-        w_var = interval_variance(w_cum, ww_cum, counts, k, width=1)
+    for k in range(len(times)):
+        try:
+            w_mean = interval_mean(w_cum, counts, k, width=1)
+            w_var = interval_variance(w_cum, ww_cum, counts, k, width=1)
 
-        save_interval_profile(w_mean, "w_mean", times, k, save_dir, T_START, width=1)
-        save_interval_profile(w_var, "ww", times, k, save_dir, T_START, width=1)
+            save_interval_profile(
+                w_mean, "w_mean", times, k, save_dir, T_START, width=1
+            )
+            save_interval_profile(w_var, "ww", times, k, save_dir, T_START, width=1)
+        except ValueError as e:
+            print(f"Skipped 1s window {k}: {e}")
 
     # 2. Compute and save 2-second interval profiles (width = 2)
-    # A 2-second window ending at index k spans from k-2 to k.
-    # It is invalid only if it uses the bad 1-second sub-interval ending at index 2 (i.e., step from 1 to 2).
-    for k in range(2, len(times)):
-        # Check if either constituent 1-second step is the bad one (ending at index 2)
-        if k == 2 or k - 1 == 2:
-            continue
-
+    # Start at k = 1 so it captures the 308-310 window (start_index = -1 -> T_ZERO)
+    for k in range(1, len(times)):
         try:
             w_mean = interval_mean(w_cum, counts, k, width=2)
             w_var = interval_variance(w_cum, ww_cum, counts, k, width=2)
@@ -119,5 +126,5 @@ if __name__ == "__main__":
                 w_mean, "w_mean", times, k, save_dir, T_START, width=2
             )
             save_interval_profile(w_var, "ww", times, k, save_dir, T_START, width=2)
-        except ValueError:
-            pass
+        except ValueError as e:
+            print(f"Skipped 2s window {k}: {e}")

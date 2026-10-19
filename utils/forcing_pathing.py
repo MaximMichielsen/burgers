@@ -24,7 +24,7 @@ def get_forcing_path(project_root: Path, n_nodes_les: int, dt: float) -> Path:
     return forcing_path
 
 
-def get_times_path(project_root: Path, dt: float) -> Path:
+def get_forcing_times_path(project_root: Path, dt: float) -> Path:
     """Returns the correct times file path based on dt.
 
     - dt == 1e-4 uses the base projected directory.

@@ -9,7 +9,7 @@ from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
 from utils.forcing_pathing import (
     get_forcing_path,
-    get_times_path,
+    get_forcing_times_path,
     get_velocity_profiles_path,
 )
 from utils.profile_plotting import plot_profile_comparisons
@@ -30,7 +30,7 @@ tau_model = TauModel.TWO_PARAMS
 
 # Data loading logic from bandit training
 forcing_projected = np.load(get_forcing_path(PROJECT_ROOT, n_nodes_les, dt))
-times_forcing = np.load(get_times_path(PROJECT_ROOT, dt))
+times_forcing = np.load(get_forcing_times_path(PROJECT_ROOT, dt))
 
 problem = Problem(
     name="tcf_1d",

@@ -79,6 +79,7 @@ def generate_training_and_testing_intervals(
 base_intervals = [
     (308.0101, 309.01),
     (309.01, 310.01),
+    (310.01, 311.01),
     (311.01, 312.01),
     (312.01, 313.01),
     (313.01, 314.01),
@@ -95,8 +96,9 @@ n_nodes_les = 17
 n_nodes_dns = 513
 z_length = 2.0
 dt = 1e-3
+tau_model = TauModel.TWO_PARAMS
 
-n_episodes = 20
+n_episodes = 60
 proof_mode = ProofMode.a
 
 link = False
@@ -104,19 +106,16 @@ use_reynolds_signal = False
 
 sub_dir = "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
 
+
 run_dir = (
     CURRENT_DIR
     / "solver_data"
-    / "proof_experiments"
-    / "stochastic_intervals"
+    / "bandit"
+    / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}"
     / sub_dir
-    / f"test_{test_interval[0]}_{test_interval[1]}"
-    / f"proof_of_concept_{n_episodes}_{n_nodes_les}_{link}_{dt}"
 )
-
 run_dir.mkdir(parents=True, exist_ok=True)
 
-tau_model = TauModel.TWO_PARAMS
 
 ann_path = run_dir / "ann_model.pt"
 target_profile_dir = PROJECT_ROOT / "dns_data" / "intervals"
@@ -165,6 +164,7 @@ reference_trajectory = ReferenceTrajectory(
     times_path=times_path,
     n_nodes_les=n_nodes_les,
 )
+
 
 trainer = TD3Trainer(
     problem,

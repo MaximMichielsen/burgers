@@ -5,13 +5,14 @@ from proofing.contextual_bandit_reformulation.config import (
     TD3BanditHyperparameters,
 )
 
-BANDIT_MIN_ACTION = 0.9
-BANDIT_MAX_ACTION = 5.0
+BANDIT_MIN_ACTION = 0.5
+BANDIT_MAX_ACTION = 10
 
 
 @dataclass
 class ShortMDPConfig(ANNBanditConfig):
     agent_steps: int = 2
+    n_random_episodes = 5
 
     @property
     def n_agent_steps_per_episode(self) -> int:
@@ -21,4 +22,4 @@ class ShortMDPConfig(ANNBanditConfig):
 @dataclass
 class TD3ShortMDPHyperparameters(TD3BanditHyperparameters):
     discount = 0.9
-    updates_per_step: int = 50  # cheap compared with one LES run
+    updates_per_step: int = 20  # cheap compared with one LES run

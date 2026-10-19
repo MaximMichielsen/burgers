@@ -25,233 +25,246 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INTERVALS_DIR = PROJECT_ROOT / "dns_data" / "intervals"
 base_sweep_dir = PROJECT_ROOT / "solver_data" / "les_sweeps" / "single_sweep"
 
-# Dynamically locate the time directory (e.g., t_308.0101_309.01)
+# Dynamically locate all time directories (e.g., t_308.0101_309.01, etc.)
 time_dirs = sorted(base_sweep_dir.glob("t_*"))
 if not time_dirs:
     raise FileNotFoundError(
         f"No time interval directories found under {base_sweep_dir}"
     )
-solver_data_dir = time_dirs[0]
-
-# Parse t_start and folder-level info from directory name safely
-dir_match = re.search(r"t_(\d+\.\d+)_(\d+\.\d+)", solver_data_dir.name)
-if dir_match:
-    folder_t_start = float(dir_match.group(1))
-else:
-    folder_t_start = 308.0101  # fallback default
 
 n_nodes_les = 17
 tau_params = 2
 dt = 0.001
 z_domain = (0.0, 2.0)
 
-# Discover all available coefficient runs dynamically inside the time directory
-coeff_dirs = sorted(solver_data_dir.glob("les_n17_p2_dt_0.001_coeff_*"))
-coeffs = []
-for d in coeff_dirs:
-    match = re.search(r"coeff_(\d+\.\d+)$", d.name)
-    if match:
-        coeffs.append(float(match.group(1)))
-
-coeffs = np.array(sorted(coeffs))
-
-if len(coeffs) == 0:
-    raise ValueError(f"No coefficient directories found under {solver_data_dir}")
-
-# Map frames dynamically from output directories
-frame_files = {}
-for coeff in coeffs:
-    profiles_dir = (
-        solver_data_dir
-        / f"les_n{n_nodes_les}_p{tau_params}_dt_{dt}_coeff_{coeff:.1f}"
-        / "mean_profiles"
-    )
-    if profiles_dir.exists():
-        for les_path in profiles_dir.glob("mean_w_*.npy"):
-            frame_files.setdefault(les_path.name, {})[coeff] = les_path
-
 output_dir = base_sweep_dir / "coefficient_comparison_plots"
 output_dir.mkdir(parents=True, exist_ok=True)
 
-# Setup colormap normalized to the coefficient range
-norm = plt.Normalize(vmin=coeffs.min(), vmax=coeffs.max())
-cmap = cm.plasma
+# Loop through every time interval directory
+for solver_data_dir in time_dirs:
+    # Parse t_start and t_end from directory name safely
+    dir_match = re.search(r"t_(\d+\.\d+)_(\d+\.\d+)", solver_data_dir.name)
+    if dir_match:
+        folder_t_start = float(dir_match.group(1))
+        folder_t_end = float(dir_match.group(2))
+    else:
+        folder_t_start = 308.0101  # fallback default
+        folder_t_end = 309.01
 
-for filename in sorted(frame_files.keys()):
-    match = re.search(r"mean_w_(\d+\.\d+)\.npy$", filename)
-    if not match:
-        continue
+    # Discover all available coefficient runs dynamically inside the time directory
+    coeff_dirs = sorted(solver_data_dir.glob(f"les_n{n_nodes_les}_p2_dt_0.001_coeff_*"))
+    coeffs = []
+    for d in coeff_dirs:
+        match = re.search(r"coeff_(\d+\.\d+)$", d.name)
+        if match:
+            coeffs.append(float(match.group(1)))
 
-    t_start = folder_t_start
-    t_end = float(match.group(1))
+    coeffs = np.array(sorted(coeffs))
 
-    # Locate matching interval DNS reference file
-    matching_dns = [
-        f
-        for f in INTERVALS_DIR.glob("w_mean_*.npy")
-        if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
-    ]
-    if not matching_dns:
-        continue
-
-    mean_profile_dns = np.load(matching_dns[0])
-    mesh_dns = np.linspace(z_domain[0], z_domain[1], len(mean_profile_dns))
-
-    # Create figure matching publication layout (no suptitle, clean dual panels)
-    fig, (ax1, ax2) = plt.subplots(
-        1,
-        2,
-        figsize=(13, 5),
-        dpi=300,
-        constrained_layout=True,
-        gridspec_kw={"width_ratios": [1.3, 1]},
-    )
-
-    for ax in (ax1, ax2):
-        ax.axhline(0, color="black", linestyle="--", linewidth=0.5, alpha=0.4, zorder=1)
-        ax.minorticks_on()
-        ax.tick_params(
-            which="both", direction="in", top=True, right=True, length=4, width=0.8
+    if len(coeffs) == 0:
+        print(
+            f"[Warning] No coefficient directories found under {solver_data_dir.name}. Skipping."
         )
-        ax.tick_params(which="minor", length=2, width=0.5)
+        continue
 
-    ax1.set_xlim(z_domain)
-
-    # --- LEFT SUBPLOT: Profile Sweep with Colorbar ---
-    ax1.plot(
-        mesh_dns,
-        mean_profile_dns,
-        color="black",
-        linestyle="-",
-        linewidth=1.8,
-        label=r"DNS Reference ($\langle w \rangle$)",
-        zorder=5,
-    )
-
-    l2_errors = []
-
+    # Map frames dynamically from output directories
+    frame_files = {}
     for coeff in coeffs:
-        if coeff not in frame_files[filename]:
+        profiles_dir = (
+            solver_data_dir
+            / f"les_n{n_nodes_les}_p{tau_params}_dt_{dt}_coeff_{coeff:.1f}"
+            / "mean_profiles"
+        )
+        if profiles_dir.exists():
+            for les_path in profiles_dir.glob("mean_w_*.npy"):
+                frame_files.setdefault(les_path.name, {})[coeff] = les_path
+
+    # Setup colormap normalized to the coefficient range
+    norm = plt.Normalize(vmin=coeffs.min(), vmax=coeffs.max())
+    cmap = cm.plasma
+
+    for filename in sorted(frame_files.keys()):
+        match = re.search(r"mean_w_(\d+\.\d+)\.npy$", filename)
+        if not match:
             continue
-        les_mean = np.load(frame_files[filename][coeff])
-        mesh_les = np.linspace(z_domain[0], z_domain[1], len(les_mean))
 
-        dns_interp = np.interp(mesh_les, mesh_dns, mean_profile_dns)
-        rel_err = (
-            np.linalg.norm(les_mean - dns_interp) / (np.linalg.norm(dns_interp) + 1e-12)
-        ) * 100.0
-        l2_errors.append((coeff, rel_err))
+        t_start = folder_t_start
+        t_end = float(match.group(1))
 
+        # Directly target the exact interval DNS reference file using t_start and t_end
+        dns_mean_path = INTERVALS_DIR / f"w_mean_{t_start}_{t_end}.npy"
+        if not dns_mean_path.exists():
+            dns_mean_path = INTERVALS_DIR / f"w_mean_{t_start:.2f}_{t_end:.2f}.npy"
+
+        if not dns_mean_path.exists():
+            print(f"[Warning] Missing interval DNS reference for [{t_start}, {t_end}]")
+            continue
+
+        mean_profile_dns = np.load(dns_mean_path)
+        mesh_dns = np.linspace(z_domain[0], z_domain[1], len(mean_profile_dns))
+
+        # Create figure matching publication layout (no suptitle, clean dual panels)
+        fig, (ax1, ax2) = plt.subplots(
+            1,
+            2,
+            figsize=(13, 5),
+            dpi=300,
+            constrained_layout=True,
+            gridspec_kw={"width_ratios": [1.3, 1]},
+        )
+
+        for ax in (ax1, ax2):
+            ax.axhline(
+                0, color="black", linestyle="--", linewidth=0.5, alpha=0.4, zorder=1
+            )
+            ax.minorticks_on()
+            ax.tick_params(
+                which="both", direction="in", top=True, right=True, length=4, width=0.8
+            )
+            ax.tick_params(which="minor", length=2, width=0.5)
+
+        ax1.set_xlim(z_domain)
+
+        # --- LEFT SUBPLOT: Profile Sweep with Colorbar ---
         ax1.plot(
-            mesh_les,
-            les_mean,
-            color=cmap(norm(coeff)),
-            alpha=0.65,
-            linewidth=1.1,
-            zorder=3,
-        )
-
-    ax1.set_title(
-        r"(a) Mean Velocity Profile Sweep $\langle w \rangle$",
-        fontsize=11,
-        pad=8,
-        loc="left",
-    )
-    ax1.set_xlabel(r"Wall-normal coordinate $z$", fontsize=11)
-    ax1.set_ylabel(r"$\langle w \rangle$", fontsize=11)
-
-    y_min, y_max = ax1.get_ylim()
-    ax1.set_ylim(y_min, y_max * 1.15)
-    ax1.legend(
-        loc="upper right",
-        frameon=True,
-        edgecolor="none",
-        facecolor="white",
-        framealpha=0.9,
-    )
-
-    # Attach Colorbar to Left Plot cleanly
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax1, orientation="vertical", pad=0.03, shrink=0.85)
-    cbar.set_label("External Coefficient", fontsize=10)
-
-    # --- RIGHT SUBPLOT: Error vs. Correction Coefficient ---
-    if l2_errors:
-        coeffs_arr, errs_arr = zip(*l2_errors)
-        ax2.plot(
-            coeffs_arr,
-            errs_arr,
-            color="#1b4965",
-            marker="o",
-            markersize=3,
-            linewidth=1.4,
+            mesh_dns,
+            mean_profile_dns,
+            color="black",
             linestyle="-",
+            linewidth=1.8,
+            label=r"DNS Reference ($\langle w \rangle$)",
+            zorder=5,
         )
 
-        # Highlight Optimal Point
-        min_idx = np.argmin(errs_arr)
-        ax2.plot(
-            coeffs_arr[min_idx],
-            errs_arr[min_idx],
-            color="#b7094c",
-            marker="d",
-            markersize=7,
-            linestyle="",
-            label=f"Optimal ({coeffs_arr[min_idx]:.1f}): {errs_arr[min_idx]:.1f}%",
-            zorder=4,
-        )
+        l2_errors = []
 
-        # Highlight Baseline (Coefficient = 1.0)
-        if 1.0 in coeffs_arr:
-            base_idx = coeffs_arr.index(1.0)
-            base_err = errs_arr[base_idx]
+        for coeff in coeffs:
+            if coeff not in frame_files[filename]:
+                continue
+            les_mean = np.load(frame_files[filename][coeff])
+            mesh_les = np.linspace(z_domain[0], z_domain[1], len(les_mean))
 
-            # Draw subtle gray horizontal reference line across the right plot at baseline error level
-            ax2.axhline(
-                base_err,
-                color="gray",
-                linestyle=":",
+            dns_interp = np.interp(mesh_les, mesh_dns, mean_profile_dns)
+            rel_err = (
+                np.linalg.norm(les_mean - dns_interp)
+                / (np.linalg.norm(dns_interp) + 1e-12)
+            ) * 100.0
+            l2_errors.append((coeff, rel_err))
+
+            ax1.plot(
+                mesh_les,
+                les_mean,
+                color=cmap(norm(coeff)),
+                alpha=0.65,
                 linewidth=1.1,
-                alpha=0.8,
-                zorder=2,
+                zorder=3,
             )
 
-            # Highlight the point at coeff = 1.0 on the curve with a green square marker
+        ax1.set_title(
+            r"(a) Mean Velocity Profile Sweep $\langle w \rangle$",
+            fontsize=11,
+            pad=8,
+            loc="left",
+        )
+        ax1.set_xlabel(r"Wall-normal coordinate $z$", fontsize=11)
+        ax1.set_ylabel(r"$\langle w \rangle$", fontsize=11)
+
+        y_min, y_max = ax1.get_ylim()
+        ax1.set_ylim(y_min, y_max * 1.15)
+        ax1.legend(
+            loc="upper right",
+            frameon=True,
+            edgecolor="none",
+            facecolor="white",
+            framealpha=0.9,
+        )
+
+        # Attach Colorbar to Left Plot cleanly
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax1, orientation="vertical", pad=0.03, shrink=0.85)
+        cbar.set_label("External Coefficient", fontsize=10)
+
+        # --- RIGHT SUBPLOT: Error vs. Correction Coefficient ---
+        if l2_errors:
+            coeffs_arr, errs_arr = zip(*l2_errors)
             ax2.plot(
-                1.0,
-                base_err,
-                color="#2b9348",
-                marker="s",
-                markersize=6,
-                zorder=4,
-                linestyle="",
-                label=f"Baseline (1.0): {base_err:.1f}%",
+                coeffs_arr,
+                errs_arr,
+                color="#1b4965",
+                marker="o",
+                markersize=3,
+                linewidth=1.4,
+                linestyle="-",
             )
 
-        ax2.set_xlim(coeffs.min() - 0.2, coeffs.max() + 0.2)
+            # Highlight Optimal Point
+            min_idx = np.argmin(errs_arr)
+            ax2.plot(
+                coeffs_arr[min_idx],
+                errs_arr[min_idx],
+                color="#b7094c",
+                marker="d",
+                markersize=7,
+                linestyle="",
+                label=f"Optimal ({coeffs_arr[min_idx]:.1f}): {errs_arr[min_idx]:.1f}%",
+                zorder=4,
+            )
 
-        # --- Tighter Y-Axis Scaling ---
-        err_min, err_max = min(errs_arr), max(errs_arr)
-        padding = (err_max - err_min) * 0.15 if err_max != err_min else 2.0
-        ax2.set_ylim(max(0, err_min - padding), err_max + padding)
+            # Highlight Baseline (Coefficient = 1.0)
+            if 1.0 in coeffs_arr:
+                base_idx = coeffs_arr.index(1.0)
+                base_err = errs_arr[base_idx]
 
-    ax2.set_title(r"(b) Relative Error vs. Coefficient", fontsize=11, pad=8, loc="left")
-    ax2.set_xlabel("External Coefficient", fontsize=11)
-    ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=11)
+                # Draw subtle gray horizontal reference line across the right plot at baseline error level
+                ax2.axhline(
+                    base_err,
+                    color="gray",
+                    linestyle=":",
+                    linewidth=1.1,
+                    alpha=0.8,
+                    zorder=2,
+                )
 
-    ax2.legend(
-        loc="upper right",
-        frameon=True,
-        edgecolor="none",
-        facecolor="white",
-        framealpha=0.9,
-    )
+                # Highlight the point at coeff = 1.0 on the curve with a green square marker
+                ax2.plot(
+                    1.0,
+                    base_err,
+                    color="#2b9348",
+                    marker="s",
+                    markersize=6,
+                    zorder=4,
+                    linestyle="",
+                    label=f"Baseline (1.0): {base_err:.1f}%",
+                )
 
-    # Save figure cleanly
-    output_plot_path = output_dir / f"profile_sweep_{t_start:.2f}_{t_end:.2f}.png"
-    plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-    print(f"[Saved] {output_plot_path.name}")
+            ax2.set_xlim(coeffs.min() - 0.2, coeffs.max() + 0.2)
+
+            # --- Tighter Y-Axis Scaling ---
+            err_min, err_max = min(errs_arr), max(errs_arr)
+            padding = (err_max - err_min) * 0.15 if err_max != err_min else 2.0
+            ax2.set_ylim(max(0, err_min - padding), err_max + padding)
+
+        ax2.set_title(
+            r"(b) Relative Error vs. Coefficient", fontsize=11, pad=8, loc="left"
+        )
+        ax2.set_xlabel("External Coefficient", fontsize=11)
+        ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=11)
+
+        ax2.legend(
+            loc="upper right",
+            frameon=True,
+            edgecolor="none",
+            facecolor="white",
+            framealpha=0.9,
+        )
+
+        # Save figure cleanly
+        output_plot_path = (
+            output_dir / f"profile_sweep_n{n_nodes_les}_t_{t_start:.2f}_{t_end:.2f}.png"
+        )
+        plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        print(f"[Saved] {output_plot_path.name}")
 
 print(f"\n[SUCCESS] All sweep comparison plots saved to: {output_dir}")

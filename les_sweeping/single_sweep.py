@@ -4,11 +4,12 @@ import numpy as np
 
 from ml.reference_scheduler import ReferenceTrajectory
 from setup.config_discretization import DiscretizationConfig
+from setup.constants import Z_LENGTH_DNS
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
 from utils.forcing_pathing import (
     get_forcing_path,
-    get_times_path,
+    get_forcing_times_path,
     get_velocity_profiles_path,
 )
 from utils.profile_plotting import plot_profile_comparisons
@@ -19,11 +20,11 @@ MEAN_PROFILE_DIR = PROJECT_ROOT / "dns_data" / "intervals"
 
 def run_offset_les_simulation(
     external_coeff_val: float,
-    n_nodes_les: int = 17,
-    z_length: float = 2.0,
+    n_nodes_les: int,
+    z_length: float = Z_LENGTH_DNS,
     dt: float = 1e-3,
-    t_start: float = 308.0101,
-    t_end: float = 309.01,
+    t_start: float = 311.01,
+    t_end: float = 312.01,
     simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
     tau_model: TauModel = TauModel.TWO_PARAMS,
 ):
@@ -34,7 +35,7 @@ def run_offset_les_simulation(
         project_root=PROJECT_ROOT, n_nodes_les=n_nodes_les, dt=dt
     )
     forcing_projected = np.load(forcing_path)
-    times_forcing = np.load(get_times_path(PROJECT_ROOT, dt))
+    times_forcing = np.load(get_forcing_times_path(PROJECT_ROOT, dt))
 
     problem = Problem(
         name="tcf_1d",
@@ -53,7 +54,6 @@ def run_offset_les_simulation(
     disc_config = DiscretizationConfig(
         problem=problem,
         n_nodes_les=n_nodes_les,
-        n_nodes_dns=513,
         dt_les=dt,
     )
 
@@ -62,9 +62,9 @@ def run_offset_les_simulation(
         projected_w_path=get_velocity_profiles_path(PROJECT_ROOT, n_nodes_les),
         times_path=PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy",
         n_nodes_les=n_nodes_les,
-        t_start=t_start,
-        t_end=t_end,
     )
+
+    reference_trajectory.set_active_training_interval(t_start=t_start, t_end=t_end)
 
     problem = replace(problem, initial_condition=reference_trajectory.initial_condition)
 
@@ -102,10 +102,11 @@ def run_offset_les_simulation(
 
 
 if __name__ == "__main__":
-    coeffs = np.arange(0.9, 5.5, 0.1)
+    coeffs = np.arange(0.9, 3.05, 0.1)
+    n_nodes = 17
     print(f"\n--- Running Baseline offsets with coefficients: ---\n {coeffs}")
 
     for coeff in coeffs:
         coeff = round(coeff, 1)
         print(f"\n--- Running simulation with external coefficient = {coeff} ---")
-        run_offset_les_simulation(external_coeff_val=coeff)
+        run_offset_les_simulation(external_coeff_val=coeff, n_nodes_les=n_nodes)

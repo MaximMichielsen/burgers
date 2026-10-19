@@ -8,7 +8,7 @@ from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
 from utils.forcing_pathing import (
     get_forcing_path,
-    get_times_path,
+    get_forcing_times_path,
     get_velocity_profiles_path,
 )
 from utils.profile_plotting import plot_profile_comparisons
@@ -36,7 +36,7 @@ def run_offset_les_simulation(
         project_root=PROJECT_ROOT, n_nodes_les=n_nodes_les, dt=dt
     )
     forcing_projected = np.load(forcing_path)
-    times_forcing = np.load(get_times_path(PROJECT_ROOT, dt))
+    times_forcing = np.load(get_forcing_times_path(PROJECT_ROOT, dt))
 
     problem = Problem(
         name="tcf_1d",

@@ -4,6 +4,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from utils.diagnostics import compute_error_metrics
+
 # --- Publication-Quality Global Settings ---
 plt.rcParams.update(
     {
@@ -27,7 +29,7 @@ def plot_profile_comparisons(
     z_domain: tuple[float, float] = (0.0, 2.0),
 ) -> list[tuple[float, float, float, float, float]]:
     """Plot each LES mean profile and Reynolds stress profile side by side (1 row, 2 columns)
-    styled with a professional academic color palette and optimized layout.
+    styled identically to the TD3 training evaluation pipeline using the exact interval DNS files.
     """
     mean_profiles_dir = les_base_dir / "mean_profiles"
     reynolds_profiles_dir = les_base_dir / "reynolds_profiles"
@@ -58,52 +60,44 @@ def plot_profile_comparisons(
             if not les_reynolds_path.exists():
                 continue
 
-        matching_mean_dns = [
-            f
-            for f in intervals_dir.glob("w_mean_*.npy")
-            if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
-        ]
-        matching_ww_dns = [
-            f
-            for f in intervals_dir.glob("ww_*.npy")
-            if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
-        ]
+        # --- FIX: Directly target the exact interval DNS files using t_start and t_end ---
+        dns_mean_path = intervals_dir / f"w_mean_{t_start}_{t_end}.npy"
+        dns_ww_path = intervals_dir / f"ww_{t_start}_{t_end}.npy"
 
-        if not matching_mean_dns or not matching_ww_dns:
-            print(f"[Warning] Missing interval DNS references for t_end = {t_end}")
+        if not dns_mean_path.exists() or not dns_ww_path.exists():
+            # Fallback formatting check with explicit float precision
+            dns_mean_path = intervals_dir / f"w_mean_{t_start:.2f}_{t_end:.2f}.npy"
+            dns_ww_path = intervals_dir / f"ww_{t_start:.2f}_{t_end:.2f}.npy"
+
+        if not dns_mean_path.exists() or not dns_ww_path.exists():
+            print(f"[Warning] Missing interval DNS references for [{t_start}, {t_end}]")
             continue
 
-        dns_mean_path = matching_mean_dns[0]
-        dns_ww_path = matching_ww_dns[0]
-
-        mean_profile_dns = np.load(dns_mean_path)
-        reynolds_dns = np.load(dns_ww_path)
+        # Load raw high-resolution DNS profiles
+        raw_profile_dns = np.load(dns_mean_path)
+        raw_reynolds_dns = np.load(dns_ww_path)
 
         les_mean = np.load(les_mean_path)
         les_reynolds = np.load(les_reynolds_path)
 
-        mesh_dns_mean = np.linspace(z_domain[0], z_domain[1], len(mean_profile_dns))
-        mesh_les_mean = np.linspace(z_domain[0], z_domain[1], len(les_mean))
-        mesh_dns_ww = np.linspace(z_domain[0], z_domain[1], len(reynolds_dns))
-        mesh_les_ww = np.linspace(z_domain[0], z_domain[1], len(les_reynolds))
+        # Set up meshes matching discretization/reference trajectory
+        n_dns_nodes = len(raw_profile_dns)
+        n_les_nodes = len(les_mean)
 
-        # --- Error Metrics: Mean Profile ---
-        dns_mean_interp = np.interp(mesh_les_mean, mesh_dns_mean, mean_profile_dns)
-        mean_l2 = float(np.linalg.norm(les_mean - dns_mean_interp))
-        mean_rmse = float(np.sqrt(np.mean((les_mean - dns_mean_interp) ** 2)))
-        dns_mean_norm = np.linalg.norm(dns_mean_interp)
-        mean_rel = (mean_l2 / (dns_mean_norm + 1e-12)) * 100.0
+        mesh_dns = np.linspace(z_domain[0], z_domain[1], n_dns_nodes)
+        mesh_les = np.linspace(z_domain[0], z_domain[1], n_les_nodes)
 
-        # --- Error Metrics: Reynolds Stress Profile ---
-        dns_ww_interp = np.interp(mesh_les_ww, mesh_dns_ww, reynolds_dns)
-        ww_l2 = float(np.linalg.norm(les_reynolds - dns_ww_interp))
-        ww_rmse = float(np.sqrt(np.mean((les_reynolds - dns_ww_interp) ** 2)))
-        dns_ww_norm = np.linalg.norm(dns_ww_interp)
-        ww_rel = (ww_l2 / (dns_ww_norm + 1e-12)) * 100.0
+        # Interpolate / Project DNS reference onto the LES mesh (matching ReferenceTrajectory)
+        mean_profile_dns = np.interp(mesh_les, mesh_dns, raw_profile_dns)
+        reynolds_dns = np.interp(mesh_les, mesh_dns, raw_reynolds_dns)
+
+        # Compute error metrics using the exact utility function from training
+        mean_l2, mean_rmse, mean_rel = compute_error_metrics(les_mean, mean_profile_dns)
+        ww_l2, ww_rmse, ww_rel = compute_error_metrics(les_reynolds, reynolds_dns)
 
         results.append((t_end, mean_l2, mean_rel, ww_l2, ww_rel))
 
-        # --- Create Figure ---
+        # --- Create Figure (1 row, 2 columns layout) ---
         fig, (ax1, ax2) = plt.subplots(
             1, 2, figsize=(13, 5), dpi=300, constrained_layout=True
         )
@@ -120,51 +114,58 @@ def plot_profile_comparisons(
             ax.tick_params(which="minor", length=2, width=0.5)
 
         # Professional Color Palette (Colorblind-safe & publication-refined)
-        color_dns_1 = "#1b4965"  # Deep Academic Slate Blue
-        color_les_1 = "#e76f51"  # Rich Burnt Coral
-        color_dns_2 = "#2a9d8f"  # Muted Teal Green
-        color_les_2 = "#b7094c"  # Deep Crimson Red
+        color_dns_1, color_les_1 = "#1b4965", "#e76f51"  # Mean Profile
+        color_dns_2, color_les_2 = "#2a9d8f", "#b7094c"  # Reynolds Stress
 
-        # 1. Left Subplot: Mean Velocity Profile
+        # --- Left Subplot: Mean Velocity Profile ---
         ax1.plot(
-            mesh_dns_mean,
+            mesh_dns,
+            raw_profile_dns,
+            color="grey",
+            linestyle="-",
+            linewidth=1.0,
+            label=f"DNS ({n_dns_nodes} pts)",
+            zorder=2,
+            alpha=0.8,
+        )
+        ax1.plot(
+            mesh_les,
             mean_profile_dns,
             color=color_dns_1,
-            linestyle="-",
+            linestyle="--",
             linewidth=1.6,
-            label=r"DNS Reference ($\langle w \rangle$)",
+            marker="s",
+            markevery=max(1, len(mesh_les) // 16),
+            markersize=4.5,
+            markerfacecolor="white",
+            markeredgewidth=1.1,
+            label=f"Proj. DNS ({len(mesh_les)} pts)",
             zorder=2,
         )
         ax1.plot(
-            mesh_les_mean,
+            mesh_les,
             les_mean,
             color=color_les_1,
             linestyle="--",
             linewidth=1.3,
             marker="o",
-            markevery=max(1, len(mesh_les_mean) // 16),
+            markevery=max(1, len(mesh_les) // 16),
             markersize=4.5,
             markerfacecolor="white",
             markeredgewidth=1.1,
-            label=f"LES Model ({len(mesh_les_mean)} pts)",
+            label=f"LES Model ({len(mesh_les)} pts)",
             zorder=3,
         )
 
+        time_str = f"$t \\in [{t_start:.2f}, {t_end:.2f}]$"
         ax1.set_title(
-            r"(a) Mean Velocity Profile $\langle w \rangle$",
+            rf"(a) Mean Velocity Profile $\langle w \rangle$ | Baseline | {time_str}",
             fontsize=11,
             pad=8,
             loc="left",
         )
         ax1.set_xlabel(r"Wall-normal coordinate $z$", fontsize=11)
         ax1.set_ylabel(r"$\langle w \rangle$", fontsize=11)
-
-        # Give the y-axis a little breathing room at the top to prevent overlapping
-        y_min, y_max = ax1.get_ylim()
-        ax1.set_ylim(y_min, y_max * 1.15)
-
-        # Legend moved to lower-right or middle-right where whitespace often exists,
-        # or top-center. Let's use center-right or lower right if space permits.
         ax1.legend(
             loc="upper right",
             frameon=True,
@@ -173,7 +174,6 @@ def plot_profile_comparisons(
             framealpha=0.9,
         )
 
-        # Streamlined, clean metrics text box placed lower down where lines are flatter
         score_text1 = (
             f"$L_2$: {mean_l2:.2e} | RMSE: {mean_rmse:.2e} | Rel. Err: {mean_rel:.1f}%"
         )
@@ -194,43 +194,54 @@ def plot_profile_comparisons(
             zorder=5,
         )
 
-        # 2. Right Subplot: Reynolds Stress Profile
+        # --- Right Subplot: Reynolds Stress Profile ---
         ax2.plot(
-            mesh_dns_ww,
+            mesh_dns,
+            raw_reynolds_dns,
+            color="grey",
+            linestyle="-",
+            linewidth=1.0,
+            label=f"DNS ({n_dns_nodes} pts)",
+            zorder=2,
+            alpha=0.8,
+        )
+        ax2.plot(
+            mesh_les,
             reynolds_dns,
             color=color_dns_2,
-            linestyle="-",
+            linestyle="--",
             linewidth=1.6,
-            label=r"DNS Reference ($\langle w'w' \rangle$)",
+            marker="s",
+            markevery=max(1, len(mesh_les) // 16),
+            markersize=4.5,
+            markerfacecolor="white",
+            markeredgewidth=1.1,
+            label=f"Proj. DNS ({len(mesh_les)} pts)",
             zorder=2,
         )
         ax2.plot(
-            mesh_les_ww,
+            mesh_les,
             les_reynolds,
             color=color_les_2,
             linestyle="--",
             linewidth=1.3,
-            marker="s",
-            markevery=max(1, len(mesh_les_ww) // 16),
+            marker="o",
+            markevery=max(1, len(mesh_les) // 16),
             markersize=4.5,
             markerfacecolor="white",
             markeredgewidth=1.1,
-            label=f"LES Model ({len(mesh_les_ww)} pts)",
+            label=f"LES Model ({len(mesh_les)} pts)",
             zorder=3,
         )
 
         ax2.set_title(
-            r"(b) Reynolds Stress Profile $\langle w'w' \rangle$",
+            rf"(b) Reynolds Stress Profile $\langle w'w' \rangle$ | Baseline | {time_str}",
             fontsize=11,
             pad=8,
             loc="left",
         )
         ax2.set_xlabel(r"Wall-normal coordinate $z$", fontsize=11)
         ax2.set_ylabel(r"$\langle w'w' \rangle$", fontsize=11)
-
-        y_min2, y_max2 = ax2.get_ylim()
-        ax2.set_ylim(y_min2, y_max2 * 1.15)
-
         ax2.legend(
             loc="upper right",
             frameon=True,
