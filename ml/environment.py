@@ -74,6 +74,7 @@ class EnvironmentForcingDNS:
             master_path=self.master_path,
             simulation_mode=SimulationMode.TAU_BASED,
             tau_model=self.ann_config.tau_model,
+            baseline_mode=False,
         )
 
     def reset(self) -> NDArray:

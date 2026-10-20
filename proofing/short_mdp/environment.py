@@ -38,7 +38,9 @@ class EnvironmentShortMDP(EnvironmentForcingDNS):
         self.baseline_reward: float | None = None
         self.baseline_path = baseline_path
 
-    def step(self, action: NDArray) -> tuple[NDArray, float, bool, dict]:
+    def step(
+        self, action: NDArray, is_baseline_run: bool = False, agent_step_idx: int = 0
+    ) -> tuple[NDArray, float, bool, dict]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done, info)."""
         if self.solver is None:
             raise RuntimeError("Call reset() before step().")
@@ -61,7 +63,7 @@ class EnvironmentShortMDP(EnvironmentForcingDNS):
 
             self.reference_trajectory.set_step_index(self._total_les_steps)
 
-            reward_val = float(self.compute_reward(action))
+            reward_val = float(self.compute_reward(action, is_baseline_run, agent_step_idx))
 
             done_flag = (
                 self._total_les_steps >= self._max_les_steps
@@ -90,24 +92,20 @@ class EnvironmentShortMDP(EnvironmentForcingDNS):
             )
             return fallback_state, reward_val, done_flag, info
 
-    def compute_reward(self, action: NDArray) -> float:
+    def compute_reward(self, action: NDArray, is_baseline_run: bool, agent_step_idx: int) -> float:
         """Compute mean target deviation reward."""
         mean_solution = np.mean(self.solver.snapshots_solution, axis=0)
         penalty = self.compute_distance_error(
             field=mean_solution, target=self.reference_trajectory.target_profile
         )
-        if self.baseline_reward is None:
-            self.compute_baseline_reward(baseline_path=self.baseline_path)
+        if not is_baseline_run:
+            baseline_reward = self.compute_baseline_reward(baseline_path=self.baseline_path, agent_step=agent_step_idx)
+            normalized_penalty = baseline_reward - penalty
+            return normalized_penalty * 100
 
-        normalized_penalty = self.baseline_reward - penalty
-        return normalized_penalty * 100
+        return penalty
 
-    def compute_baseline_reward(self, baseline_path: Path) -> None:
+    def compute_baseline_reward(self, baseline_path: Path, agent_step: int) -> None:
         """Compute mean target deviation with baseline."""
-        mean_profile = np.load(
-            baseline_path / "mean_profiles" / f"mean_w_{self.problem.t_end}.npy"
-        )
-        penalty = self.compute_distance_error(
-            field=mean_profile, target=self.reference_trajectory.target_profile
-        )
-        self.baseline_reward = penalty
+        reward_history = np.load(baseline_path / "reward_history.npy")
+        return reward_history[agent_step]

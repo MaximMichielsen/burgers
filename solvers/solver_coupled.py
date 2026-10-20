@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
-from scipy.ndimage import gaussian_filter1d, uniform_filter1d
+from scipy.ndimage import uniform_filter1d
 
 from ml.ann import TauANN, load_tau_ann
 from ml.ann_config import TauANNConfig, Scope
@@ -38,6 +38,7 @@ class SolverCoupled(SolverBase):
         simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
         snapshot_factor: int = 1,
         prescribed_action_trajectory: list | None = None,
+        baseline_mode:bool = False,
     ):
         super().__init__(
             problem,
@@ -57,6 +58,10 @@ class SolverCoupled(SolverBase):
         self.tau_model = tau_model
         self.training_mode = ann_config.training_mode
         self.ann_config: TauANNConfig = ann_config
+        self.baseline_mode = baseline_mode
+
+        self.standalone = (not self.training_mode) or self.baseline_mode
+        self.uses_internal_ann = (not self.training_mode) and (not self.baseline_mode)
 
         self.smoothing_factor = ann_config.smoothing_factor
         self.mean_solution: NDArray | None = None
@@ -68,8 +73,6 @@ class SolverCoupled(SolverBase):
         self.correction_coefficients_history: list = []
 
         self.prescribed_action_trajectory = prescribed_action_trajectory
-
-        # Inside SolverCoupled.__init__
 
         if (
             hasattr(self.ann_config, "n_agent_steps_per_episode")
@@ -88,12 +91,17 @@ class SolverCoupled(SolverBase):
 
         # Load ANN only during inference/solver mode
         self.ann: TauANN | None = None
-        if not self.training_mode:
+        if self.uses_internal_ann:
             if ann_config.ann_path is None:
                 raise ValueError(
-                    "ann_path must be provided when training_mode is False."
+                    "ann_path must be provided when training_mode and baseline_mode are False."
                 )
             self.ann = load_tau_ann(ann_config.ann_path)
+
+        elif self.baseline_mode:
+            # Fixed unit coefficients so history/plots never see None.
+            # Assumes GLOBAL output scope (HYBRID would sum global + local = 2).
+            self.correction_coefficients = np.ones(self.ann_config.action_dimension)
 
         self._n_wavenumber_bins: int = (self.n_nodes + 1) // 2
 
@@ -106,7 +114,7 @@ class SolverCoupled(SolverBase):
             action = self.prescribed_action_trajectory[self.current_time_step]
             self.correction_coefficients = np.asarray(action, dtype=np.float64)
 
-        elif not self.training_mode:
+        elif self.uses_internal_ann:
             should_eval_ann = self.correction_coefficients is None or (
                 self.current_time_step % self.agent_eval_interval == 0
             )
@@ -129,14 +137,19 @@ class SolverCoupled(SolverBase):
         self.time_elapsed += self.dt
 
         # 2. Compute mean profile using populated snapshots
-        if not self.training_mode and int(self.time_elapsed) > int(self.prev_elapsed):
+        crossed_second = int(self.time_elapsed) > int(self.prev_elapsed)
+        reached_end = self.time_elapsed >= self.domain_timespan
+
+        if self.standalone and (crossed_second or reached_end):
             self.mean_solution = self.calculate_mean_profile()
+            self.reynolds_stress = self.compute_reynolds_stress()
             self.write_mean_solution_to_csv()
+            self.write_reynolds_profile()
 
         self.prev_elapsed = self.time_elapsed
         self.current_time_step += 1
 
-        if not self.training_mode and self.time_elapsed >= self.domain_timespan:
+        if self.standalone and reached_end:
             self.simulation_done = True
 
     def update_running_mean(self) -> None:
@@ -481,13 +494,13 @@ class SolverCoupled(SolverBase):
             plt.close(fig)
 
     def plot_correction_coefficients_evolution(
-            self,
-            history_time: NDArray,
-            history_coefficients: NDArray,
-            style: str = "lines",
-            ma_window: int = 50,
-            heatmap_bins: int = 500,
-            show_plot: bool = False,
+        self,
+        history_time: NDArray,
+        history_coefficients: NDArray,
+        style: str = "lines",
+        ma_window: int = 50,
+        heatmap_bins: int = 500,
+        show_plot: bool = False,
     ) -> None:
         """Plots the temporal evolution of coefficients over time."""
         history_coeffs_arr = np.asarray(history_coefficients)

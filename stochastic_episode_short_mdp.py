@@ -156,7 +156,7 @@ ann_config = ShortMDPConfig(
     training_mode=True,
     run_final_evaluation=False,
     n_skip_steps=1,
-    agent_steps=100,
+    agent_steps=2,
     link_coefficients=link,
     include_reynolds_stress_reward_signal=use_reynolds_signal,
 )

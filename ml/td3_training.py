@@ -1,4 +1,5 @@
 import random
+import stat
 import time
 from dataclasses import fields, replace
 from math import ceil
@@ -140,7 +141,7 @@ class TD3Trainer:
 
         self.solver: SolverCoupled | SolverBase | SolverForProofs | None = None
         self.env: (
-            EnvironmentForcingDNS | EnvironmentProof | EnvironmentBanditTraining | None
+            EnvironmentForcingDNS | EnvironmentProof | EnvironmentBanditTraining | EnvironmentShortMDP | None
         ) = None
 
         # File logging setup
@@ -267,10 +268,6 @@ class TD3Trainer:
 
                 self.run_baseline_evaluation()
 
-                if isinstance(self.ann_config, ANNBanditConfig):
-                    env.baseline_path = self.baseline_run_dir
-                    self.env.compute_baseline_reward(baseline_path=env.baseline_path)
-
                 self._log(
                     f"  [INTERVAL] Active Episode Interval: [{ep_t_start} - {ep_t_end}] (span: {ep_t_end - ep_t_start:.2f}s)"
                 )
@@ -323,7 +320,9 @@ class TD3Trainer:
                 actions.append(action)
                 try:
                     with np.errstate(over="raise", invalid="raise", divide="raise"):
-                        next_state, reward, done, info = env.step(action=action)
+                        next_state, reward, done, info = env.step(
+                            action=action, agent_step_idx=episode_steps - 1
+                        )
 
                     if hasattr(env, "solver") and not np.all(
                         np.isfinite(env.solver.solution)
@@ -499,17 +498,18 @@ class TD3Trainer:
         cache_result = resolve_les_baseline_cache(self.baseline_dir, cache_key)
 
         if (
-            cache_result.status == LESCacheStatus.HIT
-            and cache_result.cache_dir is not None
+                cache_result.status == LESCacheStatus.HIT
+                and cache_result.cache_dir is not None
         ):
             self._log(
                 f"[CACHE HIT] Found existing baseline run for time-span [{
-                    self.problem.t_start
+                self.problem.t_start
                 } - {self.problem.t_end}] at: {
-                    cache_result.cache_dir
+                cache_result.cache_dir
                 }. Skipping simulation."
             )
             self.baseline_run_dir = cache_result.cache_dir
+            _set_cache_writable(self.baseline_run_dir, False)
             self._load_baseline_metrics()
             return
 
@@ -517,32 +517,51 @@ class TD3Trainer:
         target_cache_dir.mkdir(parents=True, exist_ok=True)
         self._log(
             f"[CACHE MISS] Executing baseline run for time-span [{
-                self.problem.t_start
+            self.problem.t_start
             } - {self.problem.t_end}] and caching to: {target_cache_dir}"
         )
+        _set_cache_writable(target_cache_dir, True)
         self.baseline_run_dir = target_cache_dir
 
-        self.solver = SolverBase(
+        self.solver = SolverCoupled(
             problem=self.problem,
             disc_config=self.disc_config,
             master_path=target_cache_dir,
             tau_model=self.ann_config.tau_model,
             simulation_mode=SimulationMode.TAU_BASED,
+            ann_config=replace(self.ann_config, ann_path=None, training_mode=False),
+            baseline_mode=True,
         )
-        self.solver.run_simulation()
+        if self.env is not None:
+            self.env.reset()
+
+            # ---> FIX: Force the environment to use the cache-directed solver <---
+            self.env.solver = self.solver
+
+            self.env.baseline_path = self.baseline_run_dir
+            baseline_rewards = []
+            done = False
+            while not done:
+                if isinstance(self.env, EnvironmentShortMDP):
+                    next_state, reward, done, info = self.env.step(
+                        action=np.ones(self.ann_config.action_dimension),
+                        is_baseline_run=True,
+                    )
+                    baseline_rewards.append(reward)
+
+            baseline_rewards = np.asarray(baseline_rewards)
+            np.save(self.baseline_run_dir / "reward_history.npy", baseline_rewards)
+            with open(self.baseline_run_dir / "reward_history.txt", mode="w") as f:
+                for reward in baseline_rewards:
+                    f.write(str(reward))
+
+        else:
+            self.solver.run_simulation()
+
         self.solver.post_processing()
         write_les_parameters(target_cache_dir, cache_key)
 
-        (
-            baseline_w_l2,
-            baseline_w_rms,
-            _,
-            _,
-            baseline_reynolds_l2,
-            baseline_reynolds_rms,
-            _,
-            _,
-        ) = self.plot_combined_profile_comparison(
+        self.plot_combined_profile_comparison(
             env=None,
             solver=self.solver,
             episode=None,
@@ -554,8 +573,11 @@ class TD3Trainer:
         )
 
         self._load_baseline_metrics()
+        _set_cache_writable(self.baseline_run_dir, False)
 
     def run_evaluation(self):
+        self.run_baseline_evaluation()
+
         self.solver = SolverCoupled(
             problem=self.problem,
             disc_config=self.disc_config,
@@ -624,6 +646,9 @@ class TD3Trainer:
 
         self.solver.run_simulation()
         self.solver.post_processing()
+
+        # Reset the reference trajectory state back to the test interval endpoint before plotting
+        self.reference_trajectory.set_testing_interval(t_start, t_end)
 
         self.plot_combined_profile_comparison(
             env=None,
@@ -1075,6 +1100,9 @@ class TD3Trainer:
             t_start=getattr(problem, "t_start", 0.0),
             t_end=getattr(problem, "t_end", 0.0),
             n_params=getattr(self.ann_config, "n_coefficients", 0),
+            n_agent_steps_per_episode=getattr(
+                self.ann_config, "n_agent_steps_per_episode", 0
+            ),
         )
 
     def _init_txt_log(self) -> None:
@@ -1278,25 +1306,21 @@ class TD3Trainer:
 
         self.print_section("Time-Block", w)
         self.print_row(
-            "Training Range",
-            f"[{self.problem.t_start} - {self.problem.t_end}]",
+            "Training Intervals",
+            "",
         )
+        for idx, interval in enumerate(self.train_intervals):
+            span = interval[1] - interval[0]
+            self.print_row(
+                f"Interval {idx + 1}",
+                f"[{interval[0]} - {interval[1]}] ({span:.2f}s)",
+            )
         if self.test_interval:
             self.print_row(
                 "Test Range",
                 f"[{self.test_interval[0]} - {self.test_interval[1]}]",
             )
         self.print_footer(w)
-
-        if self.train_intervals:
-            self.print_section("Stochastic Training Intervals Pool", w)
-            for idx, interval in enumerate(self.train_intervals):
-                span = interval[1] - interval[0]
-                self.print_row(
-                    f"Interval {idx + 1}",
-                    f"[{interval[0]} - {interval[1]}] ({span:.2f}s)",
-                )
-            self.print_footer(w)
 
     def plot_error_evaluation_evolution(self, show_plot: bool = False) -> None:
         if len(self.w_l2_error_history) == 0:
@@ -1542,3 +1566,10 @@ class TD3Trainer:
         fig.savefig(plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
         self._log(f"  * Saved interval count plot -> {plot_path.name}")
+
+
+def _set_cache_writable(cache_dir: Path, writable: bool) -> None:
+    mode = stat.S_IREAD | stat.S_IWRITE if writable else stat.S_IREAD
+    for p in cache_dir.rglob("*"):
+        if p.is_file():
+            p.chmod(mode)
