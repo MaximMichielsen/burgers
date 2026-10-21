@@ -38,7 +38,7 @@ class SolverCoupled(SolverBase):
         simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
         snapshot_factor: int = 1,
         prescribed_action_trajectory: list | None = None,
-        baseline_mode:bool = False,
+        baseline_mode: bool = False,
     ):
         super().__init__(
             problem,
@@ -138,7 +138,8 @@ class SolverCoupled(SolverBase):
 
         # 2. Compute mean profile using populated snapshots
         crossed_second = int(self.time_elapsed) > int(self.prev_elapsed)
-        reached_end = self.time_elapsed >= self.domain_timespan
+        reached_end = (self.current_time_step + 1 >= self.disc_config.n_timesteps) or (
+                    self.time_elapsed >= self.domain_timespan - 1e-9)
 
         if self.standalone and (crossed_second or reached_end):
             self.mean_solution = self.calculate_mean_profile()

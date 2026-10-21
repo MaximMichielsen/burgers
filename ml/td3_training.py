@@ -141,7 +141,11 @@ class TD3Trainer:
 
         self.solver: SolverCoupled | SolverBase | SolverForProofs | None = None
         self.env: (
-            EnvironmentForcingDNS | EnvironmentProof | EnvironmentBanditTraining | EnvironmentShortMDP | None
+            EnvironmentForcingDNS
+            | EnvironmentProof
+            | EnvironmentBanditTraining
+            | EnvironmentShortMDP
+            | None
         ) = None
 
         # File logging setup
@@ -265,6 +269,8 @@ class TD3Trainer:
                 )
                 self.disc_config = replace(self.disc_config, problem=self.problem)
                 env.problem = self.problem
+                env.disc_config = self.disc_config
+                env._max_les_steps = self.disc_config.n_timesteps
 
                 self.run_baseline_evaluation()
 
@@ -498,18 +504,20 @@ class TD3Trainer:
         cache_result = resolve_les_baseline_cache(self.baseline_dir, cache_key)
 
         if (
-                cache_result.status == LESCacheStatus.HIT
-                and cache_result.cache_dir is not None
+            cache_result.status == LESCacheStatus.HIT
+            and cache_result.cache_dir is not None
         ):
             self._log(
                 f"[CACHE HIT] Found existing baseline run for time-span [{
-                self.problem.t_start
+                    self.problem.t_start
                 } - {self.problem.t_end}] at: {
-                cache_result.cache_dir
+                    cache_result.cache_dir
                 }. Skipping simulation."
             )
             self.baseline_run_dir = cache_result.cache_dir
             _set_cache_writable(self.baseline_run_dir, False)
+            if self.env is not None:
+                self.env.baseline_path = self.baseline_run_dir
             self._load_baseline_metrics()
             return
 
@@ -517,7 +525,7 @@ class TD3Trainer:
         target_cache_dir.mkdir(parents=True, exist_ok=True)
         self._log(
             f"[CACHE MISS] Executing baseline run for time-span [{
-            self.problem.t_start
+                self.problem.t_start
             } - {self.problem.t_end}] and caching to: {target_cache_dir}"
         )
         _set_cache_writable(target_cache_dir, True)
@@ -541,13 +549,15 @@ class TD3Trainer:
             self.env.baseline_path = self.baseline_run_dir
             baseline_rewards = []
             done = False
+            agent_idx = 0
             while not done:
-                if isinstance(self.env, EnvironmentShortMDP):
-                    next_state, reward, done, info = self.env.step(
-                        action=np.ones(self.ann_config.action_dimension),
-                        is_baseline_run=True,
-                    )
-                    baseline_rewards.append(reward)
+                next_state, reward, done, info = self.env.step(
+                    action=np.ones(self.ann_config.action_dimension),
+                    is_baseline_run=True,
+                    agent_step_idx=agent_idx,
+                )
+                baseline_rewards.append(reward)
+                agent_idx += 1
 
             baseline_rewards = np.asarray(baseline_rewards)
             np.save(self.baseline_run_dir / "reward_history.npy", baseline_rewards)
@@ -1126,12 +1136,15 @@ class TD3Trainer:
 
     def _log_episode_header(self, episode: int, total_steps: int) -> None:
         if hasattr(self.ann_config, "n_random_episodes"):
-            stochastic_steps = self.ann_config.n_random_episodes
+            stochastic_episodes = self.ann_config.n_random_episodes
         else:
-            stochastic_steps = self.hp.stochastic_timesteps
+            stochastic_episodes = np.ceil(
+                self.hp.stochastic_timesteps
+                // self.ann_config.n_agent_steps_per_episode
+            )
 
         phase_str = (
-            "EXPLORATION" if total_steps < stochastic_steps else "POLICY TRAINING"
+            "EXPLORATION" if episode < stochastic_episodes else "POLICY TRAINING"
         )
         self._log(
             f"\n>>> Episode {episode + 1}/{self.ann_config.n_training_episodes} "

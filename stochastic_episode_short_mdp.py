@@ -100,7 +100,8 @@ z_length = 2.0
 dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
-n_episodes = 1
+n_episodes = 100
+agent_steps = 3
 proof_mode = ProofMode.a
 
 link = False
@@ -113,7 +114,7 @@ run_dir = (
     CURRENT_DIR
     / "solver_data"
     / "mdp"
-    / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}"
+    / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}_a{agent_steps}"
     / sub_dir
 )
 run_dir.mkdir(parents=True, exist_ok=True)
@@ -156,7 +157,7 @@ ann_config = ShortMDPConfig(
     training_mode=True,
     run_final_evaluation=False,
     n_skip_steps=1,
-    agent_steps=2,
+    agent_steps=agent_steps,
     link_coefficients=link,
     include_reynolds_stress_reward_signal=use_reynolds_signal,
 )

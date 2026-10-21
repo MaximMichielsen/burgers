@@ -52,18 +52,30 @@ class EnvironmentShortMDP(EnvironmentForcingDNS):
         )
         info = {"crashed": False}
 
+        n_agents = self.ann_config.n_agent_steps_per_episode
+        n_total = self.solver.disc_config.n_timesteps  # the solver's own config
+        is_last = agent_step_idx + 1 >= n_agents
+        steps_this_call = (
+            n_total - self._total_les_steps if is_last else n_total // n_agents
+        )
+
+
         try:
             with np.errstate(over="raise", invalid="raise", divide="raise"):
                 for _ in range(
-                    self.disc_config.n_timesteps
-                    // self.ann_config.n_agent_steps_per_episode
+                    steps_this_call
                 ):
+                    if self.solver.simulation_done or self._total_les_steps >= self._max_les_steps:
+                        break
+
                     self.solver.advance_time_step()
                     self._total_les_steps += 1
 
             self.reference_trajectory.set_step_index(self._total_les_steps)
 
-            reward_val = float(self.compute_reward(action, is_baseline_run, agent_step_idx))
+            reward_val = float(
+                self.compute_reward(action, is_baseline_run, agent_step_idx)
+            )
 
             done_flag = (
                 self._total_les_steps >= self._max_les_steps
@@ -92,14 +104,18 @@ class EnvironmentShortMDP(EnvironmentForcingDNS):
             )
             return fallback_state, reward_val, done_flag, info
 
-    def compute_reward(self, action: NDArray, is_baseline_run: bool, agent_step_idx: int) -> float:
+    def compute_reward(
+        self, action: NDArray, is_baseline_run: bool, agent_step_idx: int
+    ) -> float:
         """Compute mean target deviation reward."""
         mean_solution = np.mean(self.solver.snapshots_solution, axis=0)
         penalty = self.compute_distance_error(
             field=mean_solution, target=self.reference_trajectory.target_profile
         )
         if not is_baseline_run:
-            baseline_reward = self.compute_baseline_reward(baseline_path=self.baseline_path, agent_step=agent_step_idx)
+            baseline_reward = self.compute_baseline_reward(
+                baseline_path=self.baseline_path, agent_step=agent_step_idx
+            )
             normalized_penalty = baseline_reward - penalty
             return normalized_penalty * 100
 

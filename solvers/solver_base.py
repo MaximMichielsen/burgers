@@ -1160,14 +1160,16 @@ class SolverBase:
         ax0.set_title(f"Solution  [Mode: {sgs_label}]")
 
         ax1 = fig.add_subplot(gs[1, 0])
+        n = min(len(self.time_steps), len(self.energy_history))
         ax1.plot(
-            self.time_steps[: len(self.energy_history)],
-            self.energy_history,
+            self.time_steps[:n],
+            self.energy_history[:n],
             color="red",
             label="Total energy",
         )
+        n = min(len(self.time_steps), len(self.dissipation_history))
         ax1.plot(
-            self.time_steps[: len(self.dissipation_history)],
+            self.time_steps[:n],
             self.dissipation_history,
             color="purple",
             label="Dissipation",

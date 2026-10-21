@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from ml.ann_config import TauANNConfig, TD3Hyperparameters
 
 
-BANDIT_MIN_ACTION = 0.5
+BANDIT_MIN_ACTION = 0.9
 BANDIT_MAX_ACTION = 10.0
 
 
