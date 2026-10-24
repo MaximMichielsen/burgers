@@ -37,6 +37,7 @@ class EnvironmentShortMDP(EnvironmentForcingDNS):
         self.action_history: list[NDArray] = []
         self.baseline_reward: float | None = None
         self.baseline_path = baseline_path
+        self.previous_action = np.ones(self.ann_config.action_dimension)
 
     def step(
         self, action: NDArray, is_baseline_run: bool = False, agent_step_idx: int = 0
@@ -59,13 +60,13 @@ class EnvironmentShortMDP(EnvironmentForcingDNS):
             n_total - self._total_les_steps if is_last else n_total // n_agents
         )
 
-
         try:
             with np.errstate(over="raise", invalid="raise", divide="raise"):
-                for _ in range(
-                    steps_this_call
-                ):
-                    if self.solver.simulation_done or self._total_les_steps >= self._max_les_steps:
+                for _ in range(steps_this_call):
+                    if (
+                        self.solver.simulation_done
+                        or self._total_les_steps >= self._max_les_steps
+                    ):
                         break
 
                     self.solver.advance_time_step()
@@ -74,8 +75,11 @@ class EnvironmentShortMDP(EnvironmentForcingDNS):
             self.reference_trajectory.set_step_index(self._total_les_steps)
 
             reward_val = float(
-                self.compute_reward(action, is_baseline_run, agent_step_idx)
+                self.compute_reward(
+                    action, self.previous_action, is_baseline_run, agent_step_idx
+                )
             )
+            self.previous_action = action
 
             done_flag = (
                 self._total_les_steps >= self._max_les_steps
@@ -105,21 +109,58 @@ class EnvironmentShortMDP(EnvironmentForcingDNS):
             return fallback_state, reward_val, done_flag, info
 
     def compute_reward(
-        self, action: NDArray, is_baseline_run: bool, agent_step_idx: int
+        self,
+        action: NDArray,
+        previous_action: NDArray,
+        is_baseline_run: bool,
+        agent_step_idx: int,
     ) -> float:
-        """Compute mean target deviation reward."""
-        mean_solution = np.mean(self.solver.snapshots_solution, axis=0)
-        penalty = self.compute_distance_error(
-            field=mean_solution, target=self.reference_trajectory.target_profile
+        """Compute balanced differential reward with smoothness penalty."""
+
+        # 1. Calculate errors
+        mean_error = self.compute_distance_error(
+            field=self.solver.mean_solution,
+            target=self.reference_trajectory.target_profile,
         )
+
+        reynolds_error = 0.0
+        if self.ann_config.include_reynolds_stress_reward_signal:
+            reynolds_profile = self.solver.compute_reynolds_stress()
+            reynolds_error = self.compute_distance_error(
+                field=reynolds_profile,
+                target=self.reference_trajectory.reynolds_profile,
+            )
+
+        # Weighted combination of errors (guardrail + primary goal)
+        total_ann_error = (1.0 * mean_error) + (
+            5.0 * reynolds_error
+        )  # weights tuned to scale
+
+        # 2. Smoothness penalty to stop erratic coefficient jumps across the 100 steps
+        smoothness_penalty = (
+            0.1 * np.linalg.norm(action - previous_action) ** 2
+            if agent_step_idx > 0
+            else 0
+        )
+
+        # 3. Baseline comparison (Differential reward)
         if not is_baseline_run:
-            baseline_reward = self.compute_baseline_reward(
+            baseline_error = self.compute_baseline_reward(
                 baseline_path=self.baseline_path, agent_step=agent_step_idx
             )
-            normalized_penalty = baseline_reward - penalty
-            return normalized_penalty * 100
+            # Improvement over baseline (positive means ANN did better than uncorrected model)
+            improvement = baseline_error - total_ann_error
 
-        return penalty
+            n_agents = self.ann_config.n_agent_steps_per_episode
+            if agent_step_idx + 1 >= n_agents:
+                # Multiply the final step's improvement by a heavy factor (e.g., 3.0 or 5.0)
+                # This gives extra credit for outperforming the baseline right at the finish line!
+                improvement *= 3.0  # or improvement + (3.0 * improvement)
+
+            return improvement - smoothness_penalty
+
+        # If it's a baseline run, just return the negative error minus smoothness
+        return -total_ann_error - smoothness_penalty
 
     def compute_baseline_reward(self, baseline_path: Path, agent_step: int) -> None:
         """Compute mean target deviation with baseline."""

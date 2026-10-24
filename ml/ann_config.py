@@ -45,10 +45,10 @@ class TD3Hyperparameters(TauANNHyperparameters):
     """Hyperparameters for TD3 Agent training and environment interactions."""
 
     # Agent / Optimization Params
-    lr: float = 1e-3
+    lr: float = 3e-4
     discount: float = 0.99
     tau_polyak: float = 0.005
-    policy_noise: float = 0.15
+    policy_noise: float = 0.10
     noise_clip: float = 0.3
     policy_freq: int = 2
 
@@ -165,11 +165,14 @@ class TauANNConfig:
                 self.disc_config.n_nodes_les * features_per_node
             )
 
+        time_dimension = 1
+
         self.state_dimension = (
             self.disc_config.n_wavenumber_bins
             + local_input_stencil_dimension
             + self.action_dimension
             + self.disc_config.n_nodes_les
+            + time_dimension
         )
 
     @staticmethod

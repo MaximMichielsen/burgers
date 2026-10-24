@@ -15,6 +15,7 @@ from ml.ann_config import TauANNConfig, TD3Hyperparameters
 from ml.diagnostics import plot_diagnostic_metrics
 from ml.environment import EnvironmentForcingDNS
 from ml.td3_agent import TD3Agent
+from proofing.short_mdp_2.environment import EnvironmentShortMDP2
 from setup.constants import PATH_TO_LES_CACHE, N_NODES_DNS
 from utils.les_caching import (
     LESCacheKey,
@@ -42,6 +43,7 @@ from solvers.solver_coupled import SolverCoupled
 from utils.diagnostics import compute_error_metrics
 
 EPISODE_PENALTY_CLIP = -10000
+REWARD_CLIP = -10
 
 # --- Publication-Quality Global Settings ---
 plt.rcParams.update(
@@ -126,7 +128,8 @@ class TD3Trainer:
 
         self.baseline_reward: float | None = None
         self.end_of_random_episode: int | None = None
-        self.episode_reward_history: list = []
+        self.episode_return_history: list = []
+        self.reward_history: list = []
 
         self.best_historical_reward = -np.inf
         self.best_action_sequence: list = []
@@ -190,7 +193,7 @@ class TD3Trainer:
                 master_path=self.master_path,
             )
         elif isinstance(self.ann_config, ShortMDPConfig):
-            env = EnvironmentShortMDP(
+            env = EnvironmentShortMDP2(
                 problem=self.problem,
                 disc_config=self.disc_config,
                 ann_config=self.ann_config,
@@ -242,6 +245,12 @@ class TD3Trainer:
 
         is_bandit = isinstance(self.ann_config, ANNBanditConfig)
         worst_valid_reward = None
+        sweet_spot_low = getattr(self.ann_config, "sweet_spot_low", None)
+        sweet_spot_high = getattr(self.ann_config, "sweet_spot_high", None)
+        sweet_spots = None
+        if sweet_spot_low is not None and sweet_spot_high is not None:
+            sweet_spots = (sweet_spot_low, sweet_spot_high)
+
         if is_bandit:
             edges = np.linspace(
                 self.ann_config.min_action,
@@ -281,7 +290,7 @@ class TD3Trainer:
             ep_start_time = time.time()
             state = env.reset()
             initial_state = state.copy()
-            episode_reward = 0.0
+            undiscounted_return = 0.0
             done = False
             episode_steps = 0
             actions = []
@@ -296,14 +305,29 @@ class TD3Trainer:
                 episode_steps += 1
 
                 if is_random_action_episode:
-                    min_action, max_action = self.get_action_bounds(episode=episode)
-                    if isinstance(self.ann_config, ANNBanditConfig) and getattr(
-                        self.ann_config, "link_coefficients", False
-                    ):
-                        action = np.full(
-                            self.ann_config.action_dimension, random_values[episode]
+                    if episode < self.n_stochastic_episodes // 2:
+                        min_action, max_action = self.get_action_bounds(episode=episode)
+                        if isinstance(self.ann_config, ANNBanditConfig) and getattr(
+                            self.ann_config, "link_coefficients", False
+                        ):
+                            action = np.full(
+                                self.ann_config.action_dimension, random_values[episode]
+                            )
+                        else:
+                            action = np.random.uniform(
+                                min_action,
+                                max_action,
+                                size=self.ann_config.action_dimension,
+                            )
+                    elif sweet_spots:
+                        min_action, max_action = sweet_spots
+                        action = np.random.uniform(
+                            min_action,
+                            max_action,
+                            size=self.ann_config.action_dimension,
                         )
                     else:
+                        min_action, max_action = self.get_action_bounds(episode=episode)
                         action = np.random.uniform(
                             min_action,
                             max_action,
@@ -329,6 +353,8 @@ class TD3Trainer:
                         next_state, reward, done, info = env.step(
                             action=action, agent_step_idx=episode_steps - 1
                         )
+                        print("Stepwise reward: ", reward)
+                        self.reward_history.append(reward)
 
                     if hasattr(env, "solver") and not np.all(
                         np.isfinite(env.solver.solution)
@@ -360,7 +386,7 @@ class TD3Trainer:
 
                 replay_buffer.add(state, action, next_state, reward, done)
                 state = next_state
-                episode_reward += reward
+                undiscounted_return += reward
                 worst_valid_reward = (
                     reward
                     if worst_valid_reward is None
@@ -369,7 +395,11 @@ class TD3Trainer:
 
                 if episode_steps % 100 == 0 or done:
                     self._log_step_progress(
-                        episode_steps, max_steps_per_ep, reward, episode_reward, env
+                        episode_steps,
+                        max_steps_per_ep,
+                        reward,
+                        undiscounted_return,
+                        env,
                     )
 
                 if not is_random_action_episode:
@@ -383,10 +413,11 @@ class TD3Trainer:
                 episode += 1
                 continue
 
-            clipped_reward = float(
-                np.clip(episode_reward, a_min=EPISODE_PENALTY_CLIP, a_max=None)
+            clipped_return = float(
+                np.clip(undiscounted_return, a_min=EPISODE_PENALTY_CLIP, a_max=None)
             )
-            self.episode_reward_history.append(clipped_reward)
+            self.episode_return_history.append(clipped_return)
+            print("Episode return: ", clipped_return)
 
             solver_post_processing = False
             if episode >= self.ann_config.n_training_episodes:
@@ -406,8 +437,8 @@ class TD3Trainer:
                 time.time() - ep_start_time,
                 total_steps,
                 episode_steps,
-                clipped_reward,
-                episode_reward,
+                clipped_return,
+                undiscounted_return,
                 actions,
                 replay_buffer,
             )
@@ -449,7 +480,8 @@ class TD3Trainer:
             self.print_title("Starting Testing Run")
             self.run_testing()
 
-        self.plot_reward_evolution()
+        self.plot_episodic_return_history()
+        self.plot_reward_history()
         self.plot_error_evaluation_evolution()
         self.plot_interval_count()
         self.run_diagnostic_plotting()
@@ -556,6 +588,7 @@ class TD3Trainer:
                     is_baseline_run=True,
                     agent_step_idx=agent_idx,
                 )
+                reward = np.clip(reward, min=REWARD_CLIP, max=None)
                 baseline_rewards.append(reward)
                 agent_idx += 1
 
@@ -1113,6 +1146,7 @@ class TD3Trainer:
             n_agent_steps_per_episode=getattr(
                 self.ann_config, "n_agent_steps_per_episode", 0
             ),
+            use_reynolds_signal=self.ann_config.include_reynolds_stress_reward_signal,
         )
 
     def _init_txt_log(self) -> None:
@@ -1197,7 +1231,7 @@ class TD3Trainer:
     def _log_training_summary(
         self, total_duration: float, total_steps: int, episode_count: int
     ) -> None:
-        rewards = np.array(self.episode_reward_history)
+        rewards = np.array(self.episode_return_history)
         if len(rewards) == 0:
             return
 
@@ -1432,12 +1466,12 @@ class TD3Trainer:
         else:
             plt.close(fig)
 
-    def plot_reward_evolution(self, show_plot: bool = False):
-        if len(self.episode_reward_history) == 0:
+    def plot_episodic_return_history(self, show_plot: bool = False):
+        if len(self.episode_return_history) == 0:
             return
 
         episodes = np.arange(self.episodes_ran)
-        rewards = np.array(self.episode_reward_history)
+        rewards = np.array(self.episode_return_history)
         fig, ax = plt.subplots(figsize=(10, 6), dpi=300, layout="constrained")
 
         if self.baseline_reward is not None:
@@ -1451,7 +1485,7 @@ class TD3Trainer:
             color="tab:orange",
             alpha=0.3,
             linewidth=1.0,
-            label="Episode Reward",
+            label="Episode Return (undiscounted)",
         )
         window_size = 10
         if len(rewards) >= window_size:
@@ -1472,13 +1506,53 @@ class TD3Trainer:
         ax.grid(True, linestyle="--", alpha=0.4)
         ax.legend(loc="lower right", framealpha=0.9, fontsize=9.5)
 
-        save_path = self.master_path / "training_reward_evolution.png"
+        save_path = self.master_path / "episodic_return.png"
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         self._log(f"  * Saved reward evolution plot -> {save_path.name}")
         if show_plot:
             plt.show()
         else:
             plt.close(fig)
+
+    def plot_reward_history(self):
+        if len(self.reward_history) == 0:
+            return
+
+        rewards = np.array(self.reward_history)
+        steps = np.arange(len(rewards))
+
+        fig, ax = plt.subplots(figsize=(10, 6), dpi=300, layout="constrained")
+
+        ax.plot(steps,
+                rewards,
+                color="royalblue",
+                alpha = 0.3,
+                linewidth=1.0,
+                label="Stepwise Reward")
+        window_size = 10
+        if len(rewards) >= window_size:
+            moving_avg = np.convolve(
+                rewards, np.ones(window_size) / window_size, mode="valid"
+            )
+            ax.plot(
+                steps[window_size - 1 :],
+                moving_avg,
+                color="royalblue",
+                linewidth=2.2,
+                label=f"Moving Avg ({window_size} ep)",
+            )
+
+        ax.set_title("Stepwise rewards")
+        ax.set_xlabel("Step [-]")
+        ax.set_ylabel("Reward [-]")
+        ax.grid(True, linestyle="--", alpha=0.4)
+        ax.legend(framealpha=0.9, fontsize=9.5)
+
+        save_path = self.master_path / "step_rewards.png"
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        self._log(f"  * Saved reward evolution plot -> {save_path.name}")
+        plt.close(fig)
+
 
     def plot_history_breakdown(
         self, env: EnvironmentForcingDNS, show_plot: bool = False

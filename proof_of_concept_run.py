@@ -112,7 +112,7 @@ def run_proof_experiment(
 
     # Execute training and plot diagnostics
     trainer.run_training()
-    trainer.plot_reward_evolution()
+    trainer.plot_episodic_return_history()
     trainer.run_diagnostic_plotting()
 
     print(f"\n[SUCCESS] Mode '{proof_mode.value}' proof experiment completed.")

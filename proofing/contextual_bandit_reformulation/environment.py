@@ -39,7 +39,7 @@ class EnvironmentBanditTraining(EnvironmentForcingDNS):
 
         self.baseline_reynolds_reward: float | None = None
 
-    def step(self, action: NDArray) -> tuple[NDArray, float, bool, dict]:
+    def step(self, action: NDArray, is_baseline_run: bool = False, agent_step_idx: int = 0) -> tuple[NDArray, float, bool, dict]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done, info)."""
         if self.solver is None:
             raise RuntimeError("Call reset() before step().")

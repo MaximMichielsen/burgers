@@ -139,7 +139,8 @@ class SolverCoupled(SolverBase):
         # 2. Compute mean profile using populated snapshots
         crossed_second = int(self.time_elapsed) > int(self.prev_elapsed)
         reached_end = (self.current_time_step + 1 >= self.disc_config.n_timesteps) or (
-                    self.time_elapsed >= self.domain_timespan - 1e-9)
+            self.time_elapsed >= self.domain_timespan - 1e-9
+        )
 
         if self.standalone and (crossed_second or reached_end):
             self.mean_solution = self.calculate_mean_profile()
@@ -233,6 +234,9 @@ class SolverCoupled(SolverBase):
         s_n = (Ehat_1, ..., Ehat_K, c_1^{n-1}, c_...^{n-1})
         where Ehat_k = E_LES(k,t) / sum_k(E_LES(k,t)) is the ...
         """
+        if self.ann_config.state_dimension == 1:
+            return np.mean(self.solution)
+
         if not np.all(np.isfinite(self.solution)):
             raise ValueError(f"Error in the solution field.\n{self.solution}")
 
@@ -263,8 +267,14 @@ class SolverCoupled(SolverBase):
                 [normalised_spectrum, previous_coefficients, flattened_local_features]
             )
 
+        agent_step_idx = self.current_time_step // self.agent_eval_interval
+        time_to_go = np.array(
+            [float(self.n_agent_calls - agent_step_idx) / float(self.n_agent_calls)],
+            dtype=np.float32,
+        )
+
         return np.concatenate(
-            [normalised_spectrum, mean_profile, previous_coefficients]
+            [normalised_spectrum, mean_profile, previous_coefficients, time_to_go]
         )
 
     def compute_local_spatial_input_stencil(self, node: int) -> NDArray:

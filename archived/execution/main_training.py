@@ -82,7 +82,7 @@ td3_trainer = TD3Trainer(
 )
 
 td3_model, best_action_sequence = td3_trainer.run_td3_tau_ann_training()
-td3_trainer.plot_reward_evolution()
+td3_trainer.plot_episodic_return_history()
 
 
 # ----------------------------------------- LES solvers ------------------------------------------ #

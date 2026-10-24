@@ -303,7 +303,7 @@ def plot_diagnostic_metrics(trainer: TD3Trainer, save_dir: Path | None = None) -
 
     # --- Subplot [1, 1]: Total Scaled vs Unscaled Reward Trajectory ---
     ax = axes[1, 1]
-    ep_rewards = getattr(trainer, "episode_reward_history", [])
+    ep_rewards = getattr(trainer, "episode_return_history", [])
     if len(ep_rewards) > 0:
         ax.plot(
             np.arange(1, len(ep_rewards) + 1),

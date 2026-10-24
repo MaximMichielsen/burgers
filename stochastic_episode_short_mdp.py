@@ -80,19 +80,22 @@ def generate_training_and_testing_intervals(
 # Define base intervals from directory structure
 base_intervals = [
     (308.0101, 309.01),
-    (309.01, 310.01),
-    (310.01, 311.01),
-    (311.01, 312.01),
-    (312.01, 313.01),
-    (313.01, 314.01),
-    (314.01, 315.0),
+    # (309.01, 310.01),
+    # (311.01, 312.01),
+    # (312.01, 313.01),
+    # (313.01, 314.01),
+    # (314.01, 315.0),
 ]
 
+
 train_intervals, test_interval = generate_training_and_testing_intervals(
-    base_intervals, max_duration=1.0
+    base_intervals, max_duration=1.0, test_interval=(308.0101, 309.01)
 )
 
-t_start, t_end = train_intervals[0]  # fallback
+train_intervals = [(308.0101, 309.01)]
+test_interval = (308.0101, 309.01)
+
+t_start, t_end = base_intervals[0]  # fallback
 
 n_nodes_les = 17
 n_nodes_dns = 513
@@ -100,12 +103,12 @@ z_length = 2.0
 dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
-n_episodes = 100
-agent_steps = 3
+n_episodes = 110
+agent_steps = 100
 proof_mode = ProofMode.a
 
 link = False
-use_reynolds_signal = False
+use_reynolds_signal = True
 
 sub_dir = "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
 
@@ -113,7 +116,7 @@ sub_dir = "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_si
 run_dir = (
     CURRENT_DIR
     / "solver_data"
-    / "mdp"
+    / "mdp_new_reward"
     / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}_a{agent_steps}"
     / sub_dir
 )

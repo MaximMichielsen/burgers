@@ -98,7 +98,7 @@ z_length = 2.0
 dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
-n_episodes = 60
+n_episodes = 10
 proof_mode = ProofMode.a
 
 link = False
