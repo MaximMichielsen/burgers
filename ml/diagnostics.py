@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from matplotlib import pyplot as plt
-from numpy._typing import NDArray
+from numpy.typing import NDArray
 
-from ml.environment import EnvironmentForcingDNS
+from ml.original.environment import EnvironmentForcingDNS
 from proofing.action_based.config import ProofMode
 from proofing.action_based.environment import EnvironmentProof
 from proofing.contextual_bandit_reformulation.environment import (
@@ -16,8 +16,8 @@ from proofing.contextual_bandit_reformulation.environment import (
 )
 
 if TYPE_CHECKING:
-    from ml.td3_training import TD3Trainer
-
+    from ml.original.training import TD3Trainer
+    from ml.bandit.training import BanditTrainer
 
 def moving_average(data: np.ndarray | list[float], window_size: int = 50) -> np.ndarray:
     """Calculate moving average with constant NaN padding to retain input length."""
@@ -38,7 +38,9 @@ def safe_legend(ax: plt.Axes, loc: str = "upper right", **kwargs: Any) -> None:
         ax.legend(loc=loc, **kwargs)
 
 
-def plot_diagnostic_metrics(trainer: TD3Trainer, save_dir: Path | None = None) -> None:
+def plot_diagnostic_metrics(
+    trainer: TD3Trainer | BanditTrainer, save_dir: Path | None = None
+) -> None:
     """Plot comprehensive step-level and episode-level diagnostic metrics with noise visualization."""
     if save_dir is None:
         save_dir = Path(trainer.master_path) / "diagnostics"
@@ -49,7 +51,7 @@ def plot_diagnostic_metrics(trainer: TD3Trainer, save_dir: Path | None = None) -
     if env is None:
         raise TypeError("Environment is not retrieved from the trainer correctly.")
 
-    episodes = np.arange(1, len(getattr(trainer, "mean_actions", [])) + 1)
+    episodes = np.arange(1, getattr(trainer, "episodes_ran", 0) + 1)
     ann_config = getattr(trainer, "ann_config", None)
     proof_mode = getattr(ann_config, "proof_mode", None)
 
@@ -61,7 +63,7 @@ def plot_diagnostic_metrics(trainer: TD3Trainer, save_dir: Path | None = None) -
 
     # --- Subplot [0, 0]: Policy Action Noise & Std Dev Visualization ---
     ax = axes[0, 0]
-    action_mean_hist = getattr(env, "action_mean_history", [])
+    action_mean_hist = getattr(env, "mean_actions", [])
 
     if proof_mode == "d" and len(action_mean_hist) > 0:
         action_means = np.asarray(action_mean_hist)
@@ -118,7 +120,7 @@ def plot_diagnostic_metrics(trainer: TD3Trainer, save_dir: Path | None = None) -
 
     elif len(episodes) > 0:
         mean_a = np.array(trainer.mean_actions)
-        std_a = np.array(trainer.action_deviation_history)
+        std_a = np.array(trainer.std_actions)
 
         ax.plot(
             episodes, mean_a, label=r"Mean Action $\mu_a$", color="navy", linewidth=2
@@ -303,7 +305,7 @@ def plot_diagnostic_metrics(trainer: TD3Trainer, save_dir: Path | None = None) -
 
     # --- Subplot [1, 1]: Total Scaled vs Unscaled Reward Trajectory ---
     ax = axes[1, 1]
-    ep_rewards = getattr(trainer, "episode_return_history", [])
+    ep_rewards = getattr(trainer, "reward_history", [])
     if len(ep_rewards) > 0:
         ax.plot(
             np.arange(1, len(ep_rewards) + 1),

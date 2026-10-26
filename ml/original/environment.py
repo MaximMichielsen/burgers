@@ -6,8 +6,12 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ml.reference_scheduler import ReferenceTrajectory
-from ml.ann_config import TauANNConfig, TauANNHyperparameters, TD3Hyperparameters
+from ml.original.reference_scheduler import ReferenceTrajectory
+from ml.original.ann_config import (
+    TauANNConfig,
+    TauANNHyperparameters,
+    TD3Hyperparameters,
+)
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode
@@ -119,7 +123,9 @@ class EnvironmentForcingDNS:
         self.running_mean_solution = self.solver.solution.copy()
         return self.solver.create_input_stencil(mean_profile=self.running_mean_solution)
 
-    def step(self, action: NDArray, is_baseline_run: bool = False, agent_step_idx: int = 0) -> tuple[NDArray, float, bool, dict]:
+    def step(
+        self, action: NDArray, is_baseline_run: bool = False, agent_step_idx: int = 0
+    ) -> tuple[NDArray, float, bool, dict]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done, info)."""
         if self.solver is None:
             raise RuntimeError("Call reset() before step().")

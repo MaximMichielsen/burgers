@@ -18,8 +18,9 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from scipy.ndimage import uniform_filter1d
 
-from ml.ann import TauANN, load_tau_ann
-from ml.ann_config import TauANNConfig, Scope
+from ml.bandit.ann import BanditConfig
+from ml.original.ann import TauANN, load_tau_ann
+from ml.original.ann_config import TauANNConfig, Scope
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
@@ -34,7 +35,7 @@ class SolverCoupled(SolverBase):
         disc_config: DiscretizationConfig,
         master_path: Path,
         tau_model: TauModel,
-        ann_config: TauANNConfig,
+        ann_config: TauANNConfig | BanditConfig,
         simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
         snapshot_factor: int = 1,
         prescribed_action_trajectory: list | None = None,
@@ -63,10 +64,10 @@ class SolverCoupled(SolverBase):
         self.standalone = (not self.training_mode) or self.baseline_mode
         self.uses_internal_ann = (not self.training_mode) and (not self.baseline_mode)
 
-        self.smoothing_factor = ann_config.smoothing_factor
+        self.smoothing_factor = getattr(ann_config, "smoothing_factor", 0.02)
         self.mean_solution: NDArray | None = None
 
-        self.n_local_stencil_points = ann_config.local_stencil_size
+        self.n_local_stencil_points = getattr(ann_config , "local_stencil_size", 0)
 
         self.n_correction_coefficients = tau_model.output_dimensions
         self.correction_coefficients: NDArray | None = None
@@ -193,7 +194,7 @@ class SolverCoupled(SolverBase):
             "Correction coefficients not initialized."
         )
 
-        if self.ann_config.output_scope == Scope.GLOBAL:
+        if getattr(self.ann_config, "output_scope", Scope.GLOBAL) == Scope.GLOBAL:
             return self.correction_coefficients
 
         if self.ann_config.output_scope == Scope.HYBRID:
@@ -228,14 +229,16 @@ class SolverCoupled(SolverBase):
     #  ANN
     # ------------------------------------------------------------------ #
 
-    def create_input_stencil(self, mean_profile: NDArray) -> NDArray:
+    def create_input_stencil(
+        self, mean_profile: NDArray | None = None
+    ) -> NDArray | float:
         """Build the MDP state s_n in R^(K+n_coefficients).
 
         s_n = (Ehat_1, ..., Ehat_K, c_1^{n-1}, c_...^{n-1})
         where Ehat_k = E_LES(k,t) / sum_k(E_LES(k,t)) is the ...
         """
         if self.ann_config.state_dimension == 1:
-            return np.mean(self.solution)
+            return 1.0
 
         if not np.all(np.isfinite(self.solution)):
             raise ValueError(f"Error in the solution field.\n{self.solution}")
@@ -342,7 +345,7 @@ class SolverCoupled(SolverBase):
         n_coeffs = self.n_correction_coefficients
         history_time = self.time_steps[:n_steps]
 
-        if self.ann_config.output_scope == Scope.GLOBAL:
+        if getattr(self.ann_config, "output_scope", Scope.GLOBAL) == Scope.GLOBAL:
             history_coeffs = self.correction_coefficients_history
 
         elif self.ann_config.output_scope == Scope.HYBRID:
@@ -383,11 +386,11 @@ class SolverCoupled(SolverBase):
     def plot_correction_coefficients_snapshot(
         self, show_plot: bool = False, save_suffix: str = "snapshot"
     ) -> None:
-        n_coeffs = self.ann_config.n_coefficients
+        n_coeffs = self.tau_model.output_dimensions
         c_raw = np.atleast_1d(self.correction_coefficients)
 
         c_global_ref = None
-        if self.ann_config.output_scope == Scope.GLOBAL:
+        if getattr(self.ann_config, "output_scope", Scope.GLOBAL) == Scope.GLOBAL:
             coefficients = c_raw.reshape(1, n_coeffs)
 
         elif self.ann_config.output_scope == Scope.HYBRID:
@@ -486,7 +489,7 @@ class SolverCoupled(SolverBase):
         )
 
         plt.suptitle(
-            f"Correction Coefficients ({self.ann_config.output_scope.value})",
+            f"Correction Coefficients",
             fontsize=13,
             fontweight="bold",
             y=0.98,
@@ -495,7 +498,7 @@ class SolverCoupled(SolverBase):
 
         save_path = (
             self.master_path
-            / f"post_plotting_{self.ann_config.output_scope.value}_corrections_{save_suffix}.png"
+            / f"post_plotting_corrections_{save_suffix}.png"
         )
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
@@ -594,7 +597,7 @@ class SolverCoupled(SolverBase):
         )
         fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-        filename = f"post_plotting_{self.ann_config.output_scope.value}_corrections_evolution.png"
+        filename = f"post_plotting_corrections_evolution.png"
         save_path = self.master_path / filename
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"  * Saved evolution plot -> {filename}")

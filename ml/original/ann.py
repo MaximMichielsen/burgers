@@ -2,12 +2,14 @@
 
 from pathlib import Path
 
-import numpy as np
 import torch
-from numpy.typing import NDArray
 from torch import Tensor, nn
 
-from ml.ann_config import TauANNConfig, TauANNHyperparameters, TD3Hyperparameters
+from ml.original.ann_config import (
+    TauANNConfig,
+    TauANNHyperparameters,
+    TD3Hyperparameters,
+)
 from proofing.action_based.config import ANNConfigProof
 from proofing.contextual_bandit_reformulation.config import ANNBanditConfig
 
@@ -22,12 +24,10 @@ class TauANN(nn.Module):
     def __init__(
         self,
         config: TauANNConfig | ANNConfigProof | ANNBanditConfig,
-        hyperparams: TauANNHyperparameters | TD3Hyperparameters,
     ):
         super().__init__()
 
         self.config = config
-        self.hyperparameters = hyperparams
         self.max_action = config.max_action
         self.min_action = config.min_action
         self.state_dim = config.state_dimension
@@ -75,7 +75,6 @@ def save_tau_ann(model: TauANN, save_path: Path) -> None:
         {
             "model_state_dict": model.state_dict(),
             "config": model.config,
-            "hyperparameters": model.hyperparameters,
         },
         save_path,
     )
@@ -86,59 +85,7 @@ def load_tau_ann(model_path: Path) -> TauANN:
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
     model = TauANN(
         config=checkpoint["config"],
-        hyperparams=checkpoint["hyperparameters"],
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     return model
-
-
-class ReplayBuffer:
-    """Experience replay memory storing transitions and returning Tensors."""
-
-    def __init__(
-        self,
-        state_dim: int,
-        action_dim: int,
-        max_size: int = int(1e5),
-        device: str | torch.device = "cpu",
-    ):
-        self.max_size = max_size
-        self.ptr = 0
-        self.size = 0
-
-        self.state = np.zeros((max_size, state_dim), dtype=np.float32)
-        self.action = np.zeros((max_size, action_dim), dtype=np.float32)
-        self.next_state = np.zeros((max_size, state_dim), dtype=np.float32)
-        self.reward = np.zeros((max_size, 1), dtype=np.float32)
-        self.done = np.zeros((max_size, 1), dtype=np.float32)
-
-        self.device = torch.device(device)
-
-    def add(
-        self,
-        state: NDArray,
-        action: NDArray,
-        next_state: NDArray,
-        reward: float,
-        done: bool,
-    ) -> None:
-        self.state[self.ptr] = state
-        self.action[self.ptr] = action
-        self.next_state[self.ptr] = next_state
-        self.reward[self.ptr] = reward
-        self.done[self.ptr] = float(done)
-
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
-
-    def sample(self, batch_size: int) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
-        ind = np.random.randint(0, self.size, size=batch_size)
-
-        return (
-            torch.as_tensor(self.state[ind], device=self.device),
-            torch.as_tensor(self.action[ind], device=self.device),
-            torch.as_tensor(self.next_state[ind], device=self.device),
-            torch.as_tensor(self.reward[ind], device=self.device),
-            torch.as_tensor(self.done[ind], device=self.device),
-        )

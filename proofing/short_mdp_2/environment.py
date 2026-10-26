@@ -3,8 +3,8 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ml.environment import EnvironmentForcingDNS, CRASH_PENALTY
-from ml.reference_scheduler import ReferenceTrajectory
+from ml.original.environment import EnvironmentForcingDNS, CRASH_PENALTY
+from ml.original.reference_scheduler import ReferenceTrajectory
 from proofing.short_mdp.config import ShortMDPConfig, TD3ShortMDPHyperparameters
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
@@ -56,9 +56,7 @@ class EnvironmentShortMDP2(EnvironmentForcingDNS):
         n_agent_steps = self.ann_config.n_agent_steps_per_episode
         n_total_steps = self.solver.disc_config.n_timesteps  # the solver's own config
         is_last_step = agent_step_idx + 1 >= n_agent_steps
-        steps_this_call = (
-            n_total_steps // n_agent_steps
-        )
+        steps_this_call = n_total_steps // n_agent_steps
 
         try:
             with np.errstate(over="raise", invalid="raise", divide="raise"):
@@ -76,14 +74,19 @@ class EnvironmentShortMDP2(EnvironmentForcingDNS):
 
             reward_val = float(
                 self.compute_reward(
-                    action, self.previous_action, is_baseline_run, agent_step_idx, is_last_step
+                    action,
+                    self.previous_action,
+                    is_baseline_run,
+                    agent_step_idx,
+                    is_last_step,
                 )
             )
             self.previous_action = action
 
             done_flag = (
                 self._total_les_steps >= self._max_les_steps
-                or self.solver.simulation_done or is_last_step
+                or self.solver.simulation_done
+                or is_last_step
             )
             next_state_array = self.solver.create_input_stencil(
                 mean_profile=self.running_mean_solution
@@ -114,12 +117,11 @@ class EnvironmentShortMDP2(EnvironmentForcingDNS):
         previous_action: NDArray,
         is_baseline_run: bool,
         agent_step_idx: int,
-        is_last_step:bool
+        is_last_step: bool,
     ) -> float:
         """Compute balanced differential reward with smoothness penalty."""
         total_ann_error = 0
         if is_last_step:
-
             # 1. Calculate errors
             mean_error = self.compute_distance_error(
                 field=self.solver.calculate_mean_profile(),
@@ -140,10 +142,16 @@ class EnvironmentShortMDP2(EnvironmentForcingDNS):
             )  # weights tuned to scale
 
         # 2. Smoothness penalty to stop erratic coefficient jumps across the 100 steps
-        smoothness_penalty = 1 / self.ann_config.n_agent_steps_per_episode * (
-            0.1 * np.linalg.norm(action - previous_action) ** 2 / self.ann_config.action_dimension
-            if agent_step_idx > 0
-            else 0
+        smoothness_penalty = (
+            1
+            / self.ann_config.n_agent_steps_per_episode
+            * (
+                0.1
+                * np.linalg.norm(action - previous_action) ** 2
+                / self.ann_config.action_dimension
+                if agent_step_idx > 0
+                else 0
+            )
         )
 
         # 3. Baseline comparison (Differential reward)
@@ -152,8 +160,17 @@ class EnvironmentShortMDP2(EnvironmentForcingDNS):
                 baseline_path=self.baseline_path, agent_step=agent_step_idx
             )
             # Improvement over baseline (positive means ANN did better than uncorrected model)
-            improvement = -1 * baseline_error - total_ann_error # baseline is already negative
-            print("baseline: ", baseline_error, " ann_error: ", total_ann_error, " Improvement: ", improvement)
+            improvement = (
+                -1 * baseline_error - total_ann_error
+            )  # baseline is already negative
+            print(
+                "baseline: ",
+                baseline_error,
+                " ann_error: ",
+                total_ann_error,
+                " Improvement: ",
+                improvement,
+            )
             return 3 * improvement - smoothness_penalty
 
         if not is_baseline_run:

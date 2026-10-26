@@ -2,9 +2,9 @@ from pathlib import Path
 
 import numpy as np
 
-from ml.ann_config import Scope
-from ml.reference_scheduler import ReferenceTrajectory
-from ml.td3_training import TD3Trainer
+from ml.original.ann_config import Scope
+from ml.original.reference_scheduler import ReferenceTrajectory
+from ml.original.training import TD3Trainer
 from proofing.action_based.config import ProofMode
 from proofing.contextual_bandit_reformulation.config import ANNBanditConfig
 from setup.config_discretization import DiscretizationConfig

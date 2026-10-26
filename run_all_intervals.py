@@ -5,7 +5,7 @@ import shutil
 
 import numpy as np
 
-from ml.reference_scheduler import ReferenceTrajectory
+from ml.original.reference_scheduler import ReferenceTrajectory
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel

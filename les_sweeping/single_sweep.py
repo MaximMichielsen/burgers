@@ -2,7 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 import numpy as np
 
-from ml.reference_scheduler import ReferenceTrajectory
+from ml.original.reference_scheduler import ReferenceTrajectory
 from setup.config_discretization import DiscretizationConfig
 from setup.constants import Z_LENGTH_DNS
 from setup.problems import Problem

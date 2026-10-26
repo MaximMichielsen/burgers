@@ -10,10 +10,11 @@ import numpy as np
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-from ml.ann import ReplayBuffer, TauANN, save_tau_ann
-from ml.ann_config import TauANNConfig, TD3Hyperparameters
+from ml.original.ann import TauANN, save_tau_ann
+from ml.original.ann_config import TauANNConfig, TD3Hyperparameters
 from ml.diagnostics import plot_diagnostic_metrics
-from ml.environment import EnvironmentForcingDNS
+from ml.original.environment import EnvironmentForcingDNS
+from ml.replay_buffer import ReplayBuffer
 from ml.td3_agent import TD3Agent
 from proofing.short_mdp_2.environment import EnvironmentShortMDP2
 from setup.constants import PATH_TO_LES_CACHE, N_NODES_DNS
@@ -23,7 +24,7 @@ from utils.les_caching import (
     LESCacheStatus,
     write_les_parameters,
 )
-from ml.reference_scheduler import ReferenceTrajectory
+from ml.original.reference_scheduler import ReferenceTrajectory
 from proofing.action_based.config import ANNConfigProof
 from proofing.action_based.environment import EnvironmentProof
 from proofing.action_based.solver import SolverForProofs
@@ -101,7 +102,6 @@ class TD3Trainer:
             Path(baseline_path) if baseline_path else Path(PATH_TO_LES_CACHE)
         )
         self.baseline_run_dir: Path | None = None
-        self.baseline_test_dir: Path | None = None
 
         self.train_intervals = train_intervals
         self.test_interval = test_interval
@@ -547,7 +547,7 @@ class TD3Trainer:
                 }. Skipping simulation."
             )
             self.baseline_run_dir = cache_result.cache_dir
-            _set_cache_writable(self.baseline_run_dir, False)
+            set_cache_writable(self.baseline_run_dir, False)
             if self.env is not None:
                 self.env.baseline_path = self.baseline_run_dir
             self._load_baseline_metrics()
@@ -560,7 +560,7 @@ class TD3Trainer:
                 self.problem.t_start
             } - {self.problem.t_end}] and caching to: {target_cache_dir}"
         )
-        _set_cache_writable(target_cache_dir, True)
+        set_cache_writable(target_cache_dir, True)
         self.baseline_run_dir = target_cache_dir
 
         self.solver = SolverCoupled(
@@ -616,7 +616,7 @@ class TD3Trainer:
         )
 
         self._load_baseline_metrics()
-        _set_cache_writable(self.baseline_run_dir, False)
+        set_cache_writable(self.baseline_run_dir, False)
 
     def run_evaluation(self):
         self.run_baseline_evaluation()
@@ -1523,12 +1523,14 @@ class TD3Trainer:
 
         fig, ax = plt.subplots(figsize=(10, 6), dpi=300, layout="constrained")
 
-        ax.plot(steps,
-                rewards,
-                color="royalblue",
-                alpha = 0.3,
-                linewidth=1.0,
-                label="Stepwise Reward")
+        ax.plot(
+            steps,
+            rewards,
+            color="royalblue",
+            alpha=0.3,
+            linewidth=1.0,
+            label="Stepwise Reward",
+        )
         window_size = 10
         if len(rewards) >= window_size:
             moving_avg = np.convolve(
@@ -1552,7 +1554,6 @@ class TD3Trainer:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         self._log(f"  * Saved reward evolution plot -> {save_path.name}")
         plt.close(fig)
-
 
     def plot_history_breakdown(
         self, env: EnvironmentForcingDNS, show_plot: bool = False
@@ -1655,7 +1656,7 @@ class TD3Trainer:
         self._log(f"  * Saved interval count plot -> {plot_path.name}")
 
 
-def _set_cache_writable(cache_dir: Path, writable: bool) -> None:
+def set_cache_writable(cache_dir: Path, writable: bool) -> None:
     mode = stat.S_IREAD | stat.S_IWRITE if writable else stat.S_IREAD
     for p in cache_dir.rglob("*"):
         if p.is_file():

@@ -3,8 +3,8 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ml.environment import EnvironmentForcingDNS, CRASH_PENALTY
-from ml.reference_scheduler import ReferenceTrajectory
+from ml.original.environment import EnvironmentForcingDNS, CRASH_PENALTY
+from ml.original.reference_scheduler import ReferenceTrajectory
 from proofing.short_mdp.config import ShortMDPConfig, TD3ShortMDPHyperparameters
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem

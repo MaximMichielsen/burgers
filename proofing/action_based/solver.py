@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ml.ann_config import SMOOTHING_FACTOR
+from ml.original.ann_config import SMOOTHING_FACTOR
 from proofing.action_based.config import ANNConfigProof
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem

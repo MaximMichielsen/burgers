@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from ml.ann_config import TauANNConfig, Scope
+from ml.original.ann_config import TauANNConfig, Scope
 
 
 class ProofMode(str, Enum):

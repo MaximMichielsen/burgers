@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from ml.ann_config import TauANNConfig, TD3Hyperparameters
+from ml.original.ann_config import TauANNConfig, TD3Hyperparameters
 
 
 BANDIT_MIN_ACTION = 0.9
@@ -16,7 +16,6 @@ class ANNBanditConfig(TauANNConfig):
 
     max_action: float = BANDIT_MAX_ACTION
     min_action: float = BANDIT_MIN_ACTION
-
 
     @property
     def n_agent_steps_per_episode(self) -> int:

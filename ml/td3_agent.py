@@ -7,8 +7,10 @@ import torch.nn.functional as functional
 from numpy.typing import NDArray
 from torch import nn, Tensor
 
-from ml.ann import ReplayBuffer, TauANN
-from ml.ann_config import TauANNConfig, TD3Hyperparameters
+from ml.bandit.ann import BanditConfig, BanditHyperparameters, BanditANN
+from ml.original.ann import TauANN
+from ml.original.ann_config import TauANNConfig, TD3Hyperparameters
+from ml.replay_buffer import ReplayBuffer
 from proofing.contextual_bandit_reformulation.config import (
     TD3BanditHyperparameters,
 )
@@ -55,15 +57,30 @@ class TD3Agent:
 
     def __init__(
         self,
-        ann_config: TauANNConfig,
-        hp: TD3Hyperparameters | TD3BanditHyperparameters = TD3Hyperparameters(),
+        ann_config: TauANNConfig | BanditConfig,
+        hp: TD3Hyperparameters
+        | TD3BanditHyperparameters
+        | BanditHyperparameters
+        | None = None,
     ):
         self.config = ann_config
-        self.hp = hp
         self.device = torch.device("cpu")
 
         # Base TauANN wrapped into TD3 Policy
-        self.actor = TauANN(config=ann_config, hyperparams=hp).to(self.device)
+        if isinstance(ann_config, TauANNConfig):
+            if hp is None:
+                hp = TD3Hyperparameters()
+            self.actor = TauANN(config=ann_config, hyperparams=hp).to(self.device)
+
+        elif isinstance(ann_config, BanditConfig):
+            self.actor = BanditANN(config=ann_config).to(self.device)
+            if hp is None:
+                hp = BanditHyperparameters()
+
+        else:
+            raise RuntimeError("blabla")
+
+        self.hp = hp
         self.actor_target = copy.deepcopy(self.actor)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=hp.lr)
 
@@ -124,7 +141,7 @@ class TD3Agent:
         current_q1, current_q2 = self.critic(state, action)
 
         loss_fn = (
-            functional.mse_loss if self.hp.critic_mse else functional.smooth_l1_loss
+            functional.mse_loss if getattr(self.hp, "critic_mse", None) else functional.smooth_l1_loss
         )
         critic_loss = loss_fn(current_q1, target_q) + loss_fn(current_q2, target_q)
 

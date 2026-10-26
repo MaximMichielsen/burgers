@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ml.reference_scheduler import ReferenceTrajectory
+from ml.original.reference_scheduler import ReferenceTrajectory
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
@@ -22,8 +22,8 @@ n_nodes_dns = 513
 z_length = 2.0
 
 dt = 1e-3
-t_start = 308.0101
-t_end = 309.01
+t_start = 312.01
+t_end = 313.01
 
 simulation_mode = SimulationMode.TAU_BASED
 tau_model = TauModel.TWO_PARAMS
@@ -58,9 +58,9 @@ reference_trajectory = ReferenceTrajectory(
     projected_w_path=get_velocity_profiles_path(PROJECT_ROOT, n_nodes_les),
     times_path=PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy",
     n_nodes_les=n_nodes_les,
-    t_start=t_start,
-    t_end=t_end,
 )
+
+reference_trajectory.set_active_training_interval(t_start, t_end)
 
 problem = replace(problem, initial_condition=reference_trajectory.initial_condition)
 

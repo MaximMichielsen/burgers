@@ -3,9 +3,9 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ml.ann_config import TauANNHyperparameters, TD3Hyperparameters
-from ml.environment import EnvironmentForcingDNS, CRASH_PENALTY
-from ml.reference_scheduler import ReferenceTrajectory
+from ml.original.ann_config import TauANNHyperparameters, TD3Hyperparameters
+from ml.original.environment import EnvironmentForcingDNS, CRASH_PENALTY
+from ml.original.reference_scheduler import ReferenceTrajectory
 from proofing.contextual_bandit_reformulation.config import ANNBanditConfig
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
@@ -39,7 +39,9 @@ class EnvironmentBanditTraining(EnvironmentForcingDNS):
 
         self.baseline_reynolds_reward: float | None = None
 
-    def step(self, action: NDArray, is_baseline_run: bool = False, agent_step_idx: int = 0) -> tuple[NDArray, float, bool, dict]:
+    def step(
+        self, action: NDArray, is_baseline_run: bool = False, agent_step_idx: int = 0
+    ) -> tuple[NDArray, float, bool, dict]:
         """Set αₙ, advance Nₛₖᵢₚ LES steps, return (sₙ₊₁, rₙ, done, info)."""
         if self.solver is None:
             raise RuntimeError("Call reset() before step().")

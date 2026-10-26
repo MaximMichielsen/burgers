@@ -3,9 +3,9 @@ from typing import List, Tuple, Optional
 
 import numpy as np
 
-from ml.ann_config import Scope
-from ml.reference_scheduler import ReferenceTrajectory
-from ml.td3_training import TD3Trainer
+from ml.original.ann_config import Scope
+from ml.original.reference_scheduler import ReferenceTrajectory
+from ml.original.training import TD3Trainer
 from proofing.action_based.config import ProofMode
 from proofing.short_mdp.config import ShortMDPConfig
 from setup.config_discretization import DiscretizationConfig
@@ -120,12 +120,15 @@ for agent_steps in n_agent_steps:
     )
     run_dir.mkdir(parents=True, exist_ok=True)
 
-
     ann_path = run_dir / "ann_model.pt"
     target_profile_dir = PROJECT_ROOT / "dns_data" / "intervals"
-    w_field_path = PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
+    w_field_path = (
+        PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
+    )
     times_path = PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy"
-    forcing_projected = np.load(TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy")
+    forcing_projected = np.load(
+        TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy"
+    )
     times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
 
     problem = Problem(
@@ -170,7 +173,6 @@ for agent_steps in n_agent_steps:
         n_nodes_les=n_nodes_les,
     )
 
-
     trainer = TD3Trainer(
         problem,
         disc_config,
@@ -184,4 +186,6 @@ for agent_steps in n_agent_steps:
     # Execute stochastic training and final testing evaluation
     trainer.run_training()
 
-    print("\n[SUCCESS] Stochastic training and testing pipeline completed successfully.")
+    print(
+        "\n[SUCCESS] Stochastic training and testing pipeline completed successfully."
+    )

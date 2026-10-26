@@ -140,6 +140,7 @@ class SolverBase:
         self._n_time_steps, self._step_dts = self._compute_time_stepping(
             self._dt, self.domain_timespan
         )
+        self._n_time_steps = self.disc_config.n_timesteps
         self.time_steps: NDArray = self.t_start + np.concatenate(
             ([0.0], np.cumsum(self._step_dts))
         )
