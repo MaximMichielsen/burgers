@@ -28,7 +28,50 @@ from utils.les_caching import (
     LESCacheKey,
 )
 
-REWARD_CLIP = -10
+REWARD_CLIP = -0.2
+
+STYLE_DNS_RAW = dict(color="0.65", linestyle="-", linewidth=1.0, zorder=1)
+STYLE_DNS_PROJ = dict(color="black", linestyle=":", linewidth=1.6, zorder=2)
+STYLE_BASELINE = dict(
+    color="#0072B2",
+    linestyle="-.",
+    linewidth=1.5,
+    marker="^",
+    markersize=3.5,
+    markerfacecolor="white",
+    markeredgewidth=0.9,
+    zorder=3,
+)
+STYLE_IMPROVED = dict(
+    color="#D55E00",
+    linestyle="--",
+    linewidth=1.8,
+    marker="o",
+    markersize=3.5,
+    markerfacecolor="white",
+    markeredgewidth=0.9,
+    zorder=4,
+)
+
+
+# Set publication style defaults
+plt.rcParams.update(
+    {
+        "font.family": "serif",  # Match your thesis font (serif or sans-serif)
+        "font.size": 10,  # Base font size
+        "axes.labelsize": 11,  # Axis label size
+        "axes.titlesize": 11,  # Title size (if using titles)
+        "xtick.labelsize": 9,  # Tick label size
+        "ytick.labelsize": 9,  # Tick label size
+        "legend.fontsize": 9,  # Legend font size
+        "xtick.direction": "in",  # Ticks pointing inward
+        "ytick.direction": "in",
+        "xtick.top": True,  # Ticks on all four sides for a clean box frame
+        "ytick.right": True,
+        "axes.linewidth": 0.8,  # Frame line width
+        "figure.autolayout": True,  # Tight layout adjustment
+    }
+)
 
 
 class BanditTrainer:
@@ -86,6 +129,11 @@ class BanditTrainer:
         self.actor_loss_history = []
         self.q_value_gradient_history = []
         self.q_sensitivity_history = []
+
+        self.master_plot_path = (
+            self.master_path / f"plots_e{self.ann_config.n_training_episodes}"
+        )
+        self.master_plot_path.mkdir(parents=True, exist_ok=True)
 
     def run_training(self) -> BanditANN:
         """Main training loop connecting the environment and TD3 agent."""
@@ -177,7 +225,11 @@ class BanditTrainer:
                     action=action,
                     is_baseline_run=False,
                 )
-                scalar_reward = float(np.squeeze(reward)) if hasattr(reward, "__len__") else float(reward)
+                scalar_reward = (
+                    float(np.squeeze(reward))
+                    if hasattr(reward, "__len__")
+                    else float(reward)
+                )
                 clipped_reward = np.clip(scalar_reward, a_min=REWARD_CLIP, a_max=None)
                 self.reward_history.append(clipped_reward)
 
@@ -507,67 +559,39 @@ class BanditTrainer:
         mean_l2, mean_rmse, mean_rel = compute_error_metrics(les_mean, mean_profile_dns)
         ww_l2, ww_rmse, ww_rel = compute_error_metrics(les_reynolds, reynolds_dns)
 
-        # 4. Generate 2x1 Figure Layout (Top: Mean Velocity, Bottom: Reynolds Stress)
+        # 4. Generate 1x2 figure layout (left: mean velocity, right: Reynolds stress)
         fig, (ax1, ax2) = plt.subplots(
-            2, 1, figsize=(8, 9), dpi=300, constrained_layout=True
+            1, 2, figsize=(10, 3.5), dpi=300, constrained_layout=True
         )
 
         for ax in (ax1, ax2):
             ax.axhline(
-                0, color="black", linestyle="--", linewidth=0.5, alpha=0.4, zorder=1
+                0, color="black", linestyle=":", linewidth=0.5, alpha=0.4, zorder=0
             )
             ax.minorticks_on()
             ax.tick_params(
                 which="both", direction="in", top=True, right=True, length=4, width=0.8
             )
             ax.tick_params(which="minor", length=2, width=0.5)
-
-        # Professional Color Palette (Colorblind-safe & publication-refined)
-        color_dns_1, color_les_1 = "#1b4965", "#e76f51"  # Mean Profile
-        color_dns_2, color_les_2 = "#2a9d8f", "#b7094c"  # Reynolds Stress
-        color_baseline = "#8b5cf6"  # Vibrant Purple (Standout Baseline)
+            for spine in ax.spines.values():
+                spine.set_linewidth(0.8)
 
         mesh_les = self.disc_config.mesh_les
+        mark_every = max(1, len(mesh_les) // 16)
 
-        # --- Top Subplot: Mean Velocity Profile ---
+        # --- Left Subplot: Mean Velocity Profile ---
         if raw_profile_dns is not None:
             ax1.plot(
                 self.disc_config.mesh_dns,
                 raw_profile_dns,
-                color="grey",
-                linestyle="-",
-                linewidth=1.0,
                 label=f"DNS ({N_NODES_DNS} pts)",
-                zorder=2,
-                alpha=0.8,
+                **STYLE_DNS_RAW,
             )
         ax1.plot(
             mesh_les,
             mean_profile_dns,
-            color=color_dns_1,
-            linestyle="--",
-            linewidth=1.6,
-            marker="s",
-            markevery=max(1, len(mesh_les) // 16),
-            markersize=4.5,
-            markerfacecolor="white",
-            markeredgewidth=1.1,
             label=f"Proj. DNS ({len(mesh_les)} pts)",
-            zorder=2,
-        )
-        ax1.plot(
-            mesh_les,
-            les_mean,
-            color=color_les_1,
-            linestyle="--",
-            linewidth=1.3,
-            marker="o",
-            markevery=max(1, len(mesh_les) // 16),
-            markersize=4.5,
-            markerfacecolor="white",
-            markeredgewidth=1.1,
-            label=f"LES Model ({len(mesh_les)} pts)",
-            zorder=3,
+            **STYLE_DNS_PROJ,
         )
 
         # Baseline comparison handling
@@ -600,39 +624,18 @@ class BanditTrainer:
                     ax1.plot(
                         mesh_les,
                         baseline_mean,
-                        color=color_baseline,
-                        linestyle="--",
-                        linewidth=1.4,
-                        marker="^",
-                        markevery=max(1, len(mesh_les) // 16),
-                        markersize=4.5,
-                        markerfacecolor="white",
-                        markeredgewidth=1.1,
+                        markevery=mark_every,
                         label=f"Baseline Model ({len(mesh_les)} pts)",
-                        zorder=3,
+                        **STYLE_BASELINE,
                     )
 
-            if baseline_ww_file.exists():
-                baseline_ww = np.load(baseline_ww_file)
-                if mesh_les.shape == baseline_ww.shape:
-                    baseline_ww_l2, baseline_ww_rms, baseline_ww_rel = (
-                        compute_error_metrics(baseline_ww, reynolds_dns)
-                    )
-                    has_baseline_ww = True
-                    ax2.plot(
-                        mesh_les,
-                        baseline_ww,
-                        color=color_baseline,
-                        linestyle="--",
-                        linewidth=1.4,
-                        marker="^",
-                        markevery=max(1, len(mesh_les) // 16),
-                        markersize=4.5,
-                        markerfacecolor="white",
-                        markeredgewidth=1.1,
-                        label=f"Baseline Model ({len(mesh_les)} pts)",
-                        zorder=3,
-                    )
+        ax1.plot(
+            mesh_les,
+            les_mean,
+            markevery=mark_every,
+            label=f"Corrected Model ({len(mesh_les)} pts)",
+            **STYLE_IMPROVED,
+        )
 
         # --- Time Interval Label Integration ---
         time_str = f"$t \\in [{self.problem.t_start:.2f}, {self.problem.t_end:.2f}]$"
@@ -644,129 +647,125 @@ class BanditTrainer:
 
         ax1.set_title(
             rf"(a) Mean Velocity Profile $\langle w \rangle$ | {title_tag}",
-            fontsize=11,
-            pad=8,
+            fontsize=10,
+            pad=6,
             loc="left",
         )
-        ax1.set_xlabel(r"Wall-normal coordinate $z$", fontsize=11)
-        ax1.set_ylabel(r"$\langle w \rangle$", fontsize=11)
+        ax1.set_ylabel(r"$\langle w \rangle$", fontsize=10)
         ax1.set_xlim(min(mesh_les), max(mesh_les))
-        ax1.legend(
-            loc="upper right",
-            frameon=True,
-            edgecolor="none",
-            facecolor="white",
-            framealpha=0.9,
-        )
+        ax1.set_xlabel("Wall-normal coordinate $z$", fontsize=9)
 
         if has_baseline_mean:
             score_text1 = (
-                f"$L_2$: {mean_l2:.2e} | RMSE: {mean_rmse:.2e} | "
-                f"Rel. Err: {mean_rel:.1f}% (vs. baseline: {baseline_mean_rel:.1f}%)"
+                f"RMSE: {mean_rmse:.2e} | "
+                f"Rel. Err: {mean_rel:.1f}% (vs. {baseline_mean_rel:.1f}%)"
             )
         else:
             score_text1 = f"$L_2$: {mean_l2:.2e} | RMSE: {mean_rmse:.2e} | Rel. Err: {mean_rel:.1f}%"
 
+        # Professional text box at the bottom of ax1
         ax1.text(
             0.5,
-            0.03,
+            0.06,
             score_text1,
             transform=ax1.transAxes,
-            fontsize=8.5,
-            horizontalalignment="center",
-            verticalalignment="bottom",
+            fontsize=8,
+            ha="center",
+            va="bottom",
             bbox=dict(
-                boxstyle="square,pad=0.4",
+                boxstyle="round,pad=0.4",
                 facecolor="white",
-                edgecolor="0.85",
-                linewidth=0.6,
+                edgecolor="0.8",
+                alpha=0.9,
+                linewidth=0.8,
             ),
-            zorder=5,
         )
 
-        # --- Bottom Subplot: Reynolds Stress Profile ---
+        # --- Right Subplot: Reynolds Stress Profile ---
         if raw_reynolds_dns is not None:
             ax2.plot(
                 self.disc_config.mesh_dns,
                 raw_reynolds_dns,
-                color="grey",
-                linestyle="-",
-                linewidth=1,
                 label=f"DNS ({N_NODES_DNS} pts)",
-                zorder=2,
-                alpha=0.8,
+                **STYLE_DNS_RAW,
             )
         ax2.plot(
             mesh_les,
             reynolds_dns,
-            color=color_dns_2,
-            linestyle="--",
-            linewidth=1.6,
-            marker="s",
-            markevery=max(1, len(mesh_les) // 16),
-            markersize=4.5,
-            markerfacecolor="white",
-            markeredgewidth=1.1,
             label=f"Proj. DNS ({len(mesh_les)} pts)",
-            zorder=2,
+            **STYLE_DNS_PROJ,
         )
+        if evaluation_mode and getattr(self, "baseline_run_dir", None) is not None:
+            if baseline_ww_file.exists():
+                baseline_ww = np.load(baseline_ww_file)
+                if mesh_les.shape == baseline_ww.shape:
+                    baseline_ww_l2, baseline_ww_rms, baseline_ww_rel = (
+                        compute_error_metrics(baseline_ww, reynolds_dns)
+                    )
+                    has_baseline_ww = True
+                    ax2.plot(
+                        mesh_les,
+                        baseline_ww,
+                        markevery=mark_every,
+                        label=f"Baseline Model ({len(mesh_les)} pts)",
+                        **STYLE_BASELINE,
+                    )
+
         ax2.plot(
             mesh_les,
             les_reynolds,
-            color=color_les_2,
-            linestyle="--",
-            linewidth=1.3,
-            marker="o",
-            markevery=max(1, len(mesh_les) // 16),
-            markersize=4.5,
-            markerfacecolor="white",
-            markeredgewidth=1.1,
-            label=f"LES Model ({len(mesh_les)} pts)",
-            zorder=3,
+            markevery=mark_every,
+            label=f"Corrected Model ({len(mesh_les)} pts)",
+            **STYLE_IMPROVED,
         )
 
         ax2.set_title(
             rf"(b) Reynolds Stress Profile $\langle w'w' \rangle$ | {title_tag}",
-            fontsize=11,
-            pad=8,
+            fontsize=10,
+            pad=6,
             loc="left",
         )
-        ax2.set_xlabel(r"Wall-normal coordinate $z$", fontsize=11)
-        ax2.set_ylabel(r"$\langle w'w' \rangle$", fontsize=11)
+        ax2.set_ylabel(r"$\langle w'w' \rangle$", fontsize=10)
         ax2.set_xlim(min(mesh_les), max(mesh_les))
-        ax2.legend(
-            loc="upper right",
-            frameon=True,
-            edgecolor="none",
-            facecolor="white",
-            framealpha=0.9,
-        )
+        ax2.set_xlabel("Wall-normal coordinate $z$", fontsize=9)
 
         if has_baseline_ww:
             score_text2 = (
-                f"$L_2$: {ww_l2:.2e} | RMSE: {ww_rmse:.2e} | "
-                f"Rel. Err: {ww_rel:.1f}% (vs. baseline: {baseline_ww_rel:.1f}%)"
+                f"RMSE: {ww_rmse:.2e} | "
+                f"Rel. Err: {ww_rel:.1f}% (vs. {baseline_ww_rel:.1f}%)"
             )
         else:
-            score_text2 = (
-                f"$L_2$: {ww_l2:.2e} | RMSE: {ww_rmse:.2e} | Rel. Err: {ww_rel:.1f}%"
-            )
+            score_text2 = f"RMSE: {ww_rmse:.2e} | Rel. Err: {ww_rel:.1f}%"
 
+        # Professional text box at the bottom of ax2
         ax2.text(
             0.5,
-            0.03,
+            0.06,
             score_text2,
             transform=ax2.transAxes,
-            fontsize=8.5,
-            horizontalalignment="center",
-            verticalalignment="bottom",
+            fontsize=8,
+            ha="center",
+            va="bottom",
             bbox=dict(
-                boxstyle="square,pad=0.4",
+                boxstyle="round,pad=0.4",
                 facecolor="white",
-                edgecolor="0.85",
-                linewidth=0.6,
+                edgecolor="0.8",
+                alpha=0.9,
+                linewidth=0.8,
             ),
-            zorder=5,
+        )
+
+        # Shared legend below both panels
+        h1, l1 = ax1.get_legend_handles_labels()
+        h2, l2 = ax2.get_legend_handles_labels()
+        handles, labels = (h1, l1) if len(h1) >= len(h2) else (h2, l2)
+        fig.legend(
+            handles,
+            labels,
+            loc="outside lower center",  # requires matplotlib >= 3.7
+            ncol=len(handles),
+            fontsize=9,
+            frameon=False,
         )
 
         # 5. Resolve Output Directory & File Name
@@ -786,7 +785,7 @@ class BanditTrainer:
         if episode is not None:
             filename = f"profile_comparison_ep{episode:03d}.png"
         elif is_testing_plot:
-            filename = "profile_comparison_testing.png"
+            filename = f"profiles_e{self.ann_config.n_training_episodes}.png"
         elif isinstance(solver, SolverCoupled):
             filename = "profile_comparison_evaluation.png"
         else:
@@ -795,12 +794,18 @@ class BanditTrainer:
         output_plot_path = out_dir / filename
         plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
 
+        if is_testing_plot:
+            plt.savefig(self.master_plot_path / filename, dpi=300, bbox_inches="tight")
+            plt.savefig(
+                self.master_plot_path / "profiles.pdf", dpi=300, bbox_inches="tight"
+            )
+
         if show_plot:
             plt.show()
         else:
             plt.close(fig)
 
-        self._log(f"  * Saved 2x1 profile comparison -> {output_plot_path}")
+        self._log(f"  * Saved 1x2 profile comparison -> {output_plot_path}")
 
         return (
             mean_l2,
@@ -851,6 +856,9 @@ class BanditTrainer:
 
         save_path = self.master_path / "step_rewards.png"
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.savefig(
+            self.master_plot_path / "step_rewards.png", dpi=300, bbox_inches="tight"
+        )
         self._log(f"  * Saved reward evolution plot -> {save_path.name}")
         plt.close(fig)
 
@@ -929,13 +937,18 @@ class BanditTrainer:
         # Save to master path
         plot_path = self.master_path / "interval_counts.png"
         fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+        fig.savefig(
+            self.master_plot_path / "interval_counts.png", dpi=300, bbox_inches="tight"
+        )
         plt.close(fig)
         self._log(f"  * Saved interval count plot -> {plot_path.name}")
 
     def run_diagnostic_plotting(self, save_path: Path | None = None) -> Path:
         """Trigger diagnostic plot generation for the trainer instance."""
         if save_path is None:
-            save_path = self.master_path / "diagnostics"
+            save_path = (
+                self.master_path / f"diagnostics_e{self.ann_config.n_training_episodes}"
+            )
 
         save_path.mkdir(parents=True, exist_ok=True)
         plot_diagnostic_metrics(trainer=self, save_dir=save_path)
@@ -1020,7 +1033,6 @@ class BanditTrainer:
         replay_buffer: Any,
     ) -> None:
         mean_action = float(np.mean(actions)) if len(actions) > 0 else 0.0
-        scalar_reward = float(np.squeeze(np.asarray(reward)))
 
         self._log("-" * 75)
         self._log(

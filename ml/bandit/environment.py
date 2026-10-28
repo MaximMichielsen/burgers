@@ -54,10 +54,13 @@ class BanditEnvironment:
             tau_model=self.ann_config.tau_model,
             baseline_mode=False,
         )
-        state = 1
-        if self.solver is not None:
-            state = float(self.solver.create_input_stencil())
-        return state
+        if not getattr(self.ann_config, "is_contextual", False):
+            state = 1
+            if self.solver is not None:
+                state = float(self.solver.create_input_stencil())
+            return state
+
+        return self.solver.create_input_stencil()
 
     def step(
         self, action: NDArray, is_baseline_run: bool = False
@@ -79,7 +82,10 @@ class BanditEnvironment:
 
         reward_val = self.compute_reward(action, is_baseline_run)
         done_flag = True
-        next_state = float(self.solver.create_input_stencil())
+        if not getattr(self.ann_config, "is_contextual", False):
+            next_state = float(self.solver.create_input_stencil())
+        else:
+            next_state = self.solver.create_input_stencil()
 
         return next_state, reward_val, done_flag
 
@@ -112,8 +118,7 @@ class BanditEnvironment:
             base_action = np.ones(self.ann_config.action_dimension)
             action_penalty = self.compute_distance_error(action, base_action)
 
-
-            return penalty_baseline - penalty - action_penalty**2 * 0.01
+            return penalty_baseline - penalty - action_penalty * 0.01
 
         return penalty
 

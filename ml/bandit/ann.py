@@ -26,11 +26,18 @@ class BanditConfig:
     state_dimension: int = 1
     hidden_dimension: int = 64
 
+    is_contextual: bool = False
+    n_nodes_les: int = 17
+
+    n_agent_steps_per_episode = 1
+
     def __post_init__(self):
         self.action_dimension = self.tau_model.output_dimensions
         self.n_random_episodes = int(
             self.n_training_episodes * self.random_exploration_ratio
         )
+        if self.is_contextual:
+            self.state_dimension = (self.n_nodes_les - 1) // 2
 
 
 @dataclass
@@ -45,11 +52,13 @@ class BanditHyperparameters:
     noise_clip: float = 0.3
     policy_freq: int = 2
 
+
+
     batch_size: int = 8
     expl_noise: float = 0.15
     replay_buffer_max_size: int = int(1e3)
 
-    n_updates_post_episode = 10
+    n_updates_post_episode = 20
 
 
 class BanditANN(nn.Module):

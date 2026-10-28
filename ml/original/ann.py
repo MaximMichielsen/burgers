@@ -7,8 +7,6 @@ from torch import Tensor, nn
 
 from ml.original.ann_config import (
     TauANNConfig,
-    TauANNHyperparameters,
-    TD3Hyperparameters,
 )
 from proofing.action_based.config import ANNConfigProof
 from proofing.contextual_bandit_reformulation.config import ANNBanditConfig

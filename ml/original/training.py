@@ -1058,7 +1058,7 @@ class TD3Trainer:
         if episode is not None:
             filename = f"profile_comparison_ep{episode:03d}.png"
         elif is_testing_plot:
-            filename = "profile_comparison_testing.png"
+            filename = "evaluation_interval_1_e20.png"
         elif isinstance(solver, SolverCoupled):
             filename = "profile_comparison_evaluation.png"
         elif isinstance(solver, SolverBase):

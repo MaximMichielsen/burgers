@@ -9,15 +9,34 @@ from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
 from ml.original.environment import EnvironmentForcingDNS
-from proofing.action_based.config import ProofMode
 from proofing.action_based.environment import EnvironmentProof
 from proofing.contextual_bandit_reformulation.environment import (
     EnvironmentBanditTraining,
 )
+from matplotlib.ticker import MaxNLocator
 
 if TYPE_CHECKING:
     from ml.original.training import TD3Trainer
     from ml.bandit.training import BanditTrainer
+
+plt.rcParams.update(
+    {
+        "font.family": "serif",  # Match your thesis font (serif or sans-serif)
+        "font.size": 10,  # Base font size
+        "axes.labelsize": 11,  # Axis label size
+        "axes.titlesize": 11,  # Title size (if using titles)
+        "xtick.labelsize": 9,  # Tick label size
+        "ytick.labelsize": 9,  # Tick label size
+        "legend.fontsize": 9,  # Legend font size
+        "xtick.direction": "in",  # Ticks pointing inward
+        "ytick.direction": "in",
+        "xtick.top": True,  # Ticks on all four sides for a clean box frame
+        "ytick.right": True,
+        "axes.linewidth": 0.8,  # Frame line width
+        "figure.autolayout": True,  # Tight layout adjustment
+    }
+)
+
 
 def moving_average(data: np.ndarray | list[float], window_size: int = 50) -> np.ndarray:
     """Calculate moving average with constant NaN padding to retain input length."""
@@ -31,11 +50,262 @@ def moving_average(data: np.ndarray | list[float], window_size: int = 50) -> np.
     return np.pad(ma, (pad_left, pad_right), mode="constant", constant_values=np.nan)
 
 
-def safe_legend(ax: plt.Axes, loc: str = "upper right", **kwargs: Any) -> None:
+def safe_legend(ax: plt.Axes, loc: str = "best", **kwargs: Any) -> None:
     """Add a legend to an axis only if labeled handles exist."""
     handles, labels = ax.get_legend_handles_labels()
     if handles:
         ax.legend(loc=loc, **kwargs)
+
+
+def _save_figure(fig: plt.Figure, base_path: Path, dpi: int = 300) -> None:
+    """Save a figure as both PNG and PDF formats."""
+    png_path = base_path.with_suffix(".png")
+    pdf_path = base_path.with_suffix(".pdf")
+    fig.savefig(png_path, dpi=dpi, bbox_inches="tight")
+    fig.savefig(pdf_path, bbox_inches="tight")
+
+
+# =========================================================================
+# Subplot Routines (Standalone + Dashboard Rendering)
+# =========================================================================
+
+
+def plot_actions(
+    trainer: TD3Trainer | BanditTrainer,
+    ax: plt.Axes | None = None,
+    save_dir: Path | None = None,
+) -> None:
+    """Plot independent lines for each action dimension from trainer.action_history."""
+    standalone = ax is None
+    if standalone:
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+    action_history = getattr(trainer, "action_history", [])
+    if len(action_history) == 0:
+        env = getattr(trainer, "env", None)
+        action_history = getattr(env, "action_history", [])
+
+    random_exploration_episodes = trainer.ann_config.n_random_episodes
+
+    if random_exploration_episodes != 0:
+        ax.axvline(
+            x=random_exploration_episodes,
+            color="gray",
+            alpha=0.8,
+            linestyle="--",
+            linewidth=0.8,
+            label=f"End Exploration Phase (Ep. {random_exploration_episodes})",
+        )
+
+    actions = np.asarray(action_history)
+    episodes = np.arange(1, len(actions) + 1)
+    action_labels = ["Advection", "Viscosity", "third term", "fourht therm"]
+
+    if len(actions) > 0:
+        if actions.ndim == 1:
+            ax.step(
+                episodes,
+                actions,
+                color="dodgerblue",
+                linewidth=1.0,
+                alpha=0.6,  # Soft horizontal/step line
+                where="post",
+            )
+            ax.plot(
+                episodes,
+                actions,
+                color="dodgerblue",
+                marker="o",
+                markersize=4,
+                linestyle="None",  # Hard marker at each episode
+                label=action_labels[0],
+            )
+        else:
+            num_dims = actions.shape[1]
+            colors = ["dodgerblue", "darkorange", "forestgreen", "purple"]
+            for i in range(num_dims):
+                color = colors[i % len(colors)]
+                label = (
+                    action_labels[i] if i < len(action_labels) else f"Action {i + 1}"
+                )
+                # Soft step line for the trend
+                ax.step(
+                    episodes,
+                    actions[:, i],
+                    color=color,
+                    linewidth=1.0,
+                    alpha=0.5,
+                    where="post",
+                )
+                # Hard marker for exact value reading per episode
+                ax.plot(
+                    episodes,
+                    actions[:, i],
+                    color=color,
+                    marker="o",
+                    markersize=4,
+                    linestyle="None",
+                    label=label,
+                )
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            "No Action History Logged",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+    ax.minorticks_on()
+
+    ax.set_title("(a) Policy Actions", loc="left")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Action Value")
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))  # Forces integer ticks
+    ax.tick_params(which="major", length=6, width=0.8)
+    ax.tick_params(which="minor", length=3, width=0.6)
+    ax.set_ylim(bottom=trainer.ann_config.min_action, top=None)
+    ax.grid(False)
+    safe_legend(ax)
+
+    if standalone:
+        if save_dir is None:
+            save_dir = Path(trainer.master_path) / "diagnostics"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        _save_figure(fig, save_dir / "diagnostic_actions")
+        plt.close(fig)
+
+
+def plot_critic_sensitivity(
+    trainer: TD3Trainer | BanditTrainer,
+    ax: plt.Axes | None = None,
+    save_dir: Path | None = None,
+) -> None:
+    """Plot exploration noise and critic Q-value sensitivity."""
+    standalone = ax is None
+    if standalone:
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+    n_random_episodes = trainer.ann_config.n_random_episodes
+
+    q_hist = getattr(trainer, "q_sensitivity_history", [])
+    if len(q_hist) > 0:
+        ax.plot(
+            np.arange(1 + n_random_episodes, len(q_hist) + 1 + n_random_episodes),
+            q_hist,
+            color="chocolate",
+            linewidth=2,
+            label=r"$\Delta Q = \vert{}Q(s_0, 1.1) - Q(s_0, 1.0)\vert{}$",
+        )
+        ax.set_title(r"(b) Critic Q-Value Sensitivity ($\Delta Q$)", loc="left")
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            "No Q-Sensitivity Data Logged\n(Steps < stochastic_timesteps)",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+        ax.set_title(r"(b) Critic Sensitivity $\Delta Q$", loc="left")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel(r"$\Delta Q$")
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))  # Forces integer ticks
+    ax.grid(False)
+    safe_legend(ax)
+
+    if standalone:
+        if save_dir is None:
+            save_dir = Path(trainer.master_path) / "diagnostics"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        _save_figure(fig, save_dir / "diagnostic_critic_sensitivity")
+        plt.close(fig)
+
+
+def plot_optimization_losses(
+    trainer: TD3Trainer | BanditTrainer,
+    ax: plt.Axes | None = None,
+    save_dir: Path | None = None,
+) -> None:
+    """Plot critic and actor gradient optimization losses."""
+    standalone = ax is None
+    if standalone:
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+    c_loss = getattr(trainer, "critic_loss_history", [])
+    a_loss = getattr(trainer, "actor_loss_history", [])
+    has_loss = False
+
+    if len(c_loss) > 0:
+        ax.plot(c_loss, label="Critic Loss", color="#B9314F", alpha=0.80)
+        has_loss = True
+    if len(a_loss) > 0:
+        ax.plot(a_loss, label="Actor Loss", color="#47329A", alpha=0.80)
+        has_loss = True
+
+    if not has_loss:
+        ax.text(
+            0.5,
+            0.5,
+            "No Gradient Steps Executed Yet",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+    else:
+        ax.set_yscale("log")
+
+    ax.set_title("(c) TD3 Optimization Losses", loc="left")
+    ax.set_xlabel("Training Gradient Steps")
+    ax.set_ylabel("Loss")
+    ax.grid(False)
+    safe_legend(ax)
+
+    if standalone:
+        if save_dir is None:
+            save_dir = Path(trainer.master_path) / "diagnostics"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        _save_figure(fig, save_dir / "diagnostic_optimization_losses")
+        plt.close(fig)
+
+
+def plot_reward_trajectory(
+    trainer: TD3Trainer | BanditTrainer,
+    ax: plt.Axes | None = None,
+    save_dir: Path | None = None,
+) -> None:
+    """Plot episode reward trajectory."""
+    standalone = ax is None
+    if standalone:
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+    ep_rewards = getattr(trainer, "reward_history", [])
+    if len(ep_rewards) > 0:
+        ax.plot(
+            np.arange(1, len(ep_rewards) + 1),
+            ep_rewards,
+            color="navy",
+            linewidth=2,
+            label="Clipped Episode Reward",
+        )
+    ax.set_title("(d) Episode Reward Trajectory", loc="left")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Reward")
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))  # Forces integer ticks
+    ax.grid(False)
+    safe_legend(ax, loc="best")
+
+    if standalone:
+        if save_dir is None:
+            save_dir = Path(trainer.master_path) / "diagnostics"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        _save_figure(fig, save_dir / "diagnostic_reward_trajectory")
+        plt.close(fig)
+
+
+# =========================================================================
+# Main Orchestrator & Detailed Corrections
+# =========================================================================
 
 
 def plot_diagnostic_metrics(
@@ -55,281 +325,30 @@ def plot_diagnostic_metrics(
     ann_config = getattr(trainer, "ann_config", None)
     proof_mode = getattr(ann_config, "proof_mode", None)
 
-    # =========================================================================
-    # 1. Main Diagnostic Dashboard (2x2)
-    # =========================================================================
-    fig, axes = plt.subplots(2, 2, figsize=(14, 9), sharex=False)
-    fig.suptitle("TD3 Diagnostic Dashboard", fontsize=16, fontweight="bold")
+    # 1. Generate standalone individual plots
+    plot_actions(trainer, save_dir=save_dir)
+    plot_critic_sensitivity(trainer, save_dir=save_dir)
+    plot_optimization_losses(trainer, save_dir=save_dir)
+    plot_reward_trajectory(trainer, save_dir=save_dir)
 
-    # --- Subplot [0, 0]: Policy Action Noise & Std Dev Visualization ---
-    ax = axes[0, 0]
-    action_mean_hist = getattr(env, "mean_actions", [])
+    # 2. Main Diagnostic Dashboard (2x2)
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6), sharex=False)
 
-    if proof_mode == "d" and len(action_mean_hist) > 0:
-        action_means = np.asarray(action_mean_hist)
-        target_mean = np.asarray(env.target_action_mean(), dtype=np.float64)
-        num_episodes = max(len(episodes), 1)
-        steps_actions = np.linspace(0, num_episodes, num=len(action_means))
+    plot_actions(trainer, ax=axes[0, 0])
+    plot_critic_sensitivity(trainer, ax=axes[0, 1])
+    plot_optimization_losses(trainer, ax=axes[1, 0])
+    plot_reward_trajectory(trainer, ax=axes[1, 1])
 
-        ax.plot(
-            steps_actions,
-            action_means[:, 0],
-            color="dodgerblue",
-            alpha=0.35,
-            linewidth=0.8,
-            label="Action mean 1",
-        )
-        ax.plot(
-            steps_actions,
-            moving_average(action_means[:, 0]),
-            color="navy",
-            linewidth=1.5,
-            label="Action mean 1 (trend)",
-        )
-        ax.plot(
-            steps_actions,
-            action_means[:, 1],
-            color="darkorange",
-            alpha=0.35,
-            linewidth=0.8,
-            label="Action mean 2",
-        )
-        ax.plot(
-            steps_actions,
-            moving_average(action_means[:, 1]),
-            color="chocolate",
-            linewidth=1.5,
-            label="Action mean 2 (trend)",
-        )
-
-        if len(target_mean) >= 2:
-            ax.axhline(
-                target_mean[0],
-                color="royalblue",
-                linestyle="--",
-                linewidth=1.5,
-                label=f"Target mean 1 ({target_mean[0]:.2f})",
-            )
-            ax.axhline(
-                target_mean[1],
-                color="darkorange",
-                linestyle="--",
-                linewidth=1.5,
-                label=f"Target mean 2 ({target_mean[1]:.2f})",
-            )
-
-    elif len(episodes) > 0:
-        mean_a = np.array(trainer.mean_actions)
-        std_a = np.array(trainer.std_actions)
-
-        ax.plot(
-            episodes, mean_a, label=r"Mean Action $\mu_a$", color="navy", linewidth=2
-        )
-        ax.fill_between(
-            episodes,
-            mean_a - std_a,
-            mean_a + std_a,
-            color="dodgerblue",
-            alpha=0.25,
-            label=r"Action Noise ($\mu_a \pm 1\sigma_a$)",
-        )
-        ax.axhline(
-            1.0,
-            color="slategrey",
-            linestyle="--",
-            linewidth=1.2,
-            alpha=0.8,
-            label=r"Baseline ($a=1.0$)",
-        )
-
-        if proof_mode in ("b", ProofMode.b):
-            target_vec = getattr(env, "target_actions_current", None)
-            if target_vec is not None:
-                target_arr = np.asarray(target_vec, dtype=np.float64).ravel()
-                if len(target_arr) >= 1:
-                    ax.axhline(
-                        target_arr[0],
-                        color="royalblue",
-                        linestyle="--",
-                        linewidth=1.5,
-                        alpha=0.9,
-                        label=f"Target $a_1$ ({target_arr[0]:.3f})",
-                    )
-                if len(target_arr) >= 2:
-                    ax.axhline(
-                        target_arr[1],
-                        color="darkorange",
-                        linestyle="--",
-                        linewidth=1.5,
-                        alpha=0.9,
-                        label=f"Target $a_2$ ({target_arr[1]:.3f})",
-                    )
-
-        elif proof_mode in ("c", ProofMode.c):
-            target_curr_hist = getattr(env, "target_actions_current_history", None)
-            if target_curr_hist is not None and len(target_curr_hist) > 0:
-                target_hist = np.asarray(target_curr_hist)
-                x_steps = np.linspace(1.0, max(len(episodes), 1), num=len(target_hist))
-
-                if target_hist.ndim > 1 and target_hist.shape[1] >= 2:
-                    ax.plot(
-                        x_steps,
-                        target_hist[:, 0],
-                        color="royalblue",
-                        linestyle="--",
-                        linewidth=1.2,
-                        alpha=0.75,
-                        label="Target $a_1$ History",
-                    )
-                    ax.plot(
-                        x_steps,
-                        target_hist[:, 1],
-                        color="darkorange",
-                        linestyle="--",
-                        linewidth=1.2,
-                        alpha=0.75,
-                        label="Target $a_2$ History",
-                    )
-
-                    target_mean_history = np.mean(target_hist, axis=1)
-                    ax.plot(
-                        x_steps,
-                        target_mean_history,
-                        color="crimson",
-                        linestyle="--",
-                        linewidth=1.5,
-                        alpha=0.9,
-                        label="Target Mean History",
-                    )
-                else:
-                    target_history = target_hist.ravel()
-                    ax.plot(
-                        x_steps,
-                        target_history,
-                        color="darkorange",
-                        linestyle="--",
-                        linewidth=1.2,
-                        alpha=0.8,
-                        label="Target History",
-                    )
-
-        stochastic_steps = (
-            getattr(trainer.ann_config, "n_random_episodes", None)
-            if hasattr(trainer, "ann_config")
-            else None
-        )
-
-        if stochastic_steps is None:
-            stochastic_steps = getattr(
-                getattr(trainer, "hp", None), "stochastic_timesteps", 0
-            )
-
-        n_agent_steps = getattr(ann_config, "n_agent_steps_per_episode", 1)
-        cut_off_step = int(stochastic_steps / max(n_agent_steps, 1))
-        episodes_ran = getattr(trainer, "episodes_ran", 0)
-
-        if 0 < cut_off_step < episodes_ran:
-            ax.axvline(
-                cut_off_step,
-                color="slategrey",
-                linestyle="--",
-                linewidth=1.2,
-                alpha=0.8,
-                label=rf"Exploration Cutoff ($\mathrm{{step}}={cut_off_step:.1f}$)",
-            )
-
-    ax.set_xlabel("Episode")
-    ax.set_ylabel("Action Magnitude")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax, loc="upper left")
-
-    # --- Subplot [0, 1]: Exploration Noise & Critic Q-Value Sensitivity ---
-    ax = axes[0, 1]
-    q_hist = getattr(trainer, "q_sensitivity_history", [])
-    if len(q_hist) > 0:
-        ax.plot(
-            np.arange(1, len(q_hist) + 1),
-            q_hist,
-            color="chocolate",
-            linewidth=2,
-            marker="o",
-            markersize=3,
-            label=r"$\Delta Q = \vert{}Q(s_0, 1.1) - Q(s_0, 1.0)\vert{}$",
-        )
-        ax.set_title(r"Critic Q-Value Sensitivity ($\Delta Q$)")
-    else:
-        ax.text(
-            0.5,
-            0.5,
-            "No Q-Sensitivity Data Logged\n(Steps < stochastic_timesteps)",
-            ha="center",
-            va="center",
-            transform=ax.transAxes,
-        )
-        ax.set_title(r"Critic Sensitivity $\Delta Q$")
-    ax.set_xlabel("Episode")
-    ax.set_ylabel(r"$\Delta Q$")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax)
-
-    # --- Subplot [1, 0]: Critic & Actor Losses ---
-    ax = axes[1, 0]
-    c_loss = getattr(trainer, "critic_loss_history", [])
-    a_loss = getattr(trainer, "actor_loss_history", [])
-    has_loss = False
-
-    if len(c_loss) > 0:
-        ax.plot(c_loss, label="Critic Loss", color="darkorange", alpha=0.85)
-        has_loss = True
-    if len(a_loss) > 0:
-        ax.plot(a_loss, label="Actor Loss", color="royalblue", alpha=0.85)
-        has_loss = True
-
-    if not has_loss:
-        ax.text(
-            0.5,
-            0.5,
-            "No Gradient Steps Executed Yet",
-            ha="center",
-            va="center",
-            transform=ax.transAxes,
-        )
-    else:
-        ax.set_yscale("log")
-
-    ax.set_title("TD3 Optimization Losses")
-    ax.set_xlabel("Training Gradient Steps")
-    ax.set_ylabel("Loss")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax)
-
-    # --- Subplot [1, 1]: Total Scaled vs Unscaled Reward Trajectory ---
-    ax = axes[1, 1]
-    ep_rewards = getattr(trainer, "reward_history", [])
-    if len(ep_rewards) > 0:
-        ax.plot(
-            np.arange(1, len(ep_rewards) + 1),
-            ep_rewards,
-            color="navy",
-            linewidth=2,
-            label="Clipped Episode Reward",
-        )
-    ax.set_title("Episode Reward Trajectory")
-    ax.set_xlabel("Episode")
-    ax.set_ylabel("Reward")
-    ax.grid(True, linestyle="--", alpha=0.6)
-    safe_legend(ax, loc="upper left")
-
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
-    dashboard_path = save_dir / "diagnostic_dashboard.png"
-    plt.savefig(dashboard_path, dpi=300)
+    plt.tight_layout()
+    dashboard_path = save_dir / "diagnostics"
+    _save_figure(fig, dashboard_path)
     plt.close(fig)
 
-    print(f"[DIAGNOSTICS] Diagnostic dashboard plot saved to: {dashboard_path}")
+    print(
+        f"[DIAGNOSTICS] Diagnostic dashboard plot saved to: {dashboard_path}.png / .pdf"
+    )
 
-    # =========================================================================
-    # 2. Detailed Corrections Plot (Proof Modes)
-    # =========================================================================
+    # 3. Detailed Corrections Plot (Proof Modes)
     _plot_actions_history(
         env=env,
         episodes=episodes,
@@ -372,7 +391,7 @@ def _plot_actions_history(
 
         ax1.set_ylabel("Value", fontweight="bold")
         ax1.set_title(
-            "Diagnostic: Corrections vs Target Actions (Action 1)",
+            "(a) Diagnostic: Corrections vs Target Actions (Action 1)",
             fontsize=11,
             fontweight="bold",
         )
@@ -386,7 +405,7 @@ def _plot_actions_history(
         ax2.set_xlabel("Episodes / Steps", fontweight="bold")
         ax2.set_ylabel("Value", fontweight="bold")
         ax2.set_title(
-            "Diagnostic: Corrections vs Target Actions (Action 2)",
+            "(b) Diagnostic: Corrections vs Target Actions (Action 2)",
             fontsize=11,
             fontweight="bold",
         )
@@ -464,7 +483,7 @@ def _plot_actions_history(
             )
         ax1.set_ylabel("Value", fontweight="bold")
         ax1.set_title(
-            "Diagnostic: Corrections vs Target Actions (Action 1)",
+            "(a) Diagnostic: Corrections vs Target Actions (Action 1)",
             fontsize=11,
             fontweight="bold",
         )
@@ -504,7 +523,7 @@ def _plot_actions_history(
         ax2.set_xlabel("Episodes / Steps", fontweight="bold")
         ax2.set_ylabel("Value", fontweight="bold")
         ax2.set_title(
-            "Diagnostic: Corrections vs Target Actions (Action 2)",
+            "(b) Diagnostic: Corrections vs Target Actions (Action 2)",
             fontsize=11,
             fontweight="bold",
         )
@@ -556,7 +575,7 @@ def _plot_actions_history(
         )
         ax1.set_ylabel("Value", fontweight="bold")
         ax1.set_title(
-            "Diagnostic: Correction Mean vs Target Mean (Action 1)",
+            "(a) Diagnostic: Correction Mean vs Target Mean (Action 1)",
             fontsize=11,
             fontweight="bold",
         )
@@ -584,19 +603,17 @@ def _plot_actions_history(
         ax2.set_xlabel("Episodes / Steps", fontweight="bold")
         ax2.set_ylabel("Value", fontweight="bold")
         ax2.set_title(
-            "Diagnostic: Correction Mean vs Target Mean (Action 2)",
+            "(b) Diagnostic: Correction Mean vs Target Mean (Action 2)",
             fontsize=11,
             fontweight="bold",
         )
 
     for ax in (ax1, ax2):
         ax.grid(True, linestyle="--", alpha=0.5)
-        # Places the legend cleanly outside the plot area
         ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), borderaxespad=0)
 
-    plt.tight_layout()
-    corrections_path = save_dir / "diagnostic_corrections.png"
-    plt.savefig(corrections_path, dpi=300, bbox_inches="tight")
+    corrections_path = save_dir / "diagnostic_corrections"
+    _save_figure(fig, corrections_path)
     plt.close(fig)
 
-    print(f"[DIAGNOSTICS] Corrections plot saved to: {corrections_path}")
+    print(f"[DIAGNOSTICS] Corrections plot saved to: {corrections_path}.png / .pdf")

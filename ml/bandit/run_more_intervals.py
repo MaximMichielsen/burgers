@@ -71,12 +71,12 @@ def generate_training_and_testing_intervals(
 # Define base intervals from directory structure
 base_intervals = [
     (308.0101, 309.01),
-    # (309.01, 310.01),
-    # (311.01, 312.01),
-    # (313.01, 314.01),
+    (309.01, 310.01),
+    (311.01, 312.01),
+    (313.01, 314.01),
 ]
 
-test_interval = (308.0101, 309.01)
+test_interval = (312.01, 313.01)
 
 train_intervals, test_interval = generate_training_and_testing_intervals(
     base_intervals, max_duration=1.0, test_interval=test_interval
@@ -95,24 +95,29 @@ proof_mode = ProofMode.a
 reynolds_signals = (False, True)
 
 for use_reynolds_signal in reynolds_signals:
-    sub_dir = "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
-
+    sub_dir = (
+        "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
+    )
 
     run_dir = (
         PROJECT_ROOT
         / "solver_data"
         / "true_bandit_regularized"
+        / "more_intervals"
         / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}"
         / sub_dir
     )
     run_dir.mkdir(parents=True, exist_ok=True)
 
-
     ann_path = run_dir / "ann_model.pt"
     target_profile_dir = PROJECT_ROOT / "dns_data" / "intervals"
-    w_field_path = PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
+    w_field_path = (
+        PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
+    )
     times_path = PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy"
-    forcing_projected = np.load(TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy")
+    forcing_projected = np.load(
+        TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy"
+    )
     times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
 
     problem = Problem(
@@ -150,7 +155,6 @@ for use_reynolds_signal in reynolds_signals:
         n_nodes_les=n_nodes_les,
     )
 
-
     trainer = BanditTrainer(
         problem,
         disc_config,
@@ -164,4 +168,6 @@ for use_reynolds_signal in reynolds_signals:
     # Execute stochastic training and final testing evaluation
     trainer.run_training()
 
-    print("\n[SUCCESS] Stochastic training and testing pipeline completed successfully.")
+    print(
+        "\n[SUCCESS] Stochastic training and testing pipeline completed successfully."
+    )

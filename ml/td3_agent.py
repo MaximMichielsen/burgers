@@ -141,7 +141,9 @@ class TD3Agent:
         current_q1, current_q2 = self.critic(state, action)
 
         loss_fn = (
-            functional.mse_loss if getattr(self.hp, "critic_mse", None) else functional.smooth_l1_loss
+            functional.mse_loss
+            if getattr(self.hp, "critic_mse", None)
+            else functional.smooth_l1_loss
         )
         critic_loss = loss_fn(current_q1, target_q) + loss_fn(current_q2, target_q)
 

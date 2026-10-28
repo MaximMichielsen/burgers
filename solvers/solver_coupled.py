@@ -67,7 +67,7 @@ class SolverCoupled(SolverBase):
         self.smoothing_factor = getattr(ann_config, "smoothing_factor", 0.02)
         self.mean_solution: NDArray | None = None
 
-        self.n_local_stencil_points = getattr(ann_config , "local_stencil_size", 0)
+        self.n_local_stencil_points = getattr(ann_config, "local_stencil_size", 0)
 
         self.n_correction_coefficients = tau_model.output_dimensions
         self.correction_coefficients: NDArray | None = None
@@ -250,6 +250,9 @@ class SolverCoupled(SolverBase):
         spectrum_k = positive_spectrum.astype(np.float32)
         total_les_energy = float(spectrum_k.sum())
         normalised_spectrum = spectrum_k / max(total_les_energy, 1e-12)
+
+        if getattr(self.ann_config, "is_contextual", False):
+            return normalised_spectrum
 
         previous_coefficients = (
             self.correction_coefficients
@@ -489,17 +492,14 @@ class SolverCoupled(SolverBase):
         )
 
         plt.suptitle(
-            f"Correction Coefficients",
+            "Correction Coefficients",
             fontsize=13,
             fontweight="bold",
             y=0.98,
         )
         plt.tight_layout()
 
-        save_path = (
-            self.master_path
-            / f"post_plotting_corrections_{save_suffix}.png"
-        )
+        save_path = self.master_path / f"post_plotting_corrections_{save_suffix}.png"
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
         if show_plot:
@@ -597,7 +597,7 @@ class SolverCoupled(SolverBase):
         )
         fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-        filename = f"post_plotting_corrections_evolution.png"
+        filename = f"corrections_e{self.ann_config.n_training_episodes}.png"
         save_path = self.master_path / filename
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"  * Saved evolution plot -> {filename}")
