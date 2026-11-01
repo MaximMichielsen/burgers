@@ -4,7 +4,7 @@ from typing import List, Tuple, Optional
 import numpy as np
 
 from ml.bandit.ann import BanditConfig
-from ml.bandit.reference_trajectory import BanditReferenceTrajectory
+from ml.reference_trajectory import BanditReferenceTrajectory
 from ml.bandit.training import BanditTrainer
 from proofing.action_based.config import ProofMode
 from setup.config_discretization import DiscretizationConfig

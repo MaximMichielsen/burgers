@@ -6,7 +6,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from ml.bandit.reference_trajectory import ReferenceTrajectory
+from ml.reference_trajectory import ReferenceTrajectory
 from ml.mdp.ann import MDPHyperparameters, MDPConfig
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem

@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 
 from ml.bandit.ann import BanditANN, save_tau_ann
 from ml.bandit.environment import BanditEnvironment
-from ml.bandit.reference_trajectory import (
+from ml.reference_trajectory import (
     ReferenceTrajectory,
 )
 from ml.diagnostics import plot_diagnostic_metrics

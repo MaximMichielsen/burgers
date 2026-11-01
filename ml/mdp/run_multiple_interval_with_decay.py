@@ -3,7 +3,7 @@ from typing import List, Tuple, Optional
 
 import numpy as np
 
-from ml.bandit.reference_trajectory import ReferenceTrajectory
+from ml.reference_trajectory import ReferenceTrajectory
 from ml.mdp.ann import MDPConfig
 from ml.mdp.training import MDPTrainer
 from proofing.action_based.config import ProofMode

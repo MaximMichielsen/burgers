@@ -10,9 +10,6 @@ from solvers.solver_base import TauModel
 MAX_ACTION = 5
 MIN_ACTION = 0.9
 
-# state dim: spectral w and spectral w_x
-# TODO: add previous actions to state
-
 
 @dataclass
 class MDPConfig:
@@ -82,6 +79,8 @@ class MDPANN(nn.Module):
 
         self.network = nn.Sequential(
             nn.Linear(self.state_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(),
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(),

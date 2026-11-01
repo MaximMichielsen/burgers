@@ -4,15 +4,15 @@ from typing import List, Tuple, Optional
 import numpy as np
 
 from ml.bandit.ann import BanditConfig
-from ml.bandit.reference_trajectory import BanditReferenceTrajectory
-from ml.bandit.training import BanditTrainer
+from ml.reference_trajectory import ReferenceTrajectory
+from ml.training import Trainer
 from proofing.action_based.config import ProofMode
 from setup.config_discretization import DiscretizationConfig
 from setup.constants import Z_LENGTH_DNS
 from setup.problems import Problem
 from solvers.solver_base import TauModel
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CURRENT_DIR = Path(__file__).resolve().parent
 
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
@@ -90,9 +90,9 @@ z_length = Z_LENGTH_DNS
 dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
-n_episodes = 4
+n_episodes = 20
 proof_mode = ProofMode.a
-reynolds_signals = (False,)
+reynolds_signals = (False, )
 
 for use_reynolds_signal in reynolds_signals:
     sub_dir = (
@@ -102,8 +102,9 @@ for use_reynolds_signal in reynolds_signals:
     run_dir = (
         PROJECT_ROOT
         / "solver_data"
-        / "true_bandit_regularized"
-        / "testing"
+        / "final"
+        / "bandit"
+        / "one_interval"
         / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}"
         / sub_dir
     )
@@ -148,14 +149,14 @@ for use_reynolds_signal in reynolds_signals:
         ann_path=ann_path,
     )
 
-    reference_trajectory = BanditReferenceTrajectory(
+    reference_trajectory = ReferenceTrajectory(
         mean_target_profile_dir=target_profile_dir,
         projected_w_path=w_field_path,
         times_path=times_path,
         n_nodes_les=n_nodes_les,
     )
 
-    trainer = BanditTrainer(
+    trainer = Trainer(
         problem,
         disc_config,
         ann_config,
