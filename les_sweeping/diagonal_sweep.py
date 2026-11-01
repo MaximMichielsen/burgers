@@ -4,6 +4,7 @@ import numpy as np
 
 from ml.original.reference_scheduler import ReferenceTrajectory
 from setup.config_discretization import DiscretizationConfig
+from setup.constants import Z_LENGTH_DNS
 from setup.problems import Problem
 from solvers.solver_base import SolverBase, SimulationMode, TauModel
 from utils.forcing_pathing import (
@@ -17,21 +18,19 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MEAN_PROFILE_DIR = PROJECT_ROOT / "dns_data" / "intervals"
 
 
-def run_offset_les_simulation(
-    external_coefficients: tuple[float, float] | list[float] | np.ndarray,
-    sweep_tag: str,
-    n_nodes_les: int = 17,
-    z_length: float = 2.0,
+def run_diagonal_sweep(
+    external_coeff_val: float,
+    n_nodes_les: int,
+    z_length: float = Z_LENGTH_DNS,
     dt: float = 1e-3,
-    t_start: float = 308.0101,
-    t_end: float = 309.01,
+    t_start: float = 311.01,
+    t_end: float = 312.01,
     simulation_mode: SimulationMode = SimulationMode.TAU_BASED,
     tau_model: TauModel = TauModel.TWO_PARAMS,
 ):
-    c1, c2 = external_coefficients
-    coeffs_array = np.array([c1, c2], dtype=float)
+    external_coefficients = np.ones(tau_model.output_dimensions) * external_coeff_val
 
-    # Data loading logic adapted from single_sweep_3.py[cite: 16]
+    # Data loading logic adapted from single_les_run_2.py[cite: 9]
     forcing_path = get_forcing_path(
         project_root=PROJECT_ROOT, n_nodes_les=n_nodes_les, dt=dt
     )
@@ -55,7 +54,6 @@ def run_offset_les_simulation(
     disc_config = DiscretizationConfig(
         problem=problem,
         n_nodes_les=n_nodes_les,
-        n_nodes_dns=513,
         dt_les=dt,
     )
 
@@ -64,20 +62,19 @@ def run_offset_les_simulation(
         projected_w_path=get_velocity_profiles_path(PROJECT_ROOT, n_nodes_les),
         times_path=PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy",
         n_nodes_les=n_nodes_les,
-        t_start=t_start,
-        t_end=t_end,
     )
+
+    reference_trajectory.set_active_training_interval(t_start=t_start, t_end=t_end)
 
     problem = replace(problem, initial_condition=reference_trajectory.initial_condition)
 
-    # Isolated folder structure integrated with les_sweeps[cite: 15, 16]
     master_path = (
         PROJECT_ROOT
         / "solver_data"
         / "les_sweeps"
-        / f"double_sweep_{sweep_tag}"
+        / "diagonal_sweep"
         / f"t_{t_start}_{t_end}"
-        / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}_dt_{dt}_c1_{c1:.2f}_c2_{c2:.2f}"
+        / f"les_n{n_nodes_les}_p{tau_model.output_dimensions}_dt_{dt}_coeff_{external_coeff_val:.1f}"
     )
 
     solver_les = SolverBase(
@@ -86,13 +83,13 @@ def run_offset_les_simulation(
         simulation_mode=simulation_mode,
         master_path=master_path,
         tau_model=tau_model,
-        external_correction_coefficients=coeffs_array,
+        external_correction_coefficients=external_coefficients,
     )
 
     solver_les.run_simulation()
     solver_les.post_plotting()
 
-    # Generate publication-quality profile comparisons automatically[cite: 7, 16]
+    # Generate the publication-quality comparison plot for this run[cite: 7]
     plot_profile_comparisons(
         intervals_dir=MEAN_PROFILE_DIR,
         les_base_dir=master_path,
@@ -100,34 +97,16 @@ def run_offset_les_simulation(
         z_domain=(0.0, z_length),
     )
     print(
-        f"[SUCCESS] Completed simulation and plotting for c1 = {c1:.2f}, c2 = {c2:.2f}"
+        f"[SUCCESS] Completed simulation and plotting for coefficient {external_coeff_val}"
     )
 
 
 if __name__ == "__main__":
-    baseline_val = 4.9
-    sweep_range = np.round(np.arange(3.0, 5.1, 0.2), 2)
+    coeffs = np.arange(0.9, 3.05, 0.1)
+    n_nodes = 17
+    print(f"\n--- Running Baseline offsets with coefficients: ---\n {coeffs}")
 
-    # ------------------------------------------------------------------ #
-    # Sweep 1: Vary c1, keep c2 fixed at baseline_val[cite: 15]
-    # ------------------------------------------------------------------ #
-    print(f"\n--- Running Sweep 1: Varying c1, c2 = {baseline_val} ---")
-    for c1 in sweep_range:
-        c1 = round(float(c1), 2)
-        print(f"Executing c1 = {c1:.2f}, c2 = {baseline_val:.2f}")
-        run_offset_les_simulation(
-            external_coefficients=(c1, baseline_val),
-            sweep_tag="vary_c1",
-        )
-
-    # ------------------------------------------------------------------ #
-    # Sweep 2: Vary c2, keep c1 fixed at baseline_val[cite: 15]
-    # ------------------------------------------------------------------ #
-    print(f"\n--- Running Sweep 2: Varying c2, c1 = {baseline_val} ---")
-    for c2 in sweep_range:
-        c2 = round(float(c2), 2)
-        print(f"Executing c1 = {baseline_val:.2f}, c2 = {c2:.2f}")
-        run_offset_les_simulation(
-            external_coefficients=(baseline_val, c2),
-            sweep_tag="vary_c2",
-        )
+    for coeff in coeffs:
+        coeff = round(coeff, 1)
+        print(f"\n--- Running simulation with external coefficient = {coeff} ---")
+        run_diagonal_sweep(external_coeff_val=coeff, n_nodes_les=n_nodes)

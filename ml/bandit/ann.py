@@ -52,8 +52,6 @@ class BanditHyperparameters:
     noise_clip: float = 0.3
     policy_freq: int = 2
 
-
-
     batch_size: int = 8
     expl_noise: float = 0.15
     replay_buffer_max_size: int = int(1e3)
@@ -67,7 +65,7 @@ class BanditANN(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        self.config = config
+        self.config: BanditConfig = config
 
         self.max_action = config.max_action
         self.min_action = config.min_action

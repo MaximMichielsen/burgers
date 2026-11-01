@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from torch import nn, Tensor
 
 from ml.bandit.ann import BanditConfig, BanditHyperparameters, BanditANN
+from ml.mdp.ann import MDPConfig, MDPHyperparameters, MDPANN
 from ml.original.ann import TauANN
 from ml.original.ann_config import TauANNConfig, TD3Hyperparameters
 from ml.replay_buffer import ReplayBuffer
@@ -57,10 +58,11 @@ class TD3Agent:
 
     def __init__(
         self,
-        ann_config: TauANNConfig | BanditConfig,
+        ann_config: TauANNConfig | BanditConfig | MDPConfig,
         hp: TD3Hyperparameters
         | TD3BanditHyperparameters
         | BanditHyperparameters
+        | MDPHyperparameters
         | None = None,
     ):
         self.config = ann_config
@@ -77,6 +79,10 @@ class TD3Agent:
             if hp is None:
                 hp = BanditHyperparameters()
 
+        elif isinstance(ann_config, MDPConfig):
+            self.actor = MDPANN(config=ann_config).to(self.device)
+            if hp is None:
+                hp = MDPHyperparameters()
         else:
             raise RuntimeError("blabla")
 

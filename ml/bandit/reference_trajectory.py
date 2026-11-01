@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 from setup.constants import Z_LENGTH_DNS
 
 
-class BanditReferenceTrajectory:
+class ReferenceTrajectory:
     """Manages reference target profiles and projected snapshots for RL rewards.
 
     Two intervals can be active: a training interval and a testing interval.

@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 from scipy.ndimage import uniform_filter1d
 
 from ml.bandit.ann import BanditConfig
+from ml.mdp.ann import MDPConfig
 from ml.original.ann import TauANN, load_tau_ann
 from ml.original.ann_config import TauANNConfig, Scope
 from setup.config_discretization import DiscretizationConfig
@@ -90,6 +91,8 @@ class SolverCoupled(SolverBase):
             1, self.disc_config.n_timesteps // self.n_agent_calls
         )
 
+        self.agent_step = 0
+
         # Load ANN only during inference/solver mode
         self.ann: TauANN | None = None
         if self.uses_internal_ann:
@@ -152,7 +155,7 @@ class SolverCoupled(SolverBase):
         self.prev_elapsed = self.time_elapsed
         self.current_time_step += 1
 
-        if self.standalone and reached_end:
+        if reached_end:
             self.simulation_done = True
 
     def update_running_mean(self) -> None:
@@ -250,6 +253,25 @@ class SolverCoupled(SolverBase):
         spectrum_k = positive_spectrum.astype(np.float32)
         total_les_energy = float(spectrum_k.sum())
         normalised_spectrum = spectrum_k / max(total_les_energy, 1e-12)
+
+        if isinstance(self.ann_config, MDPConfig):
+            # todo gradient solution
+            gradient_solution = np.gradient(self.solution, self.element_size)
+            k_grad, spectrum_grad = self.compute_energy_spectrum_(gradient_solution)
+            normalised_grad_spectrum = spectrum_grad / max(total_les_energy, 1e-12)
+            previous_actions = (
+                self.correction_coefficients
+                if self.correction_coefficients is not None
+                else np.ones(self.ann_config.action_dimension)
+            )
+
+            step = np.array([self.agent_step])
+
+            step += 1
+
+            return np.concatenate(
+                [normalised_spectrum, normalised_grad_spectrum, previous_actions, step]
+            )
 
         if getattr(self.ann_config, "is_contextual", False):
             return normalised_spectrum

@@ -2,28 +2,33 @@ import re
 from pathlib import Path
 
 import matplotlib.cm as cm
+import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
 
-# --- Publication-Quality Global Settings ---
+# --- Publication-Quality Global Settings (Direct Times New Roman + STIX Math) ---
 plt.rcParams.update(
     {
-        "text.usetex": False,
-        "font.family": "serif",
-        "font.serif": ["Computer Modern Roman", "Times New Roman"],
-        "mathtext.fontset": "cm",
-        "axes.labelsize": 11,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "legend.fontsize": 9,
-        "axes.linewidth": 0.8,
+        "font.family": "Times New Roman",
+        "mathtext.fontset": "cm",  # Times-compatible math font set
+        "font.size": 10,  # Base font size
+        "axes.labelsize": 10,  # Axis label size
+        "axes.titlesize": 10,  # Title size
+        "xtick.labelsize": 9,  # Tick label size
+        "ytick.labelsize": 9,  # Tick label size
+        "legend.fontsize": 8.5,  # Legend font size
+        "xtick.direction": "in",  # Ticks pointing inward
+        "ytick.direction": "in",
+        "xtick.top": True,  # Ticks on all four sides for a clean box frame
+        "ytick.right": True,
+        "axes.linewidth": 0.8,  # Frame line width
     }
 )
 
 # Directory Setup matching single_sweep_2.py structure
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INTERVALS_DIR = PROJECT_ROOT / "dns_data" / "intervals"
-base_sweep_dir = PROJECT_ROOT / "solver_data" / "les_sweeps" / "single_sweep"
+base_sweep_dir = PROJECT_ROOT / "solver_data" / "les_sweeps" / "diagonal_sweep"
 
 # Dynamically locate all time directories (e.g., t_308.0101_309.01, etc.)
 time_dirs = sorted(base_sweep_dir.glob("t_*"))
@@ -37,7 +42,7 @@ tau_params = 2
 dt = 0.001
 z_domain = (0.0, 2.0)
 
-output_dir = base_sweep_dir / "coefficient_comparison_plots"
+output_dir = base_sweep_dir / "plots"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # Loop through every time interval directory
@@ -83,6 +88,9 @@ for solver_data_dir in time_dirs:
     norm = plt.Normalize(vmin=coeffs.min(), vmax=coeffs.max())
     cmap = cm.plasma
 
+    output_dir = base_sweep_dir / "plots"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     for filename in sorted(frame_files.keys()):
         match = re.search(r"mean_w_(\d+\.\d+)\.npy$", filename)
         if not match:
@@ -103,36 +111,37 @@ for solver_data_dir in time_dirs:
         mean_profile_dns = np.load(dns_mean_path)
         mesh_dns = np.linspace(z_domain[0], z_domain[1], len(mean_profile_dns))
 
-        # Create figure matching publication layout (no suptitle, clean dual panels)
+        # Create figure matching publication layout (dual panels) with room at bottom for legends
         fig, (ax1, ax2) = plt.subplots(
             1,
             2,
-            figsize=(13, 5),
+            figsize=(10, 3.5),
             dpi=300,
-            constrained_layout=True,
             gridspec_kw={"width_ratios": [1.3, 1]},
         )
 
         for ax in (ax1, ax2):
             ax.axhline(
-                0, color="black", linestyle="--", linewidth=0.5, alpha=0.4, zorder=1
+                0, color="black", linestyle=":", linewidth=0.5, alpha=0.4, zorder=0
             )
             ax.minorticks_on()
             ax.tick_params(
                 which="both", direction="in", top=True, right=True, length=4, width=0.8
             )
             ax.tick_params(which="minor", length=2, width=0.5)
+            for spine in ax.spines.values():
+                spine.set_linewidth(0.8)
 
         ax1.set_xlim(z_domain)
 
         # --- LEFT SUBPLOT: Profile Sweep with Colorbar ---
-        ax1.plot(
+        dns_line, = ax1.plot(
             mesh_dns,
             mean_profile_dns,
             color="black",
             linestyle="-",
             linewidth=1.8,
-            label=r"DNS Reference ($\langle w \rangle$)",
+            label=r"DNS Ref.",
             zorder=5,
         )
 
@@ -155,37 +164,46 @@ for solver_data_dir in time_dirs:
                 mesh_les,
                 les_mean,
                 color=cmap(norm(coeff)),
-                alpha=0.65,
+                alpha=0.60,
                 linewidth=1.1,
                 zorder=3,
             )
 
+        time_str = f"$t \\in [{t_start:.2f}, {t_end:.2f}]$"
         ax1.set_title(
-            r"(a) Mean Velocity Profile Sweep $\langle w \rangle$",
-            fontsize=11,
-            pad=8,
+            rf"(a) Mean Velocity Profile $\langle w \rangle$ | {time_str}",
+            fontsize=10,
+            pad=6,
             loc="left",
         )
-        ax1.set_xlabel(r"Wall-normal coordinate $z$", fontsize=11)
-        ax1.set_ylabel(r"$\langle w \rangle$", fontsize=11)
+        ax1.set_xlabel(r"Wall-normal coordinate $z$", fontsize=9)
+        ax1.set_ylabel(r"$\langle w \rangle$", fontsize=10)
 
         y_min, y_max = ax1.get_ylim()
         ax1.set_ylim(y_min, y_max * 1.15)
+
+        # Left Subplot Legend (placed outside below ax1)
+        legend_handles_ax1 = [dns_line]
         ax1.legend(
-            loc="upper right",
-            frameon=True,
-            edgecolor="none",
-            facecolor="white",
-            framealpha=0.9,
+            handles=legend_handles_ax1,
+            labels=[h.get_label() for h in legend_handles_ax1],
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.16),
+            ncol=len(legend_handles_ax1),
+            frameon=False,
+            fontsize=8.5,
         )
 
-        # Attach Colorbar to Left Plot cleanly
+        # Attach Colorbar to Left Plot cleanly with math-style notation
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
         cbar = fig.colorbar(sm, ax=ax1, orientation="vertical", pad=0.03, shrink=0.85)
-        cbar.set_label("External Coefficient", fontsize=10)
+        cbar.set_label("Coefficient", fontsize=9)
 
         # --- RIGHT SUBPLOT: Error vs. Correction Coefficient ---
+        opt_info = None
+        base_info = None
+
         if l2_errors:
             coeffs_arr, errs_arr = zip(*l2_errors)
             ax2.plot(
@@ -193,21 +211,27 @@ for solver_data_dir in time_dirs:
                 errs_arr,
                 color="#1b4965",
                 marker="o",
-                markersize=3,
-                linewidth=1.4,
+                markersize=3.5,
+                markerfacecolor="white",
+                markeredgewidth=0.9,
                 linestyle="-",
+                label="Error",
             )
 
             # Highlight Optimal Point
             min_idx = np.argmin(errs_arr)
+            opt_coeff = coeffs_arr[min_idx]
+            opt_err = errs_arr[min_idx]
+            opt_info = (opt_coeff, opt_err)
+
             ax2.plot(
-                coeffs_arr[min_idx],
-                errs_arr[min_idx],
+                opt_coeff,
+                opt_err,
                 color="#b7094c",
                 marker="d",
-                markersize=7,
+                markersize=6,
                 linestyle="",
-                label=f"Optimal ({coeffs_arr[min_idx]:.1f}): {errs_arr[min_idx]:.1f}%",
+                label=f"Opt. ({opt_coeff:.1f}): {opt_err:.1f}%",
                 zorder=4,
             )
 
@@ -215,6 +239,7 @@ for solver_data_dir in time_dirs:
             if 1.0 in coeffs_arr:
                 base_idx = coeffs_arr.index(1.0)
                 base_err = errs_arr[base_idx]
+                base_info = base_err
 
                 # Draw subtle gray horizontal reference line across the right plot at baseline error level
                 ax2.axhline(
@@ -230,8 +255,8 @@ for solver_data_dir in time_dirs:
                 ax2.plot(
                     1.0,
                     base_err,
-                    color="#2b9348",
-                    marker="s",
+                    color="#e76f51",
+                    marker="d",
                     markersize=6,
                     zorder=4,
                     linestyle="",
@@ -246,22 +271,50 @@ for solver_data_dir in time_dirs:
             ax2.set_ylim(max(0, err_min - padding), err_max + padding)
 
         ax2.set_title(
-            r"(b) Relative Error vs. Coefficient", fontsize=11, pad=8, loc="left"
+            rf"(b) Relative Error vs. Coefficient", fontsize=10, pad=6, loc="left"
         )
-        ax2.set_xlabel("External Coefficient", fontsize=11)
-        ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=11)
+        ax2.set_xlabel("External Coefficient", fontsize=9)
+        ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=10)
+
+        # Right Subplot Legend (placed outside below ax2)
+        legend_handles_ax2 = []
+        curve_proxy = mlines.Line2D(
+            [], [], color="#1b4965", linestyle="-", marker="o", markersize=3,
+            linewidth=1.4, markerfacecolor="white", markeredgewidth=0.9, label="Error curve"
+        )
+        legend_handles_ax2.append(curve_proxy)
+
+        if opt_info is not None:
+            opt_proxy = mlines.Line2D(
+                [], [], color="#b7094c", marker="d", markersize=6, linestyle="",
+                label=f"Opt. ({opt_info[0]:.1f}): {opt_info[1]:.1f}%"
+            )
+            legend_handles_ax2.append(opt_proxy)
+
+        if base_info is not None:
+            base_proxy = mlines.Line2D(
+                [], [], color="#e76f51", marker="d", markersize=6, linestyle="",
+                label=f"Baseline (1.0): {base_info:.1f}%"
+            )
+            legend_handles_ax2.append(base_proxy)
 
         ax2.legend(
-            loc="upper right",
-            frameon=True,
-            edgecolor="none",
-            facecolor="white",
-            framealpha=0.9,
+            handles=legend_handles_ax2,
+            labels=[h.get_label() for h in legend_handles_ax2],
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.16),
+            ncol=len(legend_handles_ax2),
+            frameon=False,
+            fontsize=8.5,
         )
 
         # Save figure cleanly
         output_plot_path = (
             output_dir / f"profile_sweep_n{n_nodes_les}_t_{t_start:.2f}_{t_end:.2f}.png"
+        )
+        plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
+        output_plot_path = (
+            output_dir / f"profile_sweep_n{n_nodes_les}_t_{t_start:.2f}_{t_end:.2f}.pdf"
         )
         plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)

@@ -22,6 +22,7 @@ class LESCacheKey:
     n_params: int
     n_agent_steps_per_episode: int | None
     use_reynolds_signal: bool
+    with_improvement_signal: float
 
     def dir_to_name(self) -> str:
         """Short deterministic hash used as cache directory name."""

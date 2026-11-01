@@ -37,7 +37,7 @@ tau_params = 2
 dt = 0.001
 z_domain = (0.0, 2.0)
 
-output_dir = base_sweep_dir / "coefficient_comparison_plots"
+output_dir = base_sweep_dir / "plots"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # Loop through every time interval directory

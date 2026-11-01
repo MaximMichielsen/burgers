@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ml.bandit.ann import BanditConfig, BanditHyperparameters
-from ml.bandit.reference_trajectory import BanditReferenceTrajectory
+from ml.bandit.reference_trajectory import ReferenceTrajectory
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode
@@ -23,7 +23,7 @@ class BanditEnvironment:
         disc_config: DiscretizationConfig,
         ann_config: BanditConfig,
         hyperparameters: BanditHyperparameters,
-        reference_trajectory: BanditReferenceTrajectory,
+        reference_trajectory: ReferenceTrajectory,
         master_path: Path,
         baseline_path: Path | None,
     ) -> None:

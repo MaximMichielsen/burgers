@@ -10,7 +10,6 @@ from numpy.typing import NDArray
 
 from ml.bandit.ann import BanditConfig, BanditHyperparameters, BanditANN, save_tau_ann
 from ml.bandit.environment import BanditEnvironment
-from ml.bandit.reference_trajectory import BanditReferenceTrajectory
 from ml.diagnostics import plot_diagnostic_metrics
 from ml.original.training import set_cache_writable
 from ml.replay_buffer import ReplayBuffer
@@ -442,6 +441,7 @@ class BanditTrainer:
             raw_dns_trajectory=self.reference_trajectory._raw_target_profile,
             raw_reynolds_profile=self.reference_trajectory._raw_reynolds_profile,
             save_dir=target_cache_dir,
+            is_baseline_run=True,
         )
 
         self._load_baseline_metrics()
@@ -513,6 +513,7 @@ class BanditTrainer:
         save_dir: Path | None = None,
         evaluation_mode: bool = False,
         is_testing_plot: bool = False,
+        is_baseline_run: bool = False,
     ) -> tuple[float, float, float, float, float, float, float, float]:
 
         # 1. Extract profiles from solver or environment
@@ -633,7 +634,9 @@ class BanditTrainer:
             mesh_les,
             les_mean,
             markevery=mark_every,
-            label=f"Corrected Model ({len(mesh_les)} pts)",
+            label=f"Corrected Model ({len(mesh_les)} pts)"
+            if not is_baseline_run
+            else f"Base Model ({len(mesh_les)} pts)",
             **STYLE_IMPROVED,
         )
 
