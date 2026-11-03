@@ -30,14 +30,14 @@ INTERVALS_DIR = PROJECT_ROOT / "dns_data" / "intervals"
 
 
 def create_univariate_reynolds_sweep_plot(
-        sweep_tag: str,
-        varied_coeff_name: str,
-        fixed_coeff_vals: tuple[float, float] = (4.9, 1.0),
-        z_domain: tuple[float, float] = (0.0, 2.0),
-        max_allowable_error: float = 50.0,  # Upper Y-limit cap for right plot
+    sweep_tag: str,
+    varied_coeff_name: str,
+    fixed_coeff_vals: tuple[float, float] = (4.9, 1.0),
+    z_domain: tuple[float, float] = (0.0, 2.0),
+    max_allowable_error: float = 50.0,  # Upper Y-limit cap for right plot
 ):
     base_sweep_dir = (
-            PROJECT_ROOT / "solver_data" / "les_sweeps" / f"univariate_sweep_{sweep_tag}"
+        PROJECT_ROOT / "solver_data" / "les_sweeps" / f"univariate_sweep_{sweep_tag}"
     )
     if not base_sweep_dir.exists():
         print(
@@ -72,17 +72,23 @@ def create_univariate_reynolds_sweep_plot(
                 reynolds_profiles_dir = d / "reynolds_profiles"
                 if reynolds_profiles_dir.exists():
                     # Look for Reynolds stress profile .npy files
-                    for les_path in reynolds_profiles_dir.glob("reynolds_stress_profile_*.npy"):
+                    for les_path in reynolds_profiles_dir.glob(
+                        "reynolds_stress_profile_*.npy"
+                    ):
                         parsed_runs.append((var_val, fix_val, les_path))
 
     if not parsed_runs:
-        print(f"[Warning] No Reynolds stress profile data found for sweep tag: {sweep_tag}")
+        print(
+            f"[Warning] No Reynolds stress profile data found for sweep tag: {sweep_tag}"
+        )
         return
 
     # Group by filename (timestep frame) and fixed coefficient value
     frame_files = {}
     for var_val, fix_val, les_path in parsed_runs:
-        frame_files.setdefault(les_path.name, {}).setdefault(fix_val, {})[var_val] = les_path
+        frame_files.setdefault(les_path.name, {}).setdefault(fix_val, {})[var_val] = (
+            les_path
+        )
 
     varied_coeffs = np.array(sorted(list(set(r[0] for r in parsed_runs))))
     norm = plt.Normalize(vmin=varied_coeffs.min(), vmax=varied_coeffs.max())
@@ -117,11 +123,14 @@ def create_univariate_reynolds_sweep_plot(
             matching_dns = [
                 f
                 for f in INTERVALS_DIR.glob("*reynolds*.npy")
-                if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
+                if f.name.endswith(f"_{t_end:.2f}.npy")
+                or f.name.endswith(f"_{t_end}.npy")
             ]
 
         if not matching_dns:
-            print(f"[Warning] Matching DNS Reynolds profile not found for t_end = {t_end}")
+            print(
+                f"[Warning] Matching DNS Reynolds profile not found for t_end = {t_end}"
+            )
             continue
 
         reynolds_profile_dns = np.load(matching_dns[0])
@@ -176,7 +185,7 @@ def create_univariate_reynolds_sweep_plot(
         ax1.set_xlim(z_domain)
 
         # --- LEFT SUBPLOT: Reynolds Stress Profile Sweep (Excluding unstable profiles > max_allowable_error) ---
-        dns_line, = ax1.plot(
+        (dns_line,) = ax1.plot(
             mesh_dns,
             reynolds_profile_dns,
             color="black",
@@ -228,8 +237,12 @@ def create_univariate_reynolds_sweep_plot(
                 continue
             ls = profile_linestyles[idx % len(profile_linestyles)]
             proxy_handle = mlines.Line2D(
-                [], [], color="gray", linestyle=ls, linewidth=1.2,
-                label=f"{other_coeff_label} = {fix_val}"
+                [],
+                [],
+                color="gray",
+                linestyle=ls,
+                linewidth=1.2,
+                label=f"{other_coeff_label} = {fix_val}",
             )
             legend_handles_ax1.append(proxy_handle)
 
@@ -323,7 +336,7 @@ def create_univariate_reynolds_sweep_plot(
             ax2.set_ylim(max(0.0, min_err_val - padding), max_allowable_error)
 
         ax2.set_title(
-            rf"(b) Relative Error vs. Coefficient", fontsize=10, pad=6, loc="left"
+            r"(b) Relative Error vs. Coefficient", fontsize=10, pad=6, loc="left"
         )
         ax2.set_xlabel(f"Coefficient {var_coeff_label}", fontsize=9)
         ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=10)
@@ -335,18 +348,28 @@ def create_univariate_reynolds_sweep_plot(
                 continue
             st = styles[idx % len(styles)]
             proxy_handle = mlines.Line2D(
-                [], [], color=st["color"], linestyle=st["linestyle"],
-                marker="o", markersize=3, linewidth=1.4,
+                [],
+                [],
+                color=st["color"],
+                linestyle=st["linestyle"],
+                marker="o",
+                markersize=3,
+                linewidth=1.4,
                 markerfacecolor="white",
                 markeredgewidth=0.9,
-                label=f"{other_coeff_label} = {fix_val}"
+                label=f"{other_coeff_label} = {fix_val}",
             )
             legend_handles_ax2.append(proxy_handle)
 
         if primary_opt_info is not None:
             opt_proxy = mlines.Line2D(
-                [], [], color="#b7094c", marker="d", markersize=7, linestyle="",
-                label=f"Opt. {opt_err_val:.2f}%"
+                [],
+                [],
+                color="#b7094c",
+                marker="d",
+                markersize=7,
+                linestyle="",
+                label=f"Opt. {opt_err_val:.2f}%",
             )
             legend_handles_ax2.append(opt_proxy)
 
@@ -361,23 +384,37 @@ def create_univariate_reynolds_sweep_plot(
         )
 
         # Save figure cleanly with descriptive naming
-        output_plot_path = output_dir / f"reynolds_univariate_var_{varied_coeff_name}_int_{t_start}_{t_end:.2f}.png"
+        output_plot_path = (
+            output_dir
+            / f"reynolds_univariate_var_{varied_coeff_name}_int_{t_start}_{t_end:.2f}.png"
+        )
         plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
-        output_plot_path = output_dir / f"reynolds_univariate_var_{varied_coeff_name}_int_{t_start}_{t_end:.2f}.pdf"
+        output_plot_path = (
+            output_dir
+            / f"reynolds_univariate_var_{varied_coeff_name}_int_{t_start}_{t_end:.2f}.pdf"
+        )
         plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
         print(f"[Saved] {output_plot_path.name}")
 
-    print(f"\n[SUCCESS] All Reynolds stress double sweep comparison plots saved to: {output_dir}")
+    print(
+        f"\n[SUCCESS] All Reynolds stress double sweep comparison plots saved to: {output_dir}"
+    )
 
 
 if __name__ == "__main__":
     # Plot Sweep 1 Reynolds Stress (Varying c1 with c2 fixed at 4.9 and 1.0)
     create_univariate_reynolds_sweep_plot(
-        sweep_tag="vary_c1", varied_coeff_name="c1", fixed_coeff_vals=[4.9, 1.0], max_allowable_error=45.0
+        sweep_tag="vary_c1",
+        varied_coeff_name="c1",
+        fixed_coeff_vals=[4.9, 1.0],
+        max_allowable_error=45.0,
     )
 
     # Plot Sweep 2 Reynolds Stress (Varying c2 with c1 fixed at 4.9 and 1.0)
     create_univariate_reynolds_sweep_plot(
-        sweep_tag="vary_c2", varied_coeff_name="c2", fixed_coeff_vals=[4.9, 1.0], max_allowable_error=45.0
+        sweep_tag="vary_c2",
+        varied_coeff_name="c2",
+        fixed_coeff_vals=[4.9, 1.0],
+        max_allowable_error=45.0,
     )

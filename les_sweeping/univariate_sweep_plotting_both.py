@@ -1,8 +1,6 @@
 import re
 from pathlib import Path
 
-import matplotlib.cm as cm
-import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -29,10 +27,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INTERVALS_DIR = PROJECT_ROOT / "dns_data" / "intervals"
 
 
-def load_sweep_error_data(sweep_tag: str, varied_coeff_name: str, profile_type: str = "mean",
-                          fixed_coeff_vals: tuple[float, float] = (4.9, 1.0),
-                          z_domain: tuple[float, float] = (0.0, 2.0)):
-    base_sweep_dir = PROJECT_ROOT / "solver_data" / "les_sweeps" / f"univariate_sweep_{sweep_tag}"
+def load_sweep_error_data(
+    sweep_tag: str,
+    varied_coeff_name: str,
+    profile_type: str = "mean",
+    fixed_coeff_vals: tuple[float, float] = (4.9, 1.0),
+    z_domain: tuple[float, float] = (0.0, 2.0),
+):
+    base_sweep_dir = (
+        PROJECT_ROOT / "solver_data" / "les_sweeps" / f"univariate_sweep_{sweep_tag}"
+    )
     if not base_sweep_dir.exists():
         print(f"[Warning] Directory {base_sweep_dir} does not exist.")
         return None, None
@@ -46,7 +50,9 @@ def load_sweep_error_data(sweep_tag: str, varied_coeff_name: str, profile_type: 
     parsed_runs = []
 
     subfolder = "mean_profiles" if profile_type == "mean" else "reynolds_profiles"
-    file_pattern = "mean_w_*.npy" if profile_type == "mean" else "reynolds_stress_profile_*.npy"
+    file_pattern = (
+        "mean_w_*.npy" if profile_type == "mean" else "reynolds_stress_profile_*.npy"
+    )
 
     for d in coeff_folders:
         match = re.search(r"c1_(\d+\.\d+)_c2_(\d+\.\d+)$", d.name)
@@ -72,20 +78,28 @@ def load_sweep_error_data(sweep_tag: str, varied_coeff_name: str, profile_type: 
 
 
 def create_dual_sweep_error_plot_for_type(
-        profile_type: str = "mean",
-        fixed_coeff_vals: tuple[float, float] = (4.9, 1.0),
-        z_domain: tuple[float, float] = (0.0, 2.0),
-        max_allowable_error: float = 45.0,
+    profile_type: str = "mean",
+    fixed_coeff_vals: tuple[float, float] = (4.9, 1.0),
+    z_domain: tuple[float, float] = (0.0, 2.0),
+    max_allowable_error: float = 45.0,
 ):
-    c1_frames, _ = load_sweep_error_data("vary_c1", "c1", profile_type, fixed_coeff_vals, z_domain)
-    c2_frames, _ = load_sweep_error_data("vary_c2", "c2", profile_type, fixed_coeff_vals, z_domain)
+    c1_frames, _ = load_sweep_error_data(
+        "vary_c1", "c1", profile_type, fixed_coeff_vals, z_domain
+    )
+    c2_frames, _ = load_sweep_error_data(
+        "vary_c2", "c2", profile_type, fixed_coeff_vals, z_domain
+    )
 
     if not c1_frames or not c2_frames:
         print(f"[Error] Missing sweep data for profile type: {profile_type}")
         return
 
-    common_frames = sorted(list(set(c1_frames.keys()).intersection(set(c2_frames.keys()))))
-    output_dir = PROJECT_ROOT / "solver_data" / "les_sweeps" / f"plots_dual_error_{profile_type}"
+    common_frames = sorted(
+        list(set(c1_frames.keys()).intersection(set(c2_frames.keys())))
+    )
+    output_dir = (
+        PROJECT_ROOT / "solver_data" / "les_sweeps" / f"plots_dual_error_{profile_type}"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     styles = [
@@ -111,15 +125,18 @@ def create_dual_sweep_error_plot_for_type(
         t_end = float(match.group(1))
 
         matching_dns = [
-            f for f in INTERVALS_DIR.glob(dns_glob)
+            f
+            for f in INTERVALS_DIR.glob(dns_glob)
             if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
         ]
         if not matching_dns:
             # Fallback search for reynolds if ww not found
             if profile_type == "reynolds":
                 matching_dns = [
-                    f for f in INTERVALS_DIR.glob("*reynolds*.npy")
-                    if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
+                    f
+                    for f in INTERVALS_DIR.glob("*reynolds*.npy")
+                    if f.name.endswith(f"_{t_end:.2f}.npy")
+                    or f.name.endswith(f"_{t_end}.npy")
                 ]
         if not matching_dns:
             continue
@@ -135,7 +152,10 @@ def create_dual_sweep_error_plot_for_type(
                     les_data = np.load(les_path)
                     mesh_les = np.linspace(z_domain[0], z_domain[1], len(les_data))
                     dns_interp = np.interp(mesh_les, mesh_dns, dns_profile)
-                    rel_err = (np.linalg.norm(les_data - dns_interp) / (np.linalg.norm(dns_interp) + 1e-12)) * 100.0
+                    rel_err = (
+                        np.linalg.norm(les_data - dns_interp)
+                        / (np.linalg.norm(dns_interp) + 1e-12)
+                    ) * 100.0
                     sweep_data.setdefault(fix_val, {})[var_val] = rel_err
                     if rel_err <= max_allowable_error:
                         all_errs.append(rel_err)
@@ -148,9 +168,13 @@ def create_dual_sweep_error_plot_for_type(
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.5), dpi=300)
 
         for ax in (ax1, ax2):
-            ax.axhline(0, color="black", linestyle=":", linewidth=0.5, alpha=0.4, zorder=0)
+            ax.axhline(
+                0, color="black", linestyle=":", linewidth=0.5, alpha=0.4, zorder=0
+            )
             ax.minorticks_on()
-            ax.tick_params(which="both", direction="in", top=True, right=True, length=4, width=0.8)
+            ax.tick_params(
+                which="both", direction="in", top=True, right=True, length=4, width=0.8
+            )
             ax.tick_params(which="minor", length=2, width=0.5)
             for spine in ax.spines.values():
                 spine.set_linewidth(0.8)
@@ -165,9 +189,15 @@ def create_dual_sweep_error_plot_for_type(
             vals = [data_c1[fix_val][v] for v in vars_sorted]
             st = styles[idx % len(styles)]
             ax1.plot(
-                vars_sorted, vals, color=st["color"], marker="o", markersize=3.5,
-                markerfacecolor="white", markeredgewidth=0.9, linestyle=st["linestyle"],
-                label=f"$c_2 = {fix_val}$"
+                vars_sorted,
+                vals,
+                color=st["color"],
+                marker="o",
+                markersize=3.5,
+                markerfacecolor="white",
+                markeredgewidth=0.9,
+                linestyle=st["linestyle"],
+                label=f"$c_2 = {fix_val}$",
             )
             for v, e in zip(vars_sorted, vals):
                 if e <= max_allowable_error and e < min_err_c1:
@@ -176,10 +206,20 @@ def create_dual_sweep_error_plot_for_type(
 
         if opt_c1_info is not None:
             opt_v, _, opt_e = opt_c1_info
-            ax1.plot(opt_v, opt_e, color="#b7094c", marker="d", markersize=7, linestyle="", label=f"Opt. {opt_e:.1f}%",
-                     zorder=4)
+            ax1.plot(
+                opt_v,
+                opt_e,
+                color="#b7094c",
+                marker="d",
+                markersize=7,
+                linestyle="",
+                label=f"Opt. {opt_e:.1f}%",
+                zorder=4,
+            )
 
-        ax1.set_title(rf"(a) {prop_label} Error vs. $c_1$", fontsize=10, pad=6, loc="left")
+        ax1.set_title(
+            rf"(a) {prop_label} Error vs. $c_1$", fontsize=10, pad=6, loc="left"
+        )
         ax1.set_xlabel(r"Coefficient $c_1$", fontsize=9)
         ax1.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=10)
         if errs_c1:
@@ -195,9 +235,15 @@ def create_dual_sweep_error_plot_for_type(
             vals = [data_c2[fix_val][v] for v in vars_sorted]
             st = styles[idx % len(styles)]
             ax2.plot(
-                vars_sorted, vals, color=st["color"], marker="o", markersize=3.5,
-                markerfacecolor="white", markeredgewidth=0.9, linestyle=st["linestyle"],
-                label=f"$c_1 = {fix_val}$"
+                vars_sorted,
+                vals,
+                color=st["color"],
+                marker="o",
+                markersize=3.5,
+                markerfacecolor="white",
+                markeredgewidth=0.9,
+                linestyle=st["linestyle"],
+                label=f"$c_1 = {fix_val}$",
             )
             for v, e in zip(vars_sorted, vals):
                 if e <= max_allowable_error and e < min_err_c2:
@@ -206,10 +252,20 @@ def create_dual_sweep_error_plot_for_type(
 
         if opt_c2_info is not None:
             _, opt_v, opt_e = opt_c2_info
-            ax2.plot(opt_v, opt_e, color="#b7094c", marker="d", markersize=7, linestyle="", label=f"Opt. {opt_e:.1f}%",
-                     zorder=4)
+            ax2.plot(
+                opt_v,
+                opt_e,
+                color="#b7094c",
+                marker="d",
+                markersize=7,
+                linestyle="",
+                label=f"Opt. {opt_e:.1f}%",
+                zorder=4,
+            )
 
-        ax2.set_title(rf"(b) {prop_label} Error vs. $c_2$", fontsize=10, pad=6, loc="left")
+        ax2.set_title(
+            rf"(b) {prop_label} Error vs. $c_2$", fontsize=10, pad=6, loc="left"
+        )
         ax2.set_xlabel(r"Coefficient $c_2$", fontsize=9)
         ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=10)
         if errs_c2:
@@ -219,16 +275,26 @@ def create_dual_sweep_error_plot_for_type(
         for ax in (ax1, ax2):
             handles, labels = ax.get_legend_handles_labels()
             ax.legend(
-                handles=handles, labels=labels,
-                loc="upper center", bbox_to_anchor=(0.5, -0.16),
-                ncol=len(handles), frameon=False, fontsize=8.5
+                handles=handles,
+                labels=labels,
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.16),
+                ncol=len(handles),
+                frameon=False,
+                fontsize=8.5,
             )
 
-        output_dir_save = PROJECT_ROOT / "solver_data" / "les_sweeps" / "plots_dual_error"
+        output_dir_save = (
+            PROJECT_ROOT / "solver_data" / "les_sweeps" / "plots_dual_error"
+        )
         output_dir_save.mkdir(parents=True, exist_ok=True)
 
-        output_path_png = output_dir_save / f"dual_sweep_error_lines_{profile_type}_t_{t_end:.2f}.png"
-        output_path_pdf = output_dir_save / f"dual_sweep_error_lines_{profile_type}_t_{t_end:.2f}.pdf"
+        output_path_png = (
+            output_dir_save / f"dual_sweep_error_lines_{profile_type}_t_{t_end:.2f}.png"
+        )
+        output_path_pdf = (
+            output_dir_save / f"dual_sweep_error_lines_{profile_type}_t_{t_end:.2f}.pdf"
+        )
         plt.savefig(output_path_png, dpi=300, bbox_inches="tight")
         plt.savefig(output_path_pdf, dpi=300, bbox_inches="tight")
         plt.close(fig)
@@ -237,7 +303,11 @@ def create_dual_sweep_error_plot_for_type(
 
 if __name__ == "__main__":
     print("Generating Mean Velocity dual-sweep error lines...")
-    create_dual_sweep_error_plot_for_type("mean", fixed_coeff_vals=[4.9, 1.0], max_allowable_error=45.0)
+    create_dual_sweep_error_plot_for_type(
+        "mean", fixed_coeff_vals=[4.9, 1.0], max_allowable_error=45.0
+    )
 
     print("\nGenerating Reynolds Stress dual-sweep error lines...")
-    create_dual_sweep_error_plot_for_type("reynolds", fixed_coeff_vals=[4.9, 1.0], max_allowable_error=15.0)
+    create_dual_sweep_error_plot_for_type(
+        "reynolds", fixed_coeff_vals=[4.9, 1.0], max_allowable_error=15.0
+    )

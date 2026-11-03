@@ -111,14 +111,18 @@ class BanditEnvironment:
             + self.hp.weight_reynolds * reynolds_error
         )
 
+        effort = 0
+        if self.ann_config.is_regularized:
+            effort = self.hp.weight_effort * self.compute_distance_error(
+                action, np.ones(self.ann_config.action_dimension)
+            )
+
+        penalty += effort
+
         if not is_baseline_run:
             penalty_baseline = np.load(self.baseline_path / "reward_history.npy")
 
-            # action regularization
-            base_action = np.ones(self.ann_config.action_dimension)
-            action_penalty = self.compute_distance_error(action, base_action)
-
-            return penalty_baseline - penalty - action_penalty * 0.01
+            return self.hp.reward_scale * (penalty_baseline - penalty)
 
         return penalty
 

@@ -90,85 +90,86 @@ z_length = Z_LENGTH_DNS
 dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
-n_episodes = 20
+n_episodes_list = (20, 50, 100)
 proof_mode = ProofMode.a
-reynolds_signals = (False, )
+reynolds_signals = (False, True)
 
-for use_reynolds_signal in reynolds_signals:
-    sub_dir = (
-        "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
-    )
+for n_episodes in n_episodes_list:
+    for use_reynolds_signal in reynolds_signals:
+        sub_dir = (
+            "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
+        )
 
-    run_dir = (
-        PROJECT_ROOT
-        / "solver_data"
-        / "final"
-        / "bandit"
-        / "one_interval"
-        / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}"
-        / sub_dir
-    )
-    run_dir.mkdir(parents=True, exist_ok=True)
+        run_dir = (
+            PROJECT_ROOT
+            / "solver_data"
+            / "final"
+            / "bandit"
+            / "one_interval"
+            / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}"
+            / sub_dir
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
 
-    ann_path = run_dir / "ann_model.pt"
-    target_profile_dir = PROJECT_ROOT / "dns_data" / "intervals"
-    w_field_path = (
-        PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
-    )
-    times_path = PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy"
-    forcing_projected = np.load(
-        TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy"
-    )
-    times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
+        ann_path = run_dir / "ann_model.pt"
+        target_profile_dir = PROJECT_ROOT / "dns_data" / "intervals"
+        w_field_path = (
+            PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
+        )
+        times_path = PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy"
+        forcing_projected = np.load(
+            TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy"
+        )
+        times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
 
-    problem = Problem(
-        name="tcf_1d",
-        domain_length=z_length,
-        reynolds=100.0,
-        initial_condition=None,
-        forcing=forcing_projected,
-        forcing_times=times_forcing,
-        forcing_is_steady=False,
-        boundary_condition_type="fixed",
-        boundary_condition_value=0.0,
-        t_start=t_start,
-        t_end=t_end,
-    )
-    disc_config = DiscretizationConfig(
-        problem=problem,
-        n_nodes_les=n_nodes_les,
-        n_nodes_dns=n_nodes_dns,
-        dt_les=dt,
-    )
+        problem = Problem(
+            name="tcf_1d",
+            domain_length=z_length,
+            reynolds=100.0,
+            initial_condition=None,
+            forcing=forcing_projected,
+            forcing_times=times_forcing,
+            forcing_is_steady=False,
+            boundary_condition_type="fixed",
+            boundary_condition_value=0.0,
+            t_start=t_start,
+            t_end=t_end,
+        )
+        disc_config = DiscretizationConfig(
+            problem=problem,
+            n_nodes_les=n_nodes_les,
+            n_nodes_dns=n_nodes_dns,
+            dt_les=dt,
+        )
 
-    ann_config = BanditConfig(
-        tau_model=tau_model,
-        n_training_episodes=n_episodes,
-        training_mode=True,
-        include_reynolds_signal=use_reynolds_signal,
-        ann_path=ann_path,
-    )
+        ann_config = BanditConfig(
+            tau_model=tau_model,
+            n_training_episodes=n_episodes,
+            training_mode=True,
+            include_reynolds_signal=use_reynolds_signal,
+            ann_path=ann_path,
+        )
 
-    reference_trajectory = ReferenceTrajectory(
-        mean_target_profile_dir=target_profile_dir,
-        projected_w_path=w_field_path,
-        times_path=times_path,
-        n_nodes_les=n_nodes_les,
-    )
+        reference_trajectory = ReferenceTrajectory(
+            mean_target_profile_dir=target_profile_dir,
+            projected_w_path=w_field_path,
+            times_path=times_path,
+            n_nodes_les=n_nodes_les,
+        )
 
-    trainer = Trainer(
-        problem,
-        disc_config,
-        ann_config,
-        master_path=run_dir,
-        reference_trajectory=reference_trajectory,
-        test_interval=test_interval,
-        train_intervals=train_intervals,  # Passes the stochastic interval pool
-    )
+        trainer = Trainer(
+            problem,
+            disc_config,
+            ann_config,
+            master_path=run_dir,
+            reference_trajectory=reference_trajectory,
+            test_interval=test_interval,
+            train_intervals=train_intervals,  # Passes the stochastic interval pool
+        )
 
-    # Execute stochastic training and final testing evaluation
-    trainer.run_training()
+        # Execute stochastic training and final testing evaluation
+        trainer.run_training()
 
-    print(
-        "\n[SUCCESS] Stochastic training and testing pipeline completed successfully."
-    )
+        print(
+            "\n[SUCCESS] Stochastic training and testing pipeline completed successfully."
+        )

@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ml.reference_trajectory import ReferenceTrajectory
-from ml.mdp.ann import MDPHyperparameters, MDPConfig
+from ml.mdp.ann import MDPHyperparameters, MDPConfig, RewardType
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
 from solvers.solver_base import SimulationMode
@@ -94,20 +94,77 @@ class MDPEnvironment:
         return next_state, reward_val, done_flag
 
     def compute_reward(self, action, agent_step, is_final_action, is_baseline_run):
+        # Normalize reward_type to handle raw strings, shorthands, or enums safely
+        r_type = self.ann_config.reward_type
+        if isinstance(r_type, str):
+            try:
+                # Try parsing via the RewardType enum (using our _missing_ handler if configured)
+                r_type = RewardType(r_type.lower())
+            except ValueError:
+                # Fallback manual mapping for shorthands if needed
+                mapping = {
+                    "s": RewardType.SPARSE,
+                    "d": RewardType.DENSE,
+                    "l": RewardType.LEGACY,
+                    "st": RewardType.SPECTRAL,
+                }
+                r_type = mapping.get(r_type.lower(), r_type)
+
+        reward_fn = {
+            RewardType.SPECTRAL: self._compute_reward_spectral,
+            RewardType.DENSE: self._compute_reward_dense,
+            RewardType.SPARSE: self._compute_reward_sparse,
+        }[r_type]
+
+        return reward_fn(action, agent_step, is_final_action, is_baseline_run)
+
+    def _compute_reward_spectral(
+        self, action, agent_step, is_final_action, is_baseline_run
+    ):
         if self.solver is None:
             raise RuntimeError("Solver not initialized.")
 
+        instant_solution = self.solver.solution
+        instant_reference = self.reference_trajectory.query(
+            step_idx=int(self.solver_step_idx)
+        )
+
+        _, spectral_solution = self.solver.compute_energy_spectrum_(
+            solution=instant_solution
+        )
+        _, spectral_reference = self.solver.compute_energy_spectrum_(
+            solution=instant_reference
+        )
+
+        instant_profile_error = self.compute_distance_error(
+            field=spectral_solution, target=spectral_reference
+        )
+
+        exponential_decay = 1.0
+        if self.ann_config.with_exponential_decay:
+            exponential_decay = math.exp(
+                -2 * agent_step / self.ann_config.n_agent_steps_per_episode
+            )
+
         if is_final_action:
+
+            if not self.ann_config.with_terminal_bonus:
+                return -self.ann_config.n_agent_steps_per_episode * self.hp.reward_scale * (self.hp.weight_exponential * exponential_decay * instant_profile_error)
+
             mean_profile = np.mean(self.solver.snapshots_solution, axis=0)
             mean_reference = self.reference_trajectory.target_profile
 
-            mean_profile_error = self.compute_distance_error(mean_profile, mean_reference)
+            mean_profile_error = self.compute_distance_error(
+                mean_profile, mean_reference
+            )
 
             if self.ann_config.include_reynolds_signal:
                 reynolds_profile = self.solver.compute_reynolds_stress()
                 reynolds_reference = self.reference_trajectory.reynolds_profile
 
-                reynolds_profile_error = self.compute_distance_error(reynolds_profile, reynolds_reference)
+                reynolds_profile_error = self.compute_distance_error(
+                    reynolds_profile, reynolds_reference
+                )
 
             if is_baseline_run:
                 if self.ann_config.include_reynolds_signal:
@@ -115,34 +172,59 @@ class MDPEnvironment:
 
                 return mean_profile_error
 
-            baseline_profile_error = np.load(self.baseline_path / "reward_history.npy")[-1]
+            baseline_profile_error = np.load(self.baseline_path / "reward_history.npy")[
+                -1
+            ]
 
             if self.ann_config.include_reynolds_signal:
-                return 30 * (baseline_profile_error - mean_profile_error - reynolds_profile_error)
+                return self.hp.reward_scale * (
+                    baseline_profile_error - mean_profile_error - reynolds_profile_error
+                )
 
-            return 30 * (baseline_profile_error - mean_profile_error)
-
-        instant_solution = self.solver.solution
-        instant_reference = self.reference_trajectory.query(step_idx=int(self.solver_step_idx))
-
-        _, spectral_solution = self.solver.compute_energy_spectrum_(solution=instant_solution)
-        _, spectral_reference = self.solver.compute_energy_spectrum_(solution=instant_reference)
-
-        instant_profile_error = self.compute_distance_error(field=spectral_solution, target=spectral_reference)
-
-        exponential_decay_weight = 1.0
-        if self.ann_config.with_exponential_decay:
-            exponential_decay_weight = math.exp(-2 * agent_step / self.ann_config.n_agent_steps_per_episode)
-
-        return - 0.6 * exponential_decay_weight * instant_profile_error
+            return self.hp.reward_scale * (baseline_profile_error - mean_profile_error)
 
 
-    def compute_reward_gemini(
-            self,
-            action: NDArray,
-            agent_step: int,
-            is_final_action: bool,
-            is_baseline_run: bool,
+
+        return -self.ann_config.n_agent_steps_per_episode * self.hp.reward_scale * (self.hp.weight_exponential * exponential_decay * instant_profile_error)
+
+    def _compute_reward_sparse(
+        self, action, agent_step, is_final_action, is_baseline_run
+    ) -> float:
+        """Zero reward until the final step; then reward relative to the baseline.
+
+        Baseline runs return the (weighted) profile error, which is stored in
+        reward_history.npy. Training runs return
+        reward_scale * (baseline_error - error) at the final step.
+        """
+        if self.solver is None:
+            raise RuntimeError("Solver not initialized.")
+
+        if not is_final_action:
+            return 0.0
+
+        mean_profile = np.mean(self.solver.snapshots_solution, axis=0)
+        error = self.hp.weight_mean_profile * self.compute_distance_error(
+            mean_profile, self.reference_trajectory.target_profile
+        )
+
+        if self.ann_config.include_reynolds_signal:
+            reynolds_profile = self.solver.compute_reynolds_stress()
+            error += self.hp.weight_reynolds * self.compute_distance_error(
+                reynolds_profile, self.reference_trajectory.reynolds_profile
+            )
+
+        if is_baseline_run:
+            return error
+
+        baseline_error = np.load(self.baseline_path / "reward_history.npy")[-1]
+        return self.hp.reward_scale * (baseline_error - error)
+
+    def _compute_reward_dense(
+        self,
+        action: NDArray,
+        agent_step: int,
+        is_final_action: bool,
+        is_baseline_run: bool,
     ) -> float:
         if self.solver is None:
             raise RuntimeError("Solver not initialized.")
@@ -162,42 +244,19 @@ class MDPEnvironment:
             )
 
         physics_penalty = (
-                self.hp.weight_mean_profile * current_distance
-                + self.hp.weight_reynolds * reynolds_error
+            self.hp.weight_mean_profile * current_distance
+            + self.hp.weight_reynolds * reynolds_error
         )
-
-        # 2. Increased Action Regularization & Effort
-        base_action = np.ones(self.ann_config.action_dimension)
-        effort_regularization = self.compute_distance_error(action, base_action)
-
-        if self.previous_action is None:
-            self.previous_action = action
-            smoothness_regularization = 0.0
-        else:
-            smoothness_regularization = self.compute_distance_error(
-                action, self.previous_action
-            )
-            self.previous_action = action
-
-        # 3. Boundary Barrier Penalty (Keeps actions away from saturated limits 0.9 and 5.0)
-        # Penalizes actions heavily as they approach within 10% of the bounds
-        margin = 0.1 * (self.ann_config.max_action - self.ann_config.min_action)
-        lower_violations = np.clip(self.ann_config.min_action + margin - action, 0, None)
-        upper_violations = np.clip(action - (self.ann_config.max_action - margin), 0, None)
-        boundary_penalty = float(np.sum(lower_violations ** 2 + upper_violations ** 2))
-
-        # Combined Action Regularization (Increased weights)
-        action_penalty = (
-                1.0 * effort_regularization
-                + 0.5 * smoothness_regularization
-                + 2.0 * boundary_penalty
-        ) / 10
 
         # 4. Dense Step-Wise Reward (Negative total cost)
         # We penalize both physical mismatch and erratic/extreme actions at every step
-        step_reward = -(physics_penalty + action_penalty)
+        step_reward = -physics_penalty
 
         if is_final_action and not is_baseline_run:
+
+            if not self.ann_config.with_terminal_bonus:
+                return step_reward
+
             # Optional bonus/penalty relative to baseline at the terminal step
             try:
                 baseline_rewards = np.load(self.baseline_path / "reward_history.npy")
@@ -210,7 +269,7 @@ class MDPEnvironment:
 
         return step_reward
 
-    def _compute_reward(
+    def _compute_reward_legacy(
         self,
         action: NDArray,
         agent_step: int,

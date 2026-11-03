@@ -105,10 +105,9 @@ def run_univariate_sweep(
 
 
 if __name__ == "__main__":
-    baseline_vals = (1.0,4.9)
+    baseline_vals = (1.0, 4.9)
     sweep_range = np.round(np.arange(6.2, 8.1, 0.2), 2)
     for baseline_val in baseline_vals:
-
         # ------------------------------------------------------------------ #
         # Sweep 1: Vary c1, keep c2 fixed at baseline_val[cite: 15]
         # ------------------------------------------------------------------ #

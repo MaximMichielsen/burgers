@@ -39,7 +39,7 @@ from utils.les_caching import (
 )
 
 # Reward clip is mode dependent (taken from the latest MDP and the bandit scripts).
-REWARD_CLIP_MDP = -1.0
+REWARD_CLIP_MDP = -4.0
 REWARD_CLIP_BANDIT = -0.2
 REWARD_CLIP = REWARD_CLIP_MDP  # kept so external imports of REWARD_CLIP still resolve
 
@@ -70,6 +70,7 @@ def resolve_training_mode(ann_config: Any) -> TrainingMode:
         "ann_config must be an MDPConfig or a BanditConfig, "
         f"got {type(ann_config).__name__}."
     )
+
 
 STYLE_DNS_RAW = dict(color="0.65", linestyle="-", linewidth=1.0, zorder=1)
 STYLE_DNS_PROJ = dict(color="black", linestyle=":", linewidth=1.6, zorder=2)
@@ -132,9 +133,7 @@ class Trainer:
         baseline_path: Path | None = None,
     ):
         self.mode: TrainingMode = resolve_training_mode(ann_config)
-        self.reward_clip: float = (
-            REWARD_CLIP_MDP if self.is_mdp else REWARD_CLIP_BANDIT
-        )
+        self.reward_clip: float = REWARD_CLIP_MDP if self.is_mdp else REWARD_CLIP_BANDIT
 
         hp_cls = MDPHyperparameters if self.is_mdp else BanditHyperparameters
         if hp is None:
@@ -736,7 +735,9 @@ class Trainer:
             mesh_les,
             les_mean,
             markevery=mark_every,
-            label=f"Corrected Model ({len(mesh_les)} pts)" if not is_baseline_run else f"Base Model ({len(mesh_les)} pts)",
+            label=f"Corrected Model ({len(mesh_les)} pts)"
+            if not is_baseline_run
+            else f"Base Model ({len(mesh_les)} pts)",
             **style,
         )
 

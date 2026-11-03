@@ -85,7 +85,9 @@ for solver_data_dir in time_dirs:
                 frame_files.setdefault(les_path.name, {})[coeff] = les_path
 
     if not frame_files:
-        print(f"[Warning] No Reynolds stress profiles found under {solver_data_dir.name}. Skipping.")
+        print(
+            f"[Warning] No Reynolds stress profiles found under {solver_data_dir.name}. Skipping."
+        )
         continue
 
     # Setup colormap normalized to the coefficient range
@@ -108,17 +110,22 @@ for solver_data_dir in time_dirs:
         matching_dns = [
             f
             for f in INTERVALS_DIR.glob("ww_*.npy")
-            if f.name == f"ww_{t_start}_{t_end}.npy" or f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
+            if f.name == f"ww_{t_start}_{t_end}.npy"
+            or f.name.endswith(f"_{t_end:.2f}.npy")
+            or f.name.endswith(f"_{t_end}.npy")
         ]
         if not matching_dns:
             matching_dns = [
                 f
                 for f in INTERVALS_DIR.glob("*reynolds*.npy")
-                if f.name.endswith(f"_{t_end:.2f}.npy") or f.name.endswith(f"_{t_end}.npy")
+                if f.name.endswith(f"_{t_end:.2f}.npy")
+                or f.name.endswith(f"_{t_end}.npy")
             ]
 
         if not matching_dns:
-            print(f"[Warning] Missing interval DNS Reynolds reference for [{t_start}, {t_end}]")
+            print(
+                f"[Warning] Missing interval DNS Reynolds reference for [{t_start}, {t_end}]"
+            )
             continue
 
         reynolds_profile_dns = np.load(matching_dns[0])
@@ -148,7 +155,7 @@ for solver_data_dir in time_dirs:
         ax1.set_xlim(z_domain)
 
         # --- LEFT SUBPLOT: Reynolds Stress Profile Sweep with Colorbar ---
-        dns_line, = ax1.plot(
+        (dns_line,) = ax1.plot(
             mesh_dns,
             reynolds_profile_dns,
             color="black",
@@ -284,7 +291,7 @@ for solver_data_dir in time_dirs:
             ax2.set_ylim(max(0, err_min - padding), err_max + padding)
 
         ax2.set_title(
-            rf"(b) Relative Error vs. Coefficient", fontsize=10, pad=6, loc="left"
+            r"(b) Relative Error vs. Coefficient", fontsize=10, pad=6, loc="left"
         )
         ax2.set_xlabel("External Coefficient", fontsize=9)
         ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=10)
@@ -292,22 +299,40 @@ for solver_data_dir in time_dirs:
         # Right Subplot Legend (placed outside below ax2)
         legend_handles_ax2 = []
         curve_proxy = mlines.Line2D(
-            [], [], color="#1b4965", linestyle="-", marker="o", markersize=3,
-            linewidth=1.4, markerfacecolor="white", markeredgewidth=0.9, label="Error curve"
+            [],
+            [],
+            color="#1b4965",
+            linestyle="-",
+            marker="o",
+            markersize=3,
+            linewidth=1.4,
+            markerfacecolor="white",
+            markeredgewidth=0.9,
+            label="Error curve",
         )
         legend_handles_ax2.append(curve_proxy)
 
         if opt_info is not None:
             opt_proxy = mlines.Line2D(
-                [], [], color="#b7094c", marker="d", markersize=6, linestyle="",
-                label=f"Opt. ({opt_info[0]:.1f}): {opt_info[1]:.1f}%"
+                [],
+                [],
+                color="#b7094c",
+                marker="d",
+                markersize=6,
+                linestyle="",
+                label=f"Opt. ({opt_info[0]:.1f}): {opt_info[1]:.1f}%",
             )
             legend_handles_ax2.append(opt_proxy)
 
         if base_info is not None:
             base_proxy = mlines.Line2D(
-                [], [], color="#e76f51", marker="d", markersize=6, linestyle="",
-                label=f"Baseline (1.0): {base_info:.1f}%"
+                [],
+                [],
+                color="#e76f51",
+                marker="d",
+                markersize=6,
+                linestyle="",
+                label=f"Baseline (1.0): {base_info:.1f}%",
             )
             legend_handles_ax2.append(base_proxy)
 
@@ -323,11 +348,13 @@ for solver_data_dir in time_dirs:
 
         # Save figure cleanly
         output_plot_path = (
-            output_dir / f"reynolds_profile_sweep_n{n_nodes_les}_t_{t_start:.2f}_{t_end:.2f}.png"
+            output_dir
+            / f"reynolds_profile_sweep_n{n_nodes_les}_t_{t_start:.2f}_{t_end:.2f}.png"
         )
         plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
         output_plot_path = (
-            output_dir / f"reynolds_profile_sweep_n{n_nodes_les}_t_{t_start:.2f}_{t_end:.2f}.pdf"
+            output_dir
+            / f"reynolds_profile_sweep_n{n_nodes_les}_t_{t_start:.2f}_{t_end:.2f}.pdf"
         )
         plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)

@@ -1,10 +1,11 @@
+from itertools import product
 from pathlib import Path
 from typing import List, Tuple, Optional
 
 import numpy as np
 
 from ml.reference_trajectory import ReferenceTrajectory
-from ml.mdp.ann import MDPConfig
+from ml.mdp.ann import MDPConfig, RewardType
 from ml.training import Trainer
 from proofing.action_based.config import ProofMode
 from setup.config_discretization import DiscretizationConfig
@@ -90,88 +91,100 @@ z_length = Z_LENGTH_DNS
 dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
-n_episodes = 5
+n_episodes_list = (50,)
 agent_actions_list = (5,)
 proof_mode = ProofMode.a
-reynolds_signals = (True,)
-for agent_actions in agent_actions_list:
-    for use_reynolds_signal in reynolds_signals:
-        sub_dir = (
-            "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
-        )
+reynolds_signals = (False,)
+reward_types = (RewardType.SPARSE,)  # every reward type defined in ml.mdp.ann
 
-        run_dir = (
-            PROJECT_ROOT
-            / "solver_data"
-            / "final"
-            / "mdp"
-            / "one_interval"
-            / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}_a{agent_actions}"
-            / sub_dir
-        )
-        run_dir.mkdir(parents=True, exist_ok=True)
+for reward_type, n_episodes, agent_actions, use_reynolds_signal in product(
+    reward_types, n_episodes_list, agent_actions_list, reynolds_signals
+):
+    sub_dir = (
+        "no_reynolds_signal" if not use_reynolds_signal else "with_reynolds_signal"
+    )
 
-        ann_path = run_dir / "ann_model.pt"
-        target_profile_dir = PROJECT_ROOT / "dns_data" / "intervals"
-        w_field_path = (
-            PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
-        )
-        times_path = PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy"
-        forcing_projected = np.load(
-            TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy"
-        )
-        times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
+    # Reward type is part of the run directory name, so each reward type gets its own
+    # directory (models, baseline files, logs are never shared between reward types).
+    run_dir = (
+        PROJECT_ROOT
+        / "solver_data"
+        / "final"
+        / "mdp"
+        / "one_interval"
+        / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}_a{agent_actions}_r{reward_type.value}"
+        / sub_dir
+    )
+    run_dir.mkdir(parents=True, exist_ok=True)
 
-        problem = Problem(
-            name="tcf_1d",
-            domain_length=z_length,
-            reynolds=100.0,
-            initial_condition=None,
-            forcing=forcing_projected,
-            forcing_times=times_forcing,
-            forcing_is_steady=False,
-            boundary_condition_type="fixed",
-            boundary_condition_value=0.0,
-            t_start=t_start,
-            t_end=t_end,
-        )
-        disc_config = DiscretizationConfig(
-            problem=problem,
-            n_nodes_les=n_nodes_les,
-            n_nodes_dns=n_nodes_dns,
-            dt_les=dt,
-        )
+    print(
+        f"\n[RUN] reward_type={reward_type} | episodes={n_episodes} | "
+        f"agent_actions={agent_actions} | reynolds={use_reynolds_signal}\n      -> {run_dir}"
+    )
 
-        ann_config = MDPConfig(
-            tau_model=tau_model,
-            n_training_episodes=n_episodes,
-            training_mode=True,
-            include_reynolds_signal=use_reynolds_signal,
-            ann_path=ann_path,
-            n_agent_steps_per_episode=agent_actions,
-            with_improvement_signal=False,
-        )
+    ann_path = run_dir / "ann_model.pt"
+    target_profile_dir = PROJECT_ROOT / "dns_data" / "intervals"
+    w_field_path = (
+        PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
+    )
+    times_path = PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy"
+    forcing_projected = np.load(
+        TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy"
+    )
+    times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
 
-        reference_trajectory = ReferenceTrajectory(
-            mean_target_profile_dir=target_profile_dir,
-            projected_w_path=w_field_path,
-            times_path=times_path,
-            n_nodes_les=n_nodes_les,
-        )
+    problem = Problem(
+        name="tcf_1d",
+        domain_length=z_length,
+        reynolds=100.0,
+        initial_condition=None,
+        forcing=forcing_projected,
+        forcing_times=times_forcing,
+        forcing_is_steady=False,
+        boundary_condition_type="fixed",
+        boundary_condition_value=0.0,
+        t_start=t_start,
+        t_end=t_end,
+    )
 
-        trainer = Trainer(
-            problem,
-            disc_config,
-            ann_config,
-            master_path=run_dir,
-            reference_trajectory=reference_trajectory,
-            test_interval=test_interval,
-            train_intervals=train_intervals,  # Passes the stochastic interval pool
-        )
+    disc_config = DiscretizationConfig(
+        problem=problem,
+        n_nodes_les=n_nodes_les,
+        n_nodes_dns=n_nodes_dns,
+        dt_les=dt,
+    )
 
-        # Execute stochastic training and final testing evaluation
-        trainer.run_training()
+    ann_config = MDPConfig(
+        tau_model=tau_model,
+        n_training_episodes=n_episodes,
+        training_mode=True,
+        include_reynolds_signal=use_reynolds_signal,
+        ann_path=ann_path,
+        n_agent_steps_per_episode=agent_actions,
+        reward_type=reward_type,
+    )
 
-        print(
-            "\n[SUCCESS] Stochastic training and testing pipeline completed successfully."
-        )
+    reference_trajectory = ReferenceTrajectory(
+        mean_target_profile_dir=target_profile_dir,
+        projected_w_path=w_field_path,
+        times_path=times_path,
+        n_nodes_les=n_nodes_les,
+    )
+
+    trainer = Trainer(
+        problem,
+        disc_config,
+        ann_config,
+        master_path=run_dir,
+        reference_trajectory=reference_trajectory,
+        test_interval=test_interval,
+        train_intervals=train_intervals,  # Passes the stochastic interval pool
+    )
+
+    # Execute stochastic training and final testing evaluation
+    trainer.run_training()
+
+    print(
+        f"\n[SUCCESS] reward_type={reward_type}: "
+        "stochastic training and testing pipeline completed successfully."
+    )

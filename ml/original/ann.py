@@ -44,10 +44,6 @@ class TauANN(nn.Module):
         self.act_center = 0.5 * (self.max_action + self.min_action)
         self.act_half = 0.5 * (self.max_action - self.min_action)
 
-        # Zero-initialize the final output layer for clean start near a = 1.0 (baseline)
-        nn.init.zeros_(self.network[-1].weight)
-        nn.init.zeros_(self.network[-1].bias)
-
     def forward(self, state_input: Tensor) -> Tensor:
         """
         Compute the TD3 actor's action output.

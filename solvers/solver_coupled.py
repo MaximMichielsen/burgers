@@ -17,10 +17,11 @@ import torch
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from scipy.ndimage import uniform_filter1d
+from torch import nn
 
 from ml.bandit.ann import BanditConfig
 from ml.mdp.ann import MDPConfig
-from ml.original.ann import TauANN, load_tau_ann
+from ml.original.ann import load_tau_ann
 from ml.original.ann_config import TauANNConfig, Scope
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
@@ -94,13 +95,23 @@ class SolverCoupled(SolverBase):
         self.agent_step = 0
 
         # Load ANN only during inference/solver mode
-        self.ann: TauANN | None = None
+        self.ann: nn.Module | None = None
         if self.uses_internal_ann:
             if ann_config.ann_path is None:
                 raise ValueError(
                     "ann_path must be provided when training_mode and baseline_mode are False."
                 )
-            self.ann = load_tau_ann(ann_config.ann_path)
+
+            if isinstance(ann_config, BanditConfig):
+                from ml.bandit.ann import load_tau_ann as load_bandit_ann
+
+                self.ann = load_bandit_ann(ann_config.ann_path)
+            elif isinstance(ann_config, MDPConfig):
+                from ml.mdp.ann import load_tau_ann as load_mdp_ann
+
+                self.ann = load_mdp_ann(ann_config.ann_path)
+            else:
+                self.ann = load_tau_ann(ann_config.ann_path)
 
         elif self.baseline_mode:
             # Fixed unit coefficients so history/plots never see None.

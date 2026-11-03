@@ -653,7 +653,9 @@ class MDPTrainer:
             mesh_les,
             les_mean,
             markevery=mark_every,
-            label=f"Corrected Model ({len(mesh_les)} pts)" if not is_baseline_run else f"Base Model ({len(mesh_les)} pts)",
+            label=f"Corrected Model ({len(mesh_les)} pts)"
+            if not is_baseline_run
+            else f"Base Model ({len(mesh_les)} pts)",
             **style,
         )
 

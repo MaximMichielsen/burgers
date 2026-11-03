@@ -91,7 +91,7 @@ dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
 n_episodes = 100
-agent_actions_list = (5,10, 20, 50)
+agent_actions_list = (5, 10, 20, 50)
 proof_mode = ProofMode.a
 reynolds_signals = (True,)
 for agent_actions in agent_actions_list:

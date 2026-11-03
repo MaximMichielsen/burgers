@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import torch
@@ -11,6 +12,16 @@ MAX_ACTION = 5
 MIN_ACTION = 0.9
 
 
+class RewardType(str, Enum):
+    """Selectable reward formulations for the MDP environment."""
+
+    # Action regularization + terminal distance error
+    SPARSE = "sparse"
+    # Action regularization + step based distance error
+    DENSE = "dense"
+    # Action regularization + step based spectral profile exponentially weighted + terminal distance error
+    SPECTRAL = "spectral_tracking"
+
 @dataclass
 class MDPConfig:
     tau_model: TauModel
@@ -20,6 +31,10 @@ class MDPConfig:
     include_reynolds_signal: bool
     n_agent_steps_per_episode: int
 
+    reward_type: RewardType
+
+    with_terminal_bonus: bool = True
+
     random_exploration_ratio: float = 0.25
 
     max_action: float = MAX_ACTION
@@ -27,9 +42,6 @@ class MDPConfig:
 
     hidden_dimension: int = 64
     n_nodes_les: int = 17
-
-    with_improvement_signal: bool = False
-    with_exponential_decay: bool = False
 
     input_scope = Scope.GLOBAL
     output_scope = Scope.GLOBAL
@@ -43,11 +55,15 @@ class MDPConfig:
             int(2 * ((self.n_nodes_les - 1) // 2)) + self.action_dimension + 1
         )
 
+        self.with_exponential_decay: bool = True if self.reward_type == RewardType.SPECTRAL else False
+
 
 @dataclass
 class MDPHyperparameters:
-    weight_mean_profile: float = 10.0
-    weight_reynolds: float = 10.0
+    weight_mean_profile: float = 1.0
+    weight_reynolds: float = 1.0
+    weight_exponential: float = 0.05
+    reward_scale: float = 10.0
 
     lr: float = 3e-4
     discount: float = 0.99
@@ -64,7 +80,7 @@ class MDPHyperparameters:
 
 
 class MDPANN(nn.Module):
-    """ANN tailored specifically to the bandit reformulation."""
+    """ANN tailored specifically to the MDP reformulation."""
 
     def __init__(self, config):
         super().__init__()
@@ -86,9 +102,6 @@ class MDPANN(nn.Module):
             nn.ReLU(),
             nn.Linear(self.hidden_dim, self.action_dim),
         )
-
-        nn.init.uniform_(self.network[-1].weight, -3e-3, 3e-3)
-        nn.init.zeros_(self.network[-1].bias)
 
         self.act_center = 0.5 * (self.max_action + self.min_action)
         self.act_half = 0.5 * (self.max_action - self.min_action)

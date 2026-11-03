@@ -17,6 +17,7 @@ class BanditConfig:
     n_training_episodes: int
     training_mode: bool
     include_reynolds_signal: bool
+    is_regularized: bool = False
 
     random_exploration_ratio: float = 0.25
 
@@ -42,8 +43,10 @@ class BanditConfig:
 
 @dataclass
 class BanditHyperparameters:
-    weight_mean_profile: float = 10.0
-    weight_reynolds: float = 10.0
+    weight_mean_profile: float = 1.0
+    weight_reynolds: float = 1.0
+    weight_effort: float = 0.01
+    reward_scale: float = 10
 
     lr: float = 1e-3
     discount: float = 0

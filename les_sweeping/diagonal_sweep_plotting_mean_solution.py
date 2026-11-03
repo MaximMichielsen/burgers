@@ -135,7 +135,7 @@ for solver_data_dir in time_dirs:
         ax1.set_xlim(z_domain)
 
         # --- LEFT SUBPLOT: Profile Sweep with Colorbar ---
-        dns_line, = ax1.plot(
+        (dns_line,) = ax1.plot(
             mesh_dns,
             mean_profile_dns,
             color="black",
@@ -271,7 +271,7 @@ for solver_data_dir in time_dirs:
             ax2.set_ylim(max(0, err_min - padding), err_max + padding)
 
         ax2.set_title(
-            rf"(b) Relative Error vs. Coefficient", fontsize=10, pad=6, loc="left"
+            r"(b) Relative Error vs. Coefficient", fontsize=10, pad=6, loc="left"
         )
         ax2.set_xlabel("External Coefficient", fontsize=9)
         ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=10)
@@ -279,22 +279,40 @@ for solver_data_dir in time_dirs:
         # Right Subplot Legend (placed outside below ax2)
         legend_handles_ax2 = []
         curve_proxy = mlines.Line2D(
-            [], [], color="#1b4965", linestyle="-", marker="o", markersize=3,
-            linewidth=1.4, markerfacecolor="white", markeredgewidth=0.9, label="Error curve"
+            [],
+            [],
+            color="#1b4965",
+            linestyle="-",
+            marker="o",
+            markersize=3,
+            linewidth=1.4,
+            markerfacecolor="white",
+            markeredgewidth=0.9,
+            label="Error curve",
         )
         legend_handles_ax2.append(curve_proxy)
 
         if opt_info is not None:
             opt_proxy = mlines.Line2D(
-                [], [], color="#b7094c", marker="d", markersize=6, linestyle="",
-                label=f"Opt. ({opt_info[0]:.1f}): {opt_info[1]:.1f}%"
+                [],
+                [],
+                color="#b7094c",
+                marker="d",
+                markersize=6,
+                linestyle="",
+                label=f"Opt. ({opt_info[0]:.1f}): {opt_info[1]:.1f}%",
             )
             legend_handles_ax2.append(opt_proxy)
 
         if base_info is not None:
             base_proxy = mlines.Line2D(
-                [], [], color="#e76f51", marker="d", markersize=6, linestyle="",
-                label=f"Baseline (1.0): {base_info:.1f}%"
+                [],
+                [],
+                color="#e76f51",
+                marker="d",
+                markersize=6,
+                linestyle="",
+                label=f"Baseline (1.0): {base_info:.1f}%",
             )
             legend_handles_ax2.append(base_proxy)
 

@@ -8,6 +8,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
+from ml.bandit.ann import BanditConfig
 from ml.original.environment import EnvironmentForcingDNS
 from proofing.action_based.environment import EnvironmentProof
 from proofing.contextual_bandit_reformulation.environment import (
@@ -159,7 +160,8 @@ def plot_actions(
     ax.minorticks_on()
 
     ax.set_title("(a) Policy Actions", loc="left")
-    ax.set_xlabel("Episode")
+    x_label = "Episode" if isinstance(trainer.ann_config, BanditConfig) else "Step"
+    ax.set_xlabel(x_label)
     ax.set_ylabel("Action Value")
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))  # Forces integer ticks
     ax.tick_params(which="major", length=6, width=0.8)
@@ -289,7 +291,8 @@ def plot_reward_trajectory(
             label="Clipped Episode Reward",
         )
     ax.set_title("(d) Episode Reward Trajectory", loc="left")
-    ax.set_xlabel("Episode")
+    x_label = "Episode" if isinstance(trainer.ann_config, BanditConfig) else "Step"
+    ax.set_xlabel(x_label)
     ax.set_ylabel("Reward")
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))  # Forces integer ticks
     ax.grid(False)
