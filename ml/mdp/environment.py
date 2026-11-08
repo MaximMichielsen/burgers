@@ -147,10 +147,12 @@ class MDPEnvironment:
             )
 
         if is_final_action:
-
             if not self.ann_config.with_terminal_bonus:
-                return -self.ann_config.n_agent_steps_per_episode * self.hp.reward_scale * (self.hp.weight_exponential * exponential_decay * instant_profile_error)
-
+                return (
+                    self.hp.weight_exponential
+                    * exponential_decay
+                    * instant_profile_error
+                )
             mean_profile = np.mean(self.solver.snapshots_solution, axis=0)
             mean_reference = self.reference_trajectory.target_profile
 
@@ -177,15 +179,13 @@ class MDPEnvironment:
             ]
 
             if self.ann_config.include_reynolds_signal:
-                return self.hp.reward_scale * (
+                return (
                     baseline_profile_error - mean_profile_error - reynolds_profile_error
                 )
 
-            return self.hp.reward_scale * (baseline_profile_error - mean_profile_error)
+            return baseline_profile_error - mean_profile_error
 
-
-
-        return -self.ann_config.n_agent_steps_per_episode * self.hp.reward_scale * (self.hp.weight_exponential * exponential_decay * instant_profile_error)
+        return -self.hp.weight_exponential * exponential_decay * instant_profile_error
 
     def _compute_reward_sparse(
         self, action, agent_step, is_final_action, is_baseline_run
@@ -217,7 +217,7 @@ class MDPEnvironment:
             return error
 
         baseline_error = np.load(self.baseline_path / "reward_history.npy")[-1]
-        return self.hp.reward_scale * (baseline_error - error)
+        return baseline_error - error
 
     def _compute_reward_dense(
         self,
@@ -252,8 +252,10 @@ class MDPEnvironment:
         # We penalize both physical mismatch and erratic/extreme actions at every step
         step_reward = -physics_penalty
 
-        if is_final_action and not is_baseline_run:
+        if is_final_action and is_baseline_run:
+            return physics_penalty
 
+        if is_final_action and not is_baseline_run:
             if not self.ann_config.with_terminal_bonus:
                 return step_reward
 
@@ -262,12 +264,14 @@ class MDPEnvironment:
                 baseline_rewards = np.load(self.baseline_path / "reward_history.npy")
                 if len(baseline_rewards) > 0:
                     penalty_baseline = baseline_rewards[-1]
-                    terminal_bonus = 5.0 * (-penalty_baseline - physics_penalty)
-                    return step_reward + terminal_bonus
+                    terminal_bonus = self.hp.weight_bonus * (
+                        penalty_baseline - physics_penalty
+                    )
+                    return terminal_bonus
             except Exception:
                 pass
 
-        return step_reward
+        return self.hp.weight_dense_intermediate * step_reward
 
     def _compute_reward_legacy(
         self,

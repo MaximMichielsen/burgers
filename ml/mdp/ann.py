@@ -11,6 +11,8 @@ from solvers.solver_base import TauModel
 MAX_ACTION = 5
 MIN_ACTION = 0.9
 
+REWARD_CLIP_MDP = -1
+
 
 class RewardType(str, Enum):
     """Selectable reward formulations for the MDP environment."""
@@ -21,6 +23,7 @@ class RewardType(str, Enum):
     DENSE = "dense"
     # Action regularization + step based spectral profile exponentially weighted + terminal distance error
     SPECTRAL = "spectral_tracking"
+
 
 @dataclass
 class MDPConfig:
@@ -55,15 +58,20 @@ class MDPConfig:
             int(2 * ((self.n_nodes_les - 1) // 2)) + self.action_dimension + 1
         )
 
-        self.with_exponential_decay: bool = True if self.reward_type == RewardType.SPECTRAL else False
+        self.with_exponential_decay: bool = (
+            True if self.reward_type == RewardType.SPECTRAL else False
+        )
 
 
 @dataclass
 class MDPHyperparameters:
     weight_mean_profile: float = 1.0
     weight_reynolds: float = 1.0
-    weight_exponential: float = 0.05
-    reward_scale: float = 10.0
+    weight_exponential: float = 0.005
+    weight_bonus: float = 2
+    weight_dense_intermediate: float = 0.1
+    reward_scale: float = 100
+    reward_clip: float = REWARD_CLIP_MDP
 
     lr: float = 3e-4
     discount: float = 0.99

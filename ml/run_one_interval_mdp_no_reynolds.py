@@ -92,10 +92,17 @@ dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
 n_episodes_list = (50,)
-agent_actions_list = (5, 10,)
+agent_actions_list = (
+    5,
+    10,
+)
 proof_mode = ProofMode.a
 reynolds_signals = (False,)
-reward_types = (RewardType.SPECTRAL, RewardType.DENSE, RewardType.SPARSE)  # every reward type defined in ml.mdp.ann
+reward_types = (
+    RewardType.SPECTRAL,
+    RewardType.DENSE,
+    RewardType.SPARSE,
+)  # every reward type defined in ml.mdp.ann
 
 for reward_type, n_episodes, agent_actions, use_reynolds_signal in product(
     reward_types, n_episodes_list, agent_actions_list, reynolds_signals

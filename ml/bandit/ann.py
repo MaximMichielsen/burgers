@@ -8,6 +8,7 @@ from solvers.solver_base import TauModel
 
 MAX_ACTION = 8
 MIN_ACTION = 0.7
+REWARD_CLIP_BANDIT = -0.1
 
 
 @dataclass
@@ -46,7 +47,8 @@ class BanditHyperparameters:
     weight_mean_profile: float = 1.0
     weight_reynolds: float = 1.0
     weight_effort: float = 0.01
-    reward_scale: float = 10
+    reward_scale: float = 100
+    reward_clip: float = REWARD_CLIP_BANDIT
 
     lr: float = 1e-3
     discount: float = 0
@@ -85,9 +87,6 @@ class BanditANN(nn.Module):
             nn.ReLU(),
             nn.Linear(self.hidden_dim, self.action_dim),
         )
-
-        nn.init.zeros_(self.network[-1].weight)  # type: ignore
-        nn.init.zeros_(self.network[-1].bias)  # type: ignore
 
         self.act_center = 0.5 * (self.max_action + self.min_action)
         self.act_half = 0.5 * (self.max_action - self.min_action)

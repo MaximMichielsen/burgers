@@ -90,9 +90,9 @@ z_length = Z_LENGTH_DNS
 dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
-n_episodes_list = (50,)
+n_episodes_list = (1,)
 proof_mode = ProofMode.a
-reynolds_signals = (False, True)
+reynolds_signals = (False,)
 contextual = True
 
 for n_episodes in n_episodes_list:

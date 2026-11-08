@@ -25,6 +25,26 @@ plt.rcParams.update(
     }
 )
 
+STYLE_MARKER_BASE = dict(
+    color="#ca1670",
+    marker="d",
+    markersize=7,
+    markerfacecolor="white",
+    markeredgewidth=1.3,
+    zorder=4,
+    linestyle="",
+)
+
+STYLE_MARKER_OPT = dict(
+    color="#16CA70",
+    marker="D",
+    markersize=5.5,
+    markerfacecolor="white",
+    markeredgewidth=1.3,
+    zorder=4,
+    linestyle="",
+)
+
 # Directory Setup matching single_sweep_2.py structure
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INTERVALS_DIR = PROJECT_ROOT / "dns_data" / "intervals"
@@ -86,7 +106,7 @@ for solver_data_dir in time_dirs:
 
     # Setup colormap normalized to the coefficient range
     norm = plt.Normalize(vmin=coeffs.min(), vmax=coeffs.max())
-    cmap = cm.plasma
+    cmap = cm.viridis
 
     output_dir = base_sweep_dir / "plots"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -171,7 +191,7 @@ for solver_data_dir in time_dirs:
 
         time_str = f"$t \\in [{t_start:.2f}, {t_end:.2f}]$"
         ax1.set_title(
-            rf"(a) Mean Velocity Profile $\langle w \rangle$ | {time_str}",
+            rf"(a) Mean Velocity Profiles $\langle w \rangle$ | {time_str}",
             fontsize=10,
             pad=6,
             loc="left",
@@ -198,7 +218,7 @@ for solver_data_dir in time_dirs:
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
         cbar = fig.colorbar(sm, ax=ax1, orientation="vertical", pad=0.03, shrink=0.85)
-        cbar.set_label("Coefficient", fontsize=9)
+        cbar.set_label("Coefficients", fontsize=9)
 
         # --- RIGHT SUBPLOT: Error vs. Correction Coefficient ---
         opt_info = None
@@ -209,13 +229,14 @@ for solver_data_dir in time_dirs:
             ax2.plot(
                 coeffs_arr,
                 errs_arr,
-                color="#1b4965",
+                color="#0072B2",
                 marker="o",
                 markersize=3.5,
                 markerfacecolor="white",
                 markeredgewidth=0.9,
                 linestyle="-",
                 label="Error",
+                markevery=2,
             )
 
             # Highlight Optimal Point
@@ -227,12 +248,8 @@ for solver_data_dir in time_dirs:
             ax2.plot(
                 opt_coeff,
                 opt_err,
-                color="#b7094c",
-                marker="d",
-                markersize=6,
-                linestyle="",
                 label=f"Opt. ({opt_coeff:.1f}): {opt_err:.1f}%",
-                zorder=4,
+                **STYLE_MARKER_OPT,
             )
 
             # Highlight Baseline (Coefficient = 1.0)
@@ -242,25 +259,21 @@ for solver_data_dir in time_dirs:
                 base_info = base_err
 
                 # Draw subtle gray horizontal reference line across the right plot at baseline error level
-                ax2.axhline(
-                    base_err,
-                    color="gray",
-                    linestyle=":",
-                    linewidth=1.1,
-                    alpha=0.8,
-                    zorder=2,
-                )
+                # ax2.axhline(
+                #     base_err,
+                #     color="gray",
+                #     linestyle=":",
+                #     linewidth=1.1,
+                #     alpha=0.8,
+                #     zorder=2,
+                # )
 
                 # Highlight the point at coeff = 1.0 on the curve with a green square marker
                 ax2.plot(
                     1.0,
                     base_err,
-                    color="#e76f51",
-                    marker="d",
-                    markersize=6,
-                    zorder=4,
-                    linestyle="",
                     label=f"Baseline (1.0): {base_err:.1f}%",
+                    **STYLE_MARKER_BASE,
                 )
 
             ax2.set_xlim(coeffs.min() - 0.2, coeffs.max() + 0.2)
@@ -271,9 +284,12 @@ for solver_data_dir in time_dirs:
             ax2.set_ylim(max(0, err_min - padding), err_max + padding)
 
         ax2.set_title(
-            r"(b) Relative Error vs. Coefficient", fontsize=10, pad=6, loc="left"
+            r"(b) Relative Error vs. External Coefficients",
+            fontsize=10,
+            pad=6,
+            loc="left",
         )
-        ax2.set_xlabel("External Coefficient", fontsize=9)
+        ax2.set_xlabel(r"External Coefficients $(c_1 = c_2)$", fontsize=9)
         ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=10)
 
         # Right Subplot Legend (placed outside below ax2)
@@ -281,7 +297,7 @@ for solver_data_dir in time_dirs:
         curve_proxy = mlines.Line2D(
             [],
             [],
-            color="#1b4965",
+            color="#0072B2",
             linestyle="-",
             marker="o",
             markersize=3,
@@ -296,11 +312,8 @@ for solver_data_dir in time_dirs:
             opt_proxy = mlines.Line2D(
                 [],
                 [],
-                color="#b7094c",
-                marker="d",
-                markersize=6,
-                linestyle="",
                 label=f"Opt. ({opt_info[0]:.1f}): {opt_info[1]:.1f}%",
+                **STYLE_MARKER_OPT,
             )
             legend_handles_ax2.append(opt_proxy)
 
@@ -308,11 +321,8 @@ for solver_data_dir in time_dirs:
             base_proxy = mlines.Line2D(
                 [],
                 [],
-                color="#e76f51",
-                marker="d",
-                markersize=6,
-                linestyle="",
                 label=f"Baseline (1.0): {base_info:.1f}%",
+                **STYLE_MARKER_BASE,
             )
             legend_handles_ax2.append(base_proxy)
 
@@ -336,6 +346,7 @@ for solver_data_dir in time_dirs:
         )
         plt.savefig(output_plot_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
+        print(f"[DIR] {output_dir}")
         print(f"[Saved] {output_plot_path.name}")
 
 print(f"\n[SUCCESS] All sweep comparison plots saved to: {output_dir}")

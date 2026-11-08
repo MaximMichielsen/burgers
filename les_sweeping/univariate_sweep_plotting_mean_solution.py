@@ -50,7 +50,7 @@ def create_univariate_solution_sweep_plot(
     if not time_dirs:
         print(f"[Warning] No time interval directories found under {base_sweep_dir}")
         return
-    solver_data_dir = time_dirs[0]
+    solver_data_dir = time_dirs[1]
 
     # Parse t_start from directory name safely
     dir_match = re.search(r"t_(\d+\.\d+)_(\d+\.\d+)", solver_data_dir.name)
@@ -381,7 +381,7 @@ if __name__ == "__main__":
         sweep_tag="vary_c1",
         varied_coeff_name="c1",
         fixed_coeff_vals=[4.9, 1.0],
-        max_allowable_error=45.0,
+        max_allowable_error=85.0,
     )
 
     # Plot Sweep 2 (Varying c2 with c1 fixed at 4.9 and 1.0)
@@ -389,5 +389,5 @@ if __name__ == "__main__":
         sweep_tag="vary_c2",
         varied_coeff_name="c2",
         fixed_coeff_vals=[4.9, 1.0],
-        max_allowable_error=45.0,
+        max_allowable_error=85.0,
     )

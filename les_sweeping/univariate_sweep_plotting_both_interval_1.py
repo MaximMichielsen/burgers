@@ -4,6 +4,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from setup.constants import Z_LENGTH_DNS
+
 # --- Publication-Quality Global Settings (Direct Times New Roman + STIX Math) ---
 plt.rcParams.update(
     {
@@ -22,6 +24,64 @@ plt.rcParams.update(
         "axes.linewidth": 0.8,
     }
 )
+
+
+CLEARANCE_SCALE = 0.95
+
+STYLE_BASELINE = dict(
+    color="#0072B2",
+    linestyle="-.",
+    marker="^",
+    markersize=3,
+    markerfacecolor="white",
+    markeredgewidth=0.9,
+    zorder=1,
+    markevery=2,
+)
+
+STYLE_2 = dict(
+    color="#D55E00",
+    linestyle="--",
+    marker="o",
+    markersize=3,
+    markerfacecolor="white",
+    markeredgewidth=0.9,
+    zorder=2,
+    markevery=2,
+)
+
+STYLE_3 = dict(
+    color="#12b062",
+    linestyle="-.",
+    marker="v",
+    markersize=3,
+    markerfacecolor="white",
+    markeredgewidth=0.9,
+    zorder=3,
+    markevery=2,
+)
+
+STYLE_MARKER_BASE = dict(
+    color="#ca1670",
+    marker="d",
+    markersize=7,
+    markerfacecolor="white",
+    markeredgewidth=1.3,
+    zorder=4,
+    linestyle="",
+)
+
+STYLE_MARKER_OPT = dict(
+    color="#16CA70",
+    marker="D",
+    markersize=5.5,
+    markerfacecolor="white",
+    markeredgewidth=1.3,
+    zorder=4,
+    linestyle="",
+)
+
+STYLES = (STYLE_BASELINE, STYLE_2, STYLE_3)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INTERVALS_DIR = PROJECT_ROOT / "dns_data" / "intervals"
@@ -142,7 +202,7 @@ def create_dual_sweep_error_plot_for_type(
             continue
 
         dns_profile = np.load(matching_dns[0])
-        mesh_dns = np.linspace(z_domain[0], z_domain[1], len(dns_profile))
+        mesh_dns = np.linspace(0, Z_LENGTH_DNS, len(dns_profile))
 
         def compute_sweep_errors(frame_dict):
             sweep_data = {}
@@ -150,7 +210,7 @@ def create_dual_sweep_error_plot_for_type(
             for fix_val, var_dict in frame_dict.items():
                 for var_val, les_path in var_dict.items():
                     les_data = np.load(les_path)
-                    mesh_les = np.linspace(z_domain[0], z_domain[1], len(les_data))
+                    mesh_les = np.linspace(0, Z_LENGTH_DNS, len(les_data))
                     dns_interp = np.interp(mesh_les, mesh_dns, dns_profile)
                     rel_err = (
                         np.linalg.norm(les_data - dns_interp)
@@ -181,6 +241,7 @@ def create_dual_sweep_error_plot_for_type(
 
         # --- Subplot (a): Varying c1 ---
         opt_c1_info = None
+        baseline_c1_info = None
         min_err_c1 = float("inf")
         for idx, fix_val in enumerate(fixed_coeff_vals):
             if fix_val not in data_c1:
@@ -191,30 +252,33 @@ def create_dual_sweep_error_plot_for_type(
             ax1.plot(
                 vars_sorted,
                 vals,
-                color=st["color"],
-                marker="o",
-                markersize=3.5,
-                markerfacecolor="white",
-                markeredgewidth=0.9,
-                linestyle=st["linestyle"],
                 label=f"$c_2 = {fix_val}$",
+                **STYLES[idx],
             )
             for v, e in zip(vars_sorted, vals):
                 if e <= max_allowable_error and e < min_err_c1:
                     min_err_c1 = e
                     opt_c1_info = (v, fix_val, e)
 
+                if np.isclose(fix_val, 1.0) and np.isclose(v, 1.0):
+                    baseline_c1_info = (v, fix_val, e)
+
         if opt_c1_info is not None:
             opt_v, _, opt_e = opt_c1_info
             ax1.plot(
                 opt_v,
                 opt_e,
-                color="#b7094c",
-                marker="d",
-                markersize=7,
-                linestyle="",
+                **STYLE_MARKER_OPT,
                 label=f"Opt. {opt_e:.1f}%",
-                zorder=4,
+            )
+
+        if baseline_c1_info is not None:
+            base_v, _, base_e = baseline_c1_info
+            ax1.plot(
+                base_v,
+                base_e,
+                **STYLE_MARKER_BASE,
+                label=f"Base. {base_e:.1f}%",
             )
 
         ax1.set_title(
@@ -223,10 +287,11 @@ def create_dual_sweep_error_plot_for_type(
         ax1.set_xlabel(r"Coefficient $c_1$", fontsize=9)
         ax1.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=10)
         if errs_c1:
-            ax1.set_ylim(max(0.0, min(errs_c1) - 2), max_allowable_error)
+            ax1.set_ylim(max(0.0, min(errs_c1) * CLEARANCE_SCALE), max_allowable_error)
 
         # --- Subplot (b): Varying c2 ---
         opt_c2_info = None
+        baseline_c2_info = None
         min_err_c2 = float("inf")
         for idx, fix_val in enumerate(fixed_coeff_vals):
             if fix_val not in data_c2:
@@ -237,12 +302,7 @@ def create_dual_sweep_error_plot_for_type(
             ax2.plot(
                 vars_sorted,
                 vals,
-                color=st["color"],
-                marker="o",
-                markersize=3.5,
-                markerfacecolor="white",
-                markeredgewidth=0.9,
-                linestyle=st["linestyle"],
+                **STYLES[idx],
                 label=f"$c_1 = {fix_val}$",
             )
             for v, e in zip(vars_sorted, vals):
@@ -250,17 +310,25 @@ def create_dual_sweep_error_plot_for_type(
                     min_err_c2 = e
                     opt_c2_info = (fix_val, v, e)
 
+                if np.isclose(fix_val, 1.0) and np.isclose(v, 1.0):
+                    baseline_c2_info = (fix_val, v, e)
+
         if opt_c2_info is not None:
             _, opt_v, opt_e = opt_c2_info
             ax2.plot(
                 opt_v,
                 opt_e,
-                color="#b7094c",
-                marker="d",
-                markersize=7,
-                linestyle="",
                 label=f"Opt. {opt_e:.1f}%",
-                zorder=4,
+                **STYLE_MARKER_OPT,
+            )
+
+        if baseline_c2_info is not None:
+            _, base_v, base_e = baseline_c2_info
+            ax2.plot(
+                base_v,
+                base_e,
+                label=f"Base. {base_e:.1f}%",
+                **STYLE_MARKER_BASE,
             )
 
         ax2.set_title(
@@ -269,17 +337,24 @@ def create_dual_sweep_error_plot_for_type(
         ax2.set_xlabel(r"Coefficient $c_2$", fontsize=9)
         ax2.set_ylabel(r"Relative $L_2$ Error (%)", fontsize=10)
         if errs_c2:
-            ax2.set_ylim(max(0.0, min(errs_c2) - 2), max_allowable_error)
+            ax2.set_ylim(max(0.0, min(errs_c2) * CLEARANCE_SCALE), max_allowable_error)
 
         # External bottom legends
         for ax in (ax1, ax2):
             handles, labels = ax.get_legend_handles_labels()
+            if len(handles) == 5:
+                # Reorder so column-major ncol=3 maps to:
+                # Row 0: [c2=1.0, c2=1.3, c2=4.9]
+                # Row 1: [Opt, Base, empty]
+                order = [0, 4, 1, 3, 2]
+                handles = [handles[i] for i in order]
+                labels = [labels[i] for i in order]
             ax.legend(
                 handles=handles,
                 labels=labels,
                 loc="upper center",
-                bbox_to_anchor=(0.5, -0.16),
-                ncol=len(handles),
+                bbox_to_anchor=(0.5, -0.22),
+                ncol=3,
                 frameon=False,
                 fontsize=8.5,
             )
@@ -304,10 +379,10 @@ def create_dual_sweep_error_plot_for_type(
 if __name__ == "__main__":
     print("Generating Mean Velocity dual-sweep error lines...")
     create_dual_sweep_error_plot_for_type(
-        "mean", fixed_coeff_vals=[4.9, 1.0], max_allowable_error=45.0
+        "mean", fixed_coeff_vals=[1.0, 1.3, 4.9], max_allowable_error=50.0
     )
 
     print("\nGenerating Reynolds Stress dual-sweep error lines...")
     create_dual_sweep_error_plot_for_type(
-        "reynolds", fixed_coeff_vals=[4.9, 1.0], max_allowable_error=15.0
+        "reynolds", fixed_coeff_vals=[1.0, 1.3, 4.9], max_allowable_error=12.0
     )

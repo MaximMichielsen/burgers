@@ -95,7 +95,6 @@ class BanditEnvironment:
 
         mean_profile = np.mean(self.solver.snapshots_solution, axis=0)
         target_profile = self.reference_trajectory.target_profile
-
         mean_profile_error = self.compute_distance_error(mean_profile, target_profile)
 
         reynolds_error = 0
@@ -120,9 +119,8 @@ class BanditEnvironment:
         penalty += effort
 
         if not is_baseline_run:
-            penalty_baseline = np.load(self.baseline_path / "reward_history.npy")
-
-            return self.hp.reward_scale * (penalty_baseline - penalty)
+            penalty_baseline = np.load(self.baseline_path / "reward_history.npy")[-1]
+            return penalty_baseline - penalty
 
         return penalty
 

@@ -568,16 +568,23 @@ class SolverCoupled(SolverBase):
             n_rows,
             n_cols,
             figsize=(5 * n_cols, 3.5 * n_rows),
+            dpi=300,
             sharex=True,
             sharey=True,
+            constrained_layout=True,
         )
         axes_list = np.atleast_1d(axes).flatten()
+
+        # Hide unused panels (e.g. 3 coefficients on a 2x2 grid)
+        for ax in axes_list[n_coeffs:]:
+            ax.set_visible(False)
 
         for c_idx, name in enumerate(param_names):
             if c_idx >= n_coeffs:
                 break
             ax = axes_list[c_idx]
             raw_signal = history_coeffs_arr[:, c_idx]
+            use_ma = ma_window > 1 and len(raw_signal) >= ma_window
 
             # 1. Plot raw signal transparently in background
             ax.plot(
@@ -588,51 +595,72 @@ class SolverCoupled(SolverBase):
                 linewidth=0.8,
                 alpha=0.25,
                 zorder=2,
+                label="Raw" if not use_ma else "Raw (per step)",
             )
 
             # 2. Compute boundary-safe moving average
-            if ma_window > 1 and len(raw_signal) >= ma_window:
+            if use_ma:
                 smoothed_signal = uniform_filter1d(
                     raw_signal, size=ma_window, mode="nearest"
                 )
                 ax.plot(
                     history_time,
                     smoothed_signal,
-                    label=f"{name} (MA)",
+                    label=f"Moving average ({ma_window})",
                     linestyle="-",
                     color="tab:blue",
                     linewidth=2.0,
                     zorder=3,
                 )
             else:
-                ax.plot(
-                    history_time,
-                    raw_signal,
-                    label=name,
-                    linestyle="-",
-                    color="tab:blue",
-                    linewidth=2.0,
-                    zorder=3,
+                # Not enough samples for a moving average: draw the raw signal solid
+                ax.lines[-1].set_alpha(1.0)
+                ax.lines[-1].set_linewidth(2.0)
+                ax.lines[-1].set_zorder(3)
+
+            # Panel style (same as the profile comparison plot)
+            panel = "abcdefgh"[c_idx]
+            ax.set_title(f"({panel}) {name}", fontsize=10, pad=6, loc="left")
+            if c_idx % n_cols == 0:
+                ax.set_ylabel("Coefficient Value", fontsize=10)
+            if len(history_time) > 1:
+                ax.set_xlim(np.min(history_time), np.max(history_time))
+            ax.minorticks_on()
+            ax.tick_params(
+                which="both", direction="in", top=True, right=True, length=4, width=0.8
+            )
+            ax.tick_params(which="minor", length=2, width=0.5)
+            for spine in ax.spines.values():
+                spine.set_linewidth(0.8)
+            ax.grid(False)
+
+            # Dotted zero line only if zero lies inside the plotted range
+            y0, y1 = ax.get_ylim()
+            if y0 < 0 < y1:
+                ax.axhline(
+                    0, color="black", linestyle=":", linewidth=0.5, alpha=0.4, zorder=0
                 )
 
-            ax.set_title(name, fontsize=11, fontweight="bold")
-            ax.set_ylabel("Coefficient Value")
-            ax.grid(True, linestyle=":", alpha=0.6)
-            ax.legend(loc="best", frameon=True)
+        # x-label (and tick labels) on the lowest used panel of every column
+        for c_idx, ax in enumerate(axes_list[:n_coeffs]):
+            if c_idx + n_cols >= n_coeffs:
+                ax.set_xlabel("Time $t$", fontsize=9)
+                ax.tick_params(axis="x", labelbottom=True)
 
-        for ax in axes_list[-n_cols:]:
-            ax.set_xlabel("Time (t)")
-
-        fig.suptitle(
-            "Temporal Evolution of Correction Coefficients",
-            fontsize=13,
-            fontweight="bold",
+        # Shared legend below all panels (all panels have the same entries)
+        handles, labels = axes_list[0].get_legend_handles_labels()
+        fig.legend(
+            handles,
+            labels,
+            loc="outside lower center",  # requires matplotlib >= 3.7
+            ncol=len(handles),
+            fontsize=9,
+            frameon=False,
         )
-        fig.tight_layout(rect=[0, 0, 1, 0.95])
 
         filename = f"corrections_e{self.ann_config.n_training_episodes}.png"
         save_path = self.master_path / filename
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"  * Saved evolution plot -> {filename}")
 
         correction_history_file = self.master_path / "correction_history.txt"

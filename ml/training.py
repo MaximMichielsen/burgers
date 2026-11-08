@@ -24,6 +24,7 @@ from ml.mdp.ann import MDPConfig, MDPHyperparameters
 from ml.mdp.environment import MDPEnvironment
 from ml.original.training import set_cache_writable
 from ml.replay_buffer import ReplayBuffer
+from ml.sac_agent import SACAgent
 from ml.td3_agent import TD3Agent
 from setup.config_discretization import DiscretizationConfig
 from setup.constants import PATH_TO_LES_CACHE, N_NODES_DNS
@@ -40,7 +41,7 @@ from utils.les_caching import (
 
 # Reward clip is mode dependent (taken from the latest MDP and the bandit scripts).
 REWARD_CLIP_MDP = -4.0
-REWARD_CLIP_BANDIT = -0.2
+
 REWARD_CLIP = REWARD_CLIP_MDP  # kept so external imports of REWARD_CLIP still resolve
 
 
@@ -131,10 +132,9 @@ class Trainer:
         test_interval: tuple[float, float],
         hp: MDPHyperparameters | BanditHyperparameters | None = None,
         baseline_path: Path | None = None,
+        use_sac: bool = False,
     ):
         self.mode: TrainingMode = resolve_training_mode(ann_config)
-        self.reward_clip: float = REWARD_CLIP_MDP if self.is_mdp else REWARD_CLIP_BANDIT
-
         hp_cls = MDPHyperparameters if self.is_mdp else BanditHyperparameters
         if hp is None:
             hp = hp_cls()
@@ -144,6 +144,11 @@ class Trainer:
                 f"got {type(hp).__name__}."
             )
         self.hp: MDPHyperparameters | BanditHyperparameters = hp
+
+        self.use_sac = use_sac
+
+        self.reward_clip: float = self.hp.reward_clip
+        self.reward_scale: float = self.hp.reward_scale
 
         self.disc_config = disc_config
         self.ann_config = ann_config
@@ -231,7 +236,10 @@ class Trainer:
         env = self._build_environment()
         env.reset()
         self.env = env
-        agent = TD3Agent(self.ann_config)
+        if self.use_sac:
+            agent = SACAgent(self.ann_config)
+        else:
+            agent = TD3Agent(self.ann_config)
 
         replay_buffer = ReplayBuffer(
             state_dim=self.ann_config.state_dimension,
@@ -239,7 +247,8 @@ class Trainer:
             max_size=self.hp.replay_buffer_max_size,
         )
 
-        self.print_configurations(agent)
+        if not self.use_sac:
+            self.print_configurations(agent)
         self.print_title("Starting Training Loop")
         training_start_time = time.time()
 
@@ -315,21 +324,16 @@ class Trainer:
                     print("step: ", episode_steps)
                     print("solver time: ", self.env.solver.time)
                     print(reward)
-                scalar_reward = (
-                    float(np.squeeze(reward))
-                    if hasattr(reward, "__len__")
-                    else float(reward)
-                )
-                clipped_reward = np.clip(
-                    scalar_reward, a_min=self.reward_clip, a_max=None
-                )
-                self.reward_history.append(clipped_reward)
+
+                clipped_reward = np.clip(reward, a_min=self.reward_clip, a_max=None)
+                scaled_reward = self.reward_scale * clipped_reward
+                self.reward_history.append(scaled_reward)
 
                 replay_buffer.add(
                     np.asarray(state),
                     action,
                     np.asarray(next_state),
-                    clipped_reward,
+                    scaled_reward,
                     done,
                 )
 
@@ -337,9 +341,8 @@ class Trainer:
 
                 if not is_random_action_episode:
                     for _ in range(self.hp.n_updates_post_episode):
-                        critic_loss, actor_loss = agent.train(
-                            replay_buffer, self.hp.batch_size
-                        )
+                        train_data = agent.train(replay_buffer, self.hp.batch_size)
+                        critic_loss, actor_loss = train_data[0], train_data[1]
                         self.critic_loss_history.append(critic_loss)
                         self.actor_loss_history.append(actor_loss)
 
@@ -356,7 +359,7 @@ class Trainer:
             self._log_episode_summary(
                 episode=episode,
                 ep_duration=time.time() - ep_start_time,
-                reward=episode_return if self.is_mdp else clipped_reward,
+                reward=episode_return if self.is_mdp else scaled_reward,
                 actions=action,
                 replay_buffer=replay_buffer,
             )
@@ -1143,7 +1146,7 @@ class Trainer:
             f"  [EPISODE {episode + 1} SUMMARY]\n"
             f"  Duration      : {ep_duration:.2f}s\n"
             f"  Mean Action   : {mean_action:.4f}\n"
-            f"  Reward        : {float(reward):.4f}\n"
+            f"  Reward        : {reward:.4f}\n"
             f"  Replay Buffer : {replay_buffer.size}/{self.hp.replay_buffer_max_size}"
         )
         self._log("=" * 75)

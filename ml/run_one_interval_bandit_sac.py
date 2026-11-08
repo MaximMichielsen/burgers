@@ -90,9 +90,9 @@ z_length = Z_LENGTH_DNS
 dt = 1e-3
 tau_model = TauModel.TWO_PARAMS
 
-n_episodes_list = (20, 50, 100)
+n_episodes_list = (20,)
 proof_mode = ProofMode.a
-reynolds_signals = (False, True)
+reynolds_signals = (False,)
 
 for n_episodes in n_episodes_list:
     for use_reynolds_signal in reynolds_signals:
@@ -104,7 +104,7 @@ for n_episodes in n_episodes_list:
             PROJECT_ROOT
             / "solver_data"
             / "final"
-            / "bandit"
+            / "bandit_sac"
             / "one_interval"
             / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}"
             / sub_dir
@@ -165,6 +165,7 @@ for n_episodes in n_episodes_list:
             reference_trajectory=reference_trajectory,
             test_interval=test_interval,
             train_intervals=train_intervals,  # Passes the stochastic interval pool
+            use_sac=True,
         )
 
         # Execute stochastic training and final testing evaluation
