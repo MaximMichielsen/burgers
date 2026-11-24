@@ -95,6 +95,7 @@ def run_grid_point(
         master_path=master_path,
         external_correction_coefficients=coeffs_array,
         include_nonlinear_vms=False,
+        do_post_processing=False,
     )
     les_solver.run_simulation()
 
