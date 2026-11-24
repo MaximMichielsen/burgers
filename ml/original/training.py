@@ -39,8 +39,8 @@ from proofing.short_mdp.config import ShortMDPConfig, TD3ShortMDPHyperparameters
 from proofing.short_mdp.environment import EnvironmentShortMDP
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
-from solvers.solver_base import SimulationMode, SolverBase
-from solvers.solver_coupled import SolverCoupled
+from archived.solver_base import SimulationMode, SolverBaseOld
+from solvers.solver_coupled import SolverCoupledOld
 from utils.diagnostics import compute_error_metrics
 
 EPISODE_PENALTY_CLIP = -10000
@@ -142,7 +142,7 @@ class TD3Trainer:
             )
         self.n_stochastic_episodes = stochastic_episodes
 
-        self.solver: SolverCoupled | SolverBase | SolverForProofs | None = None
+        self.solver: SolverCoupledOld | SolverBaseOld | SolverForProofs | None = None
         self.env: (
             EnvironmentForcingDNS
             | EnvironmentProof
@@ -563,7 +563,7 @@ class TD3Trainer:
         set_cache_writable(target_cache_dir, True)
         self.baseline_run_dir = target_cache_dir
 
-        self.solver = SolverCoupled(
+        self.solver = SolverCoupledOld(
             problem=self.problem,
             disc_config=self.disc_config,
             master_path=target_cache_dir,
@@ -621,7 +621,7 @@ class TD3Trainer:
     def run_evaluation(self):
         self.run_baseline_evaluation()
 
-        self.solver = SolverCoupled(
+        self.solver = SolverCoupledOld(
             problem=self.problem,
             disc_config=self.disc_config,
             ann_config=replace(self.ann_config, training_mode=False),
@@ -677,7 +677,7 @@ class TD3Trainer:
 
         self.run_baseline_evaluation()
 
-        self.solver = SolverCoupled(
+        self.solver = SolverCoupledOld(
             problem=self.problem,
             disc_config=self.disc_config,
             ann_config=replace(self.ann_config, training_mode=False),
@@ -712,7 +712,7 @@ class TD3Trainer:
     def plot_combined_profile_comparison(
         self,
         env: EnvironmentForcingDNS | EnvironmentBanditTraining | None,
-        solver: SolverCoupled | SolverBase | None,
+        solver: SolverCoupledOld | SolverBaseOld | None,
         episode: int | None,
         show_plot: bool = False,
         dns_trajectory: NDArray | None = None,
@@ -1046,9 +1046,9 @@ class TD3Trainer:
             out_dir = self.master_path / "testing"
         elif env is not None:
             out_dir = self.master_path / "profile_comparisons"
-        elif isinstance(solver, SolverCoupled):
+        elif isinstance(solver, SolverCoupledOld):
             out_dir = self.master_path / "evaluation"
-        elif isinstance(solver, SolverBase):
+        elif isinstance(solver, SolverBaseOld):
             out_dir = self.master_path / "baseline"
         else:
             out_dir = self.master_path
@@ -1059,9 +1059,9 @@ class TD3Trainer:
             filename = f"profile_comparison_ep{episode:03d}.png"
         elif is_testing_plot:
             filename = "evaluation_interval_1_e20.png"
-        elif isinstance(solver, SolverCoupled):
+        elif isinstance(solver, SolverCoupledOld):
             filename = "profile_comparison_evaluation.png"
-        elif isinstance(solver, SolverBase):
+        elif isinstance(solver, SolverBaseOld):
             filename = "profile_comparison_baseline.png"
         else:
             filename = "profile_comparison.png"

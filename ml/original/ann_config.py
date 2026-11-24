@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 
 
 from setup.config_discretization import DiscretizationConfig
-from solvers.solver_base import TauModel
+from archived.solver_base import TauModel
 
 MAX_ACTION = 3.0
 MIN_ACTION = 0.5

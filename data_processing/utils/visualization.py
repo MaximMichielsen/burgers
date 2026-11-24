@@ -18,11 +18,12 @@ from numpy.typing import NDArray
 matplotlib.use("TkAgg")
 
 # Project Directories
-PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 PARSED_DATA_DIR = PROJECT_ROOT / "dns_data" / "curated"
 DAT_PARSED_DIR = PARSED_DATA_DIR / "dat"
 STAT_PARSED_DIR = PARSED_DATA_DIR / "stat"
 FILTERED_DIR = PROJECT_ROOT / "dns_data" / "projected"
+TEMPORAL_DIR = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
 
 W_FIELD_PATH = DAT_PARSED_DIR / "w.npy"
 FORCING_PATH = DAT_PARSED_DIR / "f.npy"
@@ -80,9 +81,8 @@ def animate_forcing_comparison(
     for idx, (label, (z_les, f_les)) in enumerate(projected_fields.items()):
         color, marker, lw = styles[idx % len(styles)]
         (line,) = ax.plot(
-            z_les,
+            z_dns,
             f_les[0],
-            marker,
             color=color,
             lw=lw,
             markersize=5,
@@ -326,21 +326,12 @@ def main():
     and then plots velocity mean profile statistics."""
     print("=== Launching Forcing Comparison Animation ===")
 
-    # 1. Load High-Resolution DNS Forcing
-    if not FORCING_PATH.exists():
-        raise FileNotFoundError(
-            f"Missing DNS forcing file at {FORCING_PATH}. Parse .dat files first."
-        )
-
-    w_dns = np.load(W_FIELD_PATH)
-    f_dns = np.load(FORCING_PATH)
-    n_dns_nodes = f_dns.shape[1]
-    z_dns = np.linspace(0.0, 2.0, n_dns_nodes)  # Matches domain z ∈ [0, 2]
+    z_dns = np.linspace(0.0, 2.0, 513)  # Matches domain z ∈ [0, 2]
 
     # 2. Search for saved L2 and H10 projected arrays
-    les_resolution = 17
-    l2_file = FILTERED_DIR / f"forcing_l2_{les_resolution}.npy"
-    h10_file = FILTERED_DIR / f"forcing_h10_{les_resolution}.npy"
+    les_resolution = 33
+    l2_file = TEMPORAL_DIR / f"forcing_l2_{les_resolution}.npy"
+    h10_file = TEMPORAL_DIR / f"forcing_h10_{les_resolution}.npy"
 
     projected_f_fields = {}
     z_les = np.linspace(0.0, 2.0, les_resolution)
@@ -355,11 +346,6 @@ def main():
         projected_f_fields[f"$H^1_0$ ({les_resolution} nodes)"] = (z_les, f_h10)
         print(f"Loaded {h10_file.name}")
 
-    if not projected_f_fields:
-        raise FileNotFoundError(
-            f"No projected files found in {FILTERED_DIR}. Run filter_forcing first."
-        )
-
     projected_w_fields = {}
     w_linear_file = FILTERED_DIR / f"w_linear_{les_resolution}.npy"
     if w_linear_file.exists():
@@ -371,13 +357,30 @@ def main():
         print(f"Loaded {w_linear_file.name}")
 
     # 3. Animate Overlaid Comparison
+    pod_forcing_dns = r"C:\Users\poopy\PycharmProjects\burgers\dns_data\temporal\projected_forcing\forcing_pod_dns.npy"
+    true_forcing_dns = r"C:\Users\poopy\PycharmProjects\burgers\dns_data\temporal\projected_forcing\forcing_true_dns.npy"
+    pod_forcing_dns = Path(pod_forcing_dns)
+    true_forcing_dns = Path(true_forcing_dns)
+    pod_forcing_dns = np.load(pod_forcing_dns)
+    true_forcing_dns = np.load(true_forcing_dns)
+    dns_forcing = (pod_forcing_dns, true_forcing_dns)
+    projected_f_fields[f"POD ({28} modes)"] = (z_les, pod_forcing_dns)
     animate_forcing_comparison(
         z_dns=z_dns,
-        f_dns=f_dns,
+        f_dns=true_forcing_dns,
         projected_fields=projected_f_fields,
         interval=1,
     )
 
+    w_dns = np.load(
+        Path(r"C:\Users\poopy\PycharmProjects\burgers\dns_data\partitioned\dat\w.npy")
+    )
+    projected_w = np.load(
+        Path(
+            r"C:\Users\poopy\PycharmProjects\burgers\dns_data\projected_velocity\w_linear_33.npy"
+        )
+    )
+    projected_w_fields[f"H10 ({len(projected_w[0])} nodes)"] = (z_les, projected_w)
     animate_w_field_comparison(z_dns, w_dns, projected_w_fields, interval=1)
 
     # 4. Plot Mean Velocity Statistics after Animation

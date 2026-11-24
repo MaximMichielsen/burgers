@@ -5,7 +5,10 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from setup.config_discretization import DiscretizationConfig
 from setup.constants import Z_LENGTH_DNS
+
+DT_DNS = 1e-4
 
 
 class ReferenceTrajectory:
@@ -17,17 +20,23 @@ class ReferenceTrajectory:
 
     def __init__(
         self,
+        disc_config: DiscretizationConfig,
         mean_target_profile_dir: Path,
         projected_w_path: Path,
-        times_path: Path,
-        n_nodes_les: int,
+        forcing_data_path: Path,
+        times_path_velocity: Path,
+        times_path_forcing: Path,
     ) -> None:
         self.target_mean_profile_dir = Path(mean_target_profile_dir)
         self.projected_w_path = Path(projected_w_path)
-        self.w_field_times_path = Path(times_path)
-        self.n_les_nodes = n_nodes_les
+        self.forcing_data_path = Path(forcing_data_path)
+        self.w_field_times_path = Path(times_path_velocity)
+        self.forcing_times_path = Path(times_path_forcing)
 
-        # Intervals (set via set_active_training_interval / set_testing_interval)
+        self.n_les_nodes = disc_config.n_nodes_les
+        self.dt_les = disc_config.dt_les
+
+        # Intervals (set via set_active_interval / set_testing_interval)
         self.t_start: float | None = None
         self.t_end: float | None = None
         self.t_start_test: float | None = None
@@ -37,12 +46,14 @@ class ReferenceTrajectory:
         self._is_test_mode = False
         self._train_start_idx = 0
         self._test_start_idx = 0
-        self._start_idx = 0  # start index of the active mode
+        self._start_idx = 0  # local step start index of the active mode
         self._current_step_idx = 0
 
         # Reference data (filled by load_data / interval setters)
         self._projected_w_data: NDArray | None = None
-        self._snapshot_times: NDArray | None = None
+        self._forcing_data: NDArray | None = None
+        self._snapshot_velocity_times: NDArray | None = None
+        self._snapshot_forcing_times: NDArray | None = None
         self._target_profile: NDArray | None = None
         self._reynolds_profile: NDArray | None = None
         self._raw_target_profile: NDArray | None = None  # only set if resampled
@@ -65,22 +76,41 @@ class ReferenceTrajectory:
                 f"Projected w field missing at {self.projected_w_path}"
             )
 
+        if not self.forcing_data_path.exists():
+            raise FileNotFoundError(f"Forcing data missing at {self.forcing_data_path}")
+
         # Note: astype() copies, so the whole field ends up in memory.
         self._projected_w_data = np.load(self.projected_w_path, mmap_mode="r").astype(
             np.float64
         )
-        self._snapshot_times = np.load(self.w_field_times_path)
+        self._snapshot_velocity_times = np.load(self.w_field_times_path)
 
-        if len(self._snapshot_times) != len(self._projected_w_data):
+        self._forcing_data = np.load(self.forcing_data_path, mmap_mode="r").astype(
+            np.float64
+        )
+        self._snapshot_forcing_times = np.load(self.forcing_times_path)
+
+        assert self._snapshot_velocity_times is not None
+        assert self._projected_w_data is not None
+        assert self._forcing_data is not None
+        assert self._snapshot_forcing_times is not None
+
+        if len(self._snapshot_velocity_times) != len(self._projected_w_data):
             raise ValueError(
-                f"Times ({len(self._snapshot_times)}) and projected w "
+                f"Times ({len(self._snapshot_velocity_times)}) and projected w "
                 f"({len(self._projected_w_data)}) have different lengths."
+            )
+
+        if len(self._snapshot_forcing_times) != len(self._forcing_data):
+            raise ValueError(
+                f"Times ({len(self._snapshot_forcing_times)}) and forcing "
+                f"({len(self._forcing_data)}) have different lengths."
             )
 
         if self.t_start is not None and self.t_end is not None:
             self._load_profiles(is_test=False)
-            self._train_start_idx = self._nearest_index(self.t_start, validate=True)
-            self._start_idx = self._train_start_idx
+            self._validate_time_coverage(self.t_start)
+            self._start_idx = 0
 
     def _load_profiles(self, is_test: bool) -> None:
         """Load mean and Reynolds profiles for the training or testing interval.
@@ -118,35 +148,44 @@ class ReferenceTrajectory:
         self._raw_target_profile = mean_profile
         self._raw_reynolds_profile = reynolds_profile
 
-    def _nearest_index(self, t: float, validate: bool = False) -> int:
-        """Index of the snapshot closest to time `t`.
-
-        With `validate=True`, raise if `t` is further from that snapshot than
-        the median snapshot spacing (i.e. not covered by the projected field).
-        """
-        times = self._snapshot_times
-        if times is None:
+    def _validate_time_coverage(self, t: float) -> None:
+        """Ensure `t` falls within the loaded velocity and forcing time arrays."""
+        if (
+            self._snapshot_velocity_times is None
+            or self._snapshot_forcing_times is None
+        ):
             raise RuntimeError("Reference data is not loaded.")
 
-        idx = int(np.argmin(np.abs(times - t)))
-        if validate and abs(times[idx] - t) > np.median(np.diff(times)):
+        vel_idx = int(np.argmin(np.abs(self._snapshot_velocity_times - t)))
+        if abs(self._snapshot_velocity_times[vel_idx] - t) > np.median(
+            np.diff(self._snapshot_velocity_times)
+        ):
             raise ValueError(
-                f"t_start={t} is not covered by the projected field "
-                f"(range {times[0]} to {times[-1]})."
+                f"t={t} is not covered by the projected velocity field "
+                f"(range {self._snapshot_velocity_times[0]} to {self._snapshot_velocity_times[-1]})."
             )
-        return idx
+
+        forcing_idx = int(np.argmin(np.abs(self._snapshot_forcing_times - t)))
+        if abs(self._snapshot_forcing_times[forcing_idx] - t) > np.median(
+            np.diff(self._snapshot_forcing_times)
+        ):
+            raise ValueError(
+                f"t={t} is not covered by the forcing field "
+                f"(range {self._snapshot_forcing_times[0]} to {self._snapshot_forcing_times[-1]})."
+            )
 
     # ------------------------------------------------------------------ #
     # Interval selection
     # ------------------------------------------------------------------ #
 
-    def set_active_training_interval(self, t_start: float, t_end: float) -> None:
+    def set_active_interval(self, t_start: float, t_end: float) -> None:
         """Switch to training mode and load the profiles for [t_start, t_end]."""
         self.t_start, self.t_end = t_start, t_end
         self._is_test_mode = False
 
         self._load_profiles(is_test=False)
-        self._train_start_idx = self._nearest_index(t_start)
+        self._validate_time_coverage(t_start)
+        self._train_start_idx = 0
         self._start_idx = self._train_start_idx
 
     def set_testing_interval(self, t_start: float, t_end: float) -> None:
@@ -155,7 +194,8 @@ class ReferenceTrajectory:
         self._is_test_mode = True
 
         self._load_profiles(is_test=True)
-        self._test_start_idx = self._nearest_index(t_start)
+        self._validate_time_coverage(t_start)
+        self._test_start_idx = 0
         self._start_idx = self._test_start_idx
 
     # ------------------------------------------------------------------ #
@@ -163,20 +203,44 @@ class ReferenceTrajectory:
     # ------------------------------------------------------------------ #
 
     def reset(self) -> None:
-        """Reset the episode index to the start of the active interval."""
+        """Reset the episode step index to the start of the active interval."""
         self._current_step_idx = self._start_idx
 
     def set_step_index(self, step_idx: int) -> None:
-        """Set the active step index."""
+        """Set the active local LES step index."""
         self._current_step_idx = step_idx
 
-    def query(self, step_idx: int) -> NDArray:
-        """Projected solution field at `step_idx` (clamped to the valid range)."""
-        if self._projected_w_data is None:
+    @property
+    def _active_t_start(self) -> float:
+        """Start time of the currently active (training or testing) interval."""
+        t0 = self.t_start_test if self._is_test_mode else self.t_start
+        if t0 is None:
+            raise RuntimeError("Active interval is not set.")
+        return t0
+
+    def _step_to_time(self, les_step_idx: int) -> float:
+        """Convert a local LES step index into physical simulation time."""
+        return self._active_t_start + les_step_idx * self.dt_les
+
+    def query_velocity(self, les_step_idx: int) -> NDArray:
+        """Projected solution field at `les_step_idx` mapped via physical time."""
+        if self._projected_w_data is None or self._snapshot_velocity_times is None:
             raise RuntimeError("Reference data is not loaded.")
 
-        safe_idx = min(max(0, step_idx), len(self._projected_w_data) - 1)
+        t = self._step_to_time(les_step_idx)
+        vel_idx = int(np.argmin(np.abs(self._snapshot_velocity_times - t)))
+        safe_idx = min(max(0, vel_idx), len(self._projected_w_data) - 1)
         return np.asarray(self._projected_w_data[safe_idx], dtype=np.float64)
+
+    def query_forcing(self, les_step_idx: int) -> NDArray:
+        """Forcing field at `les_step_idx` mapped via physical time."""
+        if self._forcing_data is None or self._snapshot_forcing_times is None:
+            raise RuntimeError("Forcing data is not loaded.")
+
+        t = self._step_to_time(les_step_idx)
+        forcing_idx = int(np.argmin(np.abs(self._snapshot_forcing_times - t)))
+        safe_idx = min(max(0, forcing_idx), len(self._forcing_data) - 1)
+        return np.asarray(self._forcing_data[safe_idx], dtype=np.float64)
 
     # ------------------------------------------------------------------ #
     # Properties
@@ -185,12 +249,22 @@ class ReferenceTrajectory:
     @property
     def initial_condition(self) -> NDArray:
         """Projected (nodal) w field at the start of the active interval."""
-        return self.query(self._start_idx)
+        return self.query_velocity(self._start_idx)
+
+    @property
+    def initial_forcing(self) -> NDArray:
+        """Forcing field at the start of the active interval."""
+        return self.query_forcing(self._start_idx)
 
     @property
     def projected_solution(self) -> NDArray:
-        """Instantaneous projected snapshot for the current step."""
-        return self.query(self._current_step_idx)
+        """Instantaneous projected snapshot for the current LES step."""
+        return self.query_velocity(self._current_step_idx)
+
+    @property
+    def forcing(self) -> NDArray:
+        """Forcing data for the current LES step."""
+        return self.query_forcing(self._current_step_idx)
 
     @property
     def target_profile(self) -> NDArray:

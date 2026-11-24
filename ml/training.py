@@ -29,8 +29,8 @@ from ml.td3_agent import TD3Agent
 from setup.config_discretization import DiscretizationConfig
 from setup.constants import PATH_TO_LES_CACHE, N_NODES_DNS
 from setup.problems import Problem
-from solvers.solver_base import SimulationMode
-from solvers.solver_coupled import SolverCoupled
+from archived.solver_base import SimulationMode
+from solvers.solver_coupled import SolverCoupledOld
 from utils.diagnostics import compute_error_metrics
 from utils.les_caching import (
     resolve_les_baseline_cache,
@@ -163,7 +163,7 @@ class Trainer:
         self.test_interval = test_interval
         self.interval_counts = np.zeros(len(self.train_intervals))
         init_t_start, init_t_end = self.train_intervals[0]
-        self.reference_trajectory.set_active_training_interval(init_t_start, init_t_end)
+        self.reference_trajectory.set_active_interval(init_t_start, init_t_end)
         self.problem = replace(
             problem,
             t_start=init_t_start,
@@ -174,7 +174,7 @@ class Trainer:
         self.reward_history = []
         self.random_episodes = self.ann_config.n_random_episodes
         self.env: MDPEnvironment | BanditEnvironment | None = None
-        self.solver: SolverCoupled | None = None
+        self.solver: SolverCoupledOld | None = None
 
         self.master_path.mkdir(parents=True, exist_ok=True)
         self.log_file_path = self.master_path / "training_log.txt"
@@ -274,7 +274,7 @@ class Trainer:
             interval_idx = random.randrange(len(self.train_intervals))
             self.interval_counts[interval_idx] += 1
             ep_t_start, ep_t_end = self.train_intervals[interval_idx]
-            self.reference_trajectory.set_active_training_interval(ep_t_start, ep_t_end)
+            self.reference_trajectory.set_active_interval(ep_t_start, ep_t_end)
             self.problem = replace(
                 self.problem,
                 t_start=ep_t_start,
@@ -425,7 +425,7 @@ class Trainer:
 
         self.run_baseline_evaluation()
 
-        self.solver = SolverCoupled(
+        self.solver = SolverCoupledOld(
             problem=self.problem,
             disc_config=self.disc_config,
             ann_config=replace(self.ann_config, training_mode=False),
@@ -492,7 +492,7 @@ class Trainer:
         set_cache_writable(target_cache_dir, True)
         self.baseline_run_dir = target_cache_dir
 
-        self.solver = SolverCoupled(
+        self.solver = SolverCoupledOld(
             problem=self.problem,
             disc_config=self.disc_config,
             master_path=target_cache_dir,
@@ -594,7 +594,7 @@ class Trainer:
             dt=getattr(self.disc_config, "dt_les", 0.0),
             t_start=getattr(problem, "t_start", 0.0),
             t_end=getattr(problem, "t_end", 0.0),
-            n_params=getattr(self.ann_config, "n_coefficients", 0),
+            n_params=getattr(self.ann_config.tau_model, "output_dimensions", 0),
             n_agent_steps_per_episode=getattr(
                 self.ann_config, "n_agent_steps_per_episode", 0
             ),
@@ -607,7 +607,7 @@ class Trainer:
     def plot_combined_profile_comparison(
         self,
         env: MDPEnvironment | BanditEnvironment | None,
-        solver: SolverCoupled | None,
+        solver: SolverCoupledOld | None,
         episode: int | None,
         show_plot: bool = False,
         dns_trajectory: NDArray | None = None,
@@ -882,7 +882,7 @@ class Trainer:
             out_dir = self.master_path / "testing"
         elif env is not None:
             out_dir = self.master_path / "profile_comparisons"
-        elif isinstance(solver, SolverCoupled):
+        elif isinstance(solver, SolverCoupledOld):
             out_dir = self.master_path / "evaluation"
         else:
             out_dir = self.master_path
@@ -893,7 +893,7 @@ class Trainer:
             filename = f"profile_comparison_ep{episode:03d}.png"
         elif is_testing_plot:
             filename = f"profiles_e{self.ann_config.n_training_episodes}.png"
-        elif isinstance(solver, SolverCoupled):
+        elif isinstance(solver, SolverCoupledOld):
             filename = "profile_comparison_evaluation.png"
         else:
             filename = "profile_comparison.png"

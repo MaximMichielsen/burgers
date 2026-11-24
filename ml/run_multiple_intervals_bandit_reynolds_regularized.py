@@ -10,7 +10,7 @@ from proofing.action_based.config import ProofMode
 from setup.config_discretization import DiscretizationConfig
 from setup.constants import Z_LENGTH_DNS
 from setup.problems import Problem
-from solvers.solver_base import TauModel
+from archived.solver_base import TauModel
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -71,12 +71,12 @@ def generate_training_and_testing_intervals(
 # Define base intervals from directory structure
 base_intervals = [
     (308.0101, 309.01),
-    (309.01, 310.01),
-    (311.01, 312.01),
-    (313.01, 314.01),
+    # (309.01, 310.01),
+    # (311.01, 312.01),
+    # (313.01, 314.01),
 ]
 
-test_interval = (312.01, 313.01)
+test_interval = (308.0101, 309.01)
 
 train_intervals, test_interval = generate_training_and_testing_intervals(
     base_intervals, max_duration=1.0, test_interval=test_interval
@@ -92,7 +92,7 @@ tau_model = TauModel.TWO_PARAMS
 
 n_episodes_list = (100,)
 proof_mode = ProofMode.a
-reynolds_signals = (False,)
+reynolds_signals = (False, True)
 
 for n_episodes in n_episodes_list:
     for use_reynolds_signal in reynolds_signals:
@@ -105,7 +105,7 @@ for n_episodes in n_episodes_list:
             / "solver_data"
             / "double_final"
             / "bandit_regularized"
-            / "multiple_intervals"
+            / "one_interval"
             / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}"
             / sub_dir
         )
@@ -155,7 +155,7 @@ for n_episodes in n_episodes_list:
         reference_trajectory = ReferenceTrajectory(
             mean_target_profile_dir=target_profile_dir,
             projected_w_path=w_field_path,
-            times_path=times_path,
+            times_path_velocity=times_path,
             n_nodes_les=n_nodes_les,
         )
 

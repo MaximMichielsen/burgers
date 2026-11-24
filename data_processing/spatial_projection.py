@@ -6,17 +6,10 @@ from numpy.typing import NDArray
 from scipy.sparse import diags
 from scipy.sparse.linalg import factorized
 
+from setup.constants import Z_LENGTH_DNS, N_NODES_DNS
+
 # Paths Setup
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
-
-PARSED_DATA_DIR = PROJECT_ROOT / "dns_data" / "curated"
-DAT_PARSED_DIR = PARSED_DATA_DIR / "dat"
-STAT_PARSED_DIR = PARSED_DATA_DIR / "stat"
-
-FORCING_PATH = DAT_PARSED_DIR / "f.npy"
-W_FIELD_PATH = DAT_PARSED_DIR / "w.npy"
-
-FILTERED_PATH = PROJECT_ROOT / "dns_data" / "projected"
 
 
 def filter_forcing(
@@ -128,42 +121,80 @@ def nodal_project(
 
 
 if __name__ == "__main__":
-    cache_hash = "f01c9f43049633787bc4f3814e74d3b8"
-    cache_dir = PROJECT_ROOT / "dns_data" / "temporal" / "unprojected"
+    DNS_REF_PATH = PROJECT_ROOT / "dns_data" / "partitioned" / "dat"
+    DNS_VELOCITY_PATH = DNS_REF_PATH / "w.npy"
 
-    forcing_path = cache_dir / f"cache_forcing_{cache_hash}.npy"
-    times_cache_path = cache_dir / "cache_times_14345be5a4b6bfe79589d174a50bade1.npy"
+    FILTERED_PATH = PROJECT_ROOT / "dns_data" / "temporal" / "boxcar_dt_0.001"
 
-    filtered_path = PROJECT_ROOT / "dns_data" / "temporal" / "projected"
-    n_nodes_les = [9, 17, 33, 65]
-    forcing_filter = "l2"
+    UNFILTERED_FORCING_PATH = DNS_REF_PATH / "f.npy"
+    FILTERED_FORCING_PATH = FILTERED_PATH / "f_dns_filtered.npy"
+    TIMES_PATH = DNS_REF_PATH / "times.npy"
 
-    if forcing_path.exists():
-        forcing_dns = np.load(forcing_path)
+    PROJECTED_FORCING_SAVE_DIR = PROJECT_ROOT / "dns_data" / "projected_forcing"
+    UNFILTERED_FORCING_SAVE_DIR = PROJECTED_FORCING_SAVE_DIR / "unfiltered"
+    FILTERED_FORCING_SAVE_DIR = PROJECTED_FORCING_SAVE_DIR / "filtered"
 
-        # Load and save the times array with a normal name
-        if times_cache_path.exists():
-            times = np.load(times_cache_path)
-            filtered_path.mkdir(parents=True, exist_ok=True)
-            times_save_path = filtered_path / "times.npy"
-            np.save(times_save_path, times)
-            print(
-                f"Times array successfully saved to {times_save_path} (shape: {times.shape})"
-            )
-        else:
-            print(f"Times cache file not found at {times_cache_path}")
+    PROJECTED_VELOCITY_SAVE_DIR = PROJECT_ROOT / "dns_data" / "projected_velocity"
+
+    FILTERED_FORCING_SAVE_DIR.mkdir(exist_ok=True, parents=True)
+    UNFILTERED_FORCING_SAVE_DIR.mkdir(exist_ok=True, parents=True)
+    PROJECTED_VELOCITY_SAVE_DIR.mkdir(exist_ok=True, parents=True)
+
+    n_nodes_les = [17, 33, 41, 49, 65, 129, 513]
+
+    if DNS_VELOCITY_PATH.exists():
+        velocity_dns = np.load(DNS_VELOCITY_PATH)
+        mesh_dns = np.linspace(0, Z_LENGTH_DNS, N_NODES_DNS)
 
         for n_nodes in n_nodes_les:
-            l2_data = filter_forcing(
-                forcing_dns,
-                mode=forcing_filter,
+            path = PROJECTED_VELOCITY_SAVE_DIR / f"w_linear_{n_nodes}.npy"
+            if n_nodes == 513:
+                np.save(path, velocity_dns)
+                continue
+
+            mesh_les = np.linspace(0, Z_LENGTH_DNS, n_nodes)
+            velocity_les = nodal_project(
+                velocity_dns, mesh_les=mesh_les, mesh_dns=mesh_dns
+            )
+            np.save(path, velocity_les)
+
+    forcing_filter_mode = "l2"
+    if UNFILTERED_FORCING_PATH.exists() and FILTERED_FORCING_PATH.exists():
+        forcing_filtered = np.load(FILTERED_FORCING_PATH)
+        forcing_unfiltered = np.load(UNFILTERED_FORCING_PATH)
+        times = np.load(TIMES_PATH)
+
+        np.save(FILTERED_FORCING_SAVE_DIR / "times.npy", times)
+        np.save(UNFILTERED_FORCING_SAVE_DIR / "times.npy", times)
+
+        for n_nodes in n_nodes_les:
+            if n_nodes == 513:
+                save_file_filtered = (
+                    FILTERED_FORCING_SAVE_DIR
+                    / f"forcing_{forcing_filter_mode.lower()}_{n_nodes}.npy"
+                )
+                save_file_unfiltered = (
+                    UNFILTERED_FORCING_SAVE_DIR
+                    / f"forcing_{forcing_filter_mode.lower()}_{n_nodes}.npy"
+                )
+                np.save(save_file_filtered, forcing_filtered)
+                np.save(save_file_unfiltered, forcing_unfiltered)
+                continue
+
+            l2_data_filtered = filter_forcing(
+                forcing_filtered,
+                mode=forcing_filter_mode,
                 les_resolution=n_nodes,
-                save_path=filtered_path,
+                save_path=FILTERED_FORCING_SAVE_DIR,
                 z_min=0.0,
                 z_max=2.0,
             )
-            print(
-                f"Forcing filtering complete ({n_nodes}). Outputs saved to {filtered_path}"
+
+            l2_data_unfiltered = filter_forcing(
+                forcing_unfiltered,
+                mode=forcing_filter_mode,
+                les_resolution=n_nodes,
+                save_path=UNFILTERED_FORCING_SAVE_DIR,
+                z_min=0.0,
+                z_max=2.0,
             )
-    else:
-        print(f"Forcing file not found at {forcing_path}")

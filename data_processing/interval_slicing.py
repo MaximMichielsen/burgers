@@ -87,12 +87,12 @@ def save_interval_profile(
 
 if __name__ == "__main__":
     PROJECT_ROOT = Path(__file__).parent.parent.resolve()
-    STAT_DIR = PROJECT_ROOT / "dns_data" / "curated" / "stat"
+    STAT_DIR = PROJECT_ROOT / "dns_data" / "partitioned" / "stat"
 
-    save_dir = PROJECT_ROOT / "dns_data" / "intervals"
+    save_dir = PROJECT_ROOT / "dns_data" / "intervals_stat"
 
     w_mean_path = STAT_DIR / "mean_w.npy"
-    ww_path = STAT_DIR / "mean_reynolds_w.npy"
+    ww_path = STAT_DIR / "reynolds_stress.npy"
     times_path = STAT_DIR / "times.npy"
 
     w_cum = np.load(w_mean_path)
@@ -115,16 +115,16 @@ if __name__ == "__main__":
         except ValueError as e:
             print(f"Skipped 1s window {k}: {e}")
 
-    # 2. Compute and save 2-second interval profiles (width = 2)
-    # Start at k = 1 so it captures the 308-310 window (start_index = -1 -> T_ZERO)
-    for k in range(1, len(times)):
-        try:
-            w_mean = interval_mean(w_cum, counts, k, width=2)
-            w_var = interval_variance(w_cum, ww_cum, counts, k, width=2)
-
-            save_interval_profile(
-                w_mean, "w_mean", times, k, save_dir, T_START, width=2
-            )
-            save_interval_profile(w_var, "ww", times, k, save_dir, T_START, width=2)
-        except ValueError as e:
-            print(f"Skipped 2s window {k}: {e}")
+    # # 2. Compute and save 2-second interval profiles (width = 2)
+    # # Start at k = 1 so it captures the 308-310 window (start_index = -1 -> T_ZERO)
+    # for k in range(1, len(times)):
+    #     try:
+    #         w_mean = interval_mean(w_cum, counts, k, width=2)
+    #         w_var = interval_variance(w_cum, ww_cum, counts, k, width=2)
+    #
+    #         save_interval_profile(
+    #             w_mean, "w_mean", times, k, save_dir, T_START, width=2
+    #         )
+    #         save_interval_profile(w_var, "ww", times, k, save_dir, T_START, width=2)
+    #     except ValueError as e:
+    #         print(f"Skipped 2s window {k}: {e}")

@@ -10,7 +10,7 @@ from proofing.action_based.config import ProofMode
 from setup.config_discretization import DiscretizationConfig
 from setup.constants import Z_LENGTH_DNS
 from setup.problems import Problem
-from solvers.solver_base import TauModel
+from archived.solver_base import TauModel
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -92,7 +92,7 @@ tau_model = TauModel.TWO_PARAMS
 
 n_episodes_list = (100,)
 proof_mode = ProofMode.a
-reynolds_signals = (True,)
+reynolds_signals = (False,)
 
 for n_episodes in n_episodes_list:
     for use_reynolds_signal in reynolds_signals:
@@ -154,7 +154,7 @@ for n_episodes in n_episodes_list:
         reference_trajectory = ReferenceTrajectory(
             mean_target_profile_dir=target_profile_dir,
             projected_w_path=w_field_path,
-            times_path=times_path,
+            times_path_velocity=times_path,
             n_nodes_les=n_nodes_les,
         )
 

@@ -13,7 +13,11 @@
       <w>jacobians</w>
       <w>langle</w>
       <w>lightgreen</w>
+      <w>linestyle</w>
       <w>linestyles</w>
+      <w>markeredgewidth</w>
+      <w>markerfacecolor</w>
+      <w>markersize</w>
       <w>mathrm</w>
       <w>preds</w>
       <w>rangle</w>

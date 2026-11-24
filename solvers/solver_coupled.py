@@ -25,10 +25,10 @@ from ml.original.ann import load_tau_ann
 from ml.original.ann_config import TauANNConfig, Scope
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
-from solvers.solver_base import SolverBase, SimulationMode, TauModel
+from archived.solver_base import SolverBaseOld, SimulationMode, TauModel
 
 
-class SolverCoupled(SolverBase):
+class SolverCoupledOld(SolverBaseOld):
     """Base solver coupled with ANN to adjust SGS model coefficients."""
 
     def __init__(

@@ -10,7 +10,8 @@ from proofing.action_based.config import ProofMode
 from setup.config_discretization import DiscretizationConfig
 from setup.constants import Z_LENGTH_DNS
 from setup.problems import Problem
-from solvers.solver_base import TauModel
+from archived.solver_base import TauModel
+from utils.pathing import get_forcing_path, get_forcing_times_path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -84,19 +85,15 @@ train_intervals, test_interval = generate_training_and_testing_intervals(
 
 t_start, t_end = train_intervals[0]  # fallback
 
-n_nodes_les = 17
+n_nodes_les = 65
 n_nodes_dns = 513
 z_length = Z_LENGTH_DNS
-dt = 1e-3
-tau_model = TauModel.TWO_PARAMS
+dt = 1e-2
+tau_model = TauModel.TWO_PARAMS_BASE
 
-n_episodes_list = (
-    20,
-    50,
-    100,
-)
+n_episodes_list = (20,)
 proof_mode = ProofMode.a
-reynolds_signals = (False,)
+reynolds_signals = (True,)
 
 for n_episodes in n_episodes_list:
     for use_reynolds_signal in reynolds_signals:
@@ -107,7 +104,6 @@ for n_episodes in n_episodes_list:
         run_dir = (
             PROJECT_ROOT
             / "solver_data"
-            / "double_final"
             / "bandit"
             / "one_interval"
             / f"e{n_episodes}_n{n_nodes_les}_dt{dt}_p{tau_model.value}"
@@ -121,15 +117,13 @@ for n_episodes in n_episodes_list:
             PROJECT_ROOT / "dns_data" / "projected" / f"w_linear_{n_nodes_les}.npy"
         )
         times_path = PROJECT_ROOT / "dns_data" / "curated" / "dat" / "times.npy"
-        forcing_projected = np.load(
-            TEMPORAL_PROJECTED_DIR / f"forcing_l2_{n_nodes_les}.npy"
-        )
-        times_forcing = np.load(TEMPORAL_PROJECTED_DIR / "times.npy")
+        forcing_projected = np.load(get_forcing_path(PROJECT_ROOT, n_nodes_les, dt))
+        times_forcing = np.load(get_forcing_times_path(PROJECT_ROOT, dt))
 
         problem = Problem(
             name="tcf_1d",
             domain_length=z_length,
-            reynolds=100.0,
+            reynolds=180.0,
             initial_condition=None,
             forcing=forcing_projected,
             forcing_times=times_forcing,
@@ -157,7 +151,7 @@ for n_episodes in n_episodes_list:
         reference_trajectory = ReferenceTrajectory(
             mean_target_profile_dir=target_profile_dir,
             projected_w_path=w_field_path,
-            times_path=times_path,
+            times_path_velocity=times_path,
             n_nodes_les=n_nodes_les,
         )
 

@@ -4,10 +4,10 @@ from pathlib import Path
 import torch
 from torch import nn, Tensor
 
-from solvers.solver_base import TauModel
+from archived.solver_base import TauModel
 
-MAX_ACTION = 8
-MIN_ACTION = 0.7
+MAX_ACTION = 3
+MIN_ACTION = 0.2
 REWARD_CLIP_BANDIT = -0.1
 
 

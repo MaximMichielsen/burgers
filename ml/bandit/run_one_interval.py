@@ -10,7 +10,7 @@ from proofing.action_based.config import ProofMode
 from setup.config_discretization import DiscretizationConfig
 from setup.constants import Z_LENGTH_DNS
 from setup.problems import Problem
-from solvers.solver_base import TauModel
+from archived.solver_base import TauModel
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CURRENT_DIR = Path(__file__).resolve().parent

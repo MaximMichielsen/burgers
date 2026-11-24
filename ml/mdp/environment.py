@@ -10,8 +10,8 @@ from ml.reference_trajectory import ReferenceTrajectory
 from ml.mdp.ann import MDPHyperparameters, MDPConfig, RewardType
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
-from solvers.solver_base import SimulationMode
-from solvers.solver_coupled import SolverCoupled
+from archived.solver_base import SimulationMode
+from solvers.solver_coupled import SolverCoupledOld
 from utils.diagnostics import compute_error_metrics
 
 
@@ -36,7 +36,7 @@ class MDPEnvironment:
         self.reference_trajectory = reference_trajectory
         self.master_path = master_path
 
-        self.solver: SolverCoupled | None = None
+        self.solver: SolverCoupledOld | None = None
         self.solver_step_idx: int | None = None
         self.baseline_path = baseline_path
 
@@ -47,7 +47,7 @@ class MDPEnvironment:
         self.previous_mean: NDArray | None = None
 
     def reset(self) -> float:
-        self.solver = SolverCoupled(
+        self.solver = SolverCoupledOld(
             problem=self.problem,
             disc_config=dataclasses.replace(
                 self.disc_config, suppress_file_logging=True
@@ -125,7 +125,7 @@ class MDPEnvironment:
             raise RuntimeError("Solver not initialized.")
 
         instant_solution = self.solver.solution
-        instant_reference = self.reference_trajectory.query(
+        instant_reference = self.reference_trajectory.query_velocity(
             step_idx=int(self.solver_step_idx)
         )
 

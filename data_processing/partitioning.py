@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 RAW_DATA_DIR = PROJECT_ROOT / "dns_data" / "raw"
-PARSED_DATA_DIR = PROJECT_ROOT / "dns_data" / "curated"
+PARSED_DATA_DIR = PROJECT_ROOT / "dns_data" / "partitioned"
 DAT_PARSED_DIR = PARSED_DATA_DIR / "dat"
 STAT_PARSED_DIR = PARSED_DATA_DIR / "stat"
 
@@ -200,9 +200,9 @@ if __name__ == "__main__":
         "steps",
         "samples",
         "mean_w",
-        "mean_reynolds_w",
-        "mean_fz",
-        "mean_reynolds_fz",
+        "reynolds_stress",
+        "fz",
+        "fzfz",
     )
 
     # Extract data directly from function calls

@@ -9,8 +9,8 @@ from ml.bandit.ann import BanditConfig, BanditHyperparameters
 from ml.reference_trajectory import ReferenceTrajectory
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
-from solvers.solver_base import SimulationMode
-from solvers.solver_coupled import SolverCoupled
+from archived.solver_base import SimulationMode
+from solvers.solver_coupled import SolverCoupledOld
 from utils.diagnostics import compute_error_metrics
 
 
@@ -35,11 +35,11 @@ class BanditEnvironment:
         self.reference_trajectory = reference_trajectory
         self.master_path = master_path
 
-        self.solver: SolverCoupled | None = None
+        self.solver: SolverCoupledOld | None = None
         self.baseline_path = baseline_path
 
     def reset(self) -> float:
-        self.solver = SolverCoupled(
+        self.solver = SolverCoupledOld(
             problem=self.problem,
             disc_config=dataclasses.replace(
                 self.disc_config, suppress_file_logging=True

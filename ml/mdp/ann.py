@@ -6,12 +6,12 @@ import torch
 from torch import nn, Tensor
 
 from ml.original.ann_config import Scope
-from solvers.solver_base import TauModel
+from archived.solver_base import TauModel
 
-MAX_ACTION = 5
-MIN_ACTION = 0.9
+MAX_ACTION = 7
+MIN_ACTION = 0.8
 
-REWARD_CLIP_MDP = -1
+REWARD_CLIP_MDP = -0.1
 
 
 class RewardType(str, Enum):

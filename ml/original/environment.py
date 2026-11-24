@@ -14,8 +14,8 @@ from ml.original.ann_config import (
 )
 from setup.config_discretization import DiscretizationConfig
 from setup.problems import Problem
-from solvers.solver_base import SimulationMode
-from solvers.solver_coupled import SolverCoupled
+from archived.solver_base import SimulationMode
+from solvers.solver_coupled import SolverCoupledOld
 from utils.diagnostics import compute_error_metrics
 
 REWARD_CLIP = 50
@@ -43,7 +43,7 @@ class EnvironmentForcingDNS:
         self.master_path = master_path
         self.reference_trajectory = reference_trajectory
 
-        self.solver: SolverCoupled | None = None
+        self.solver: SolverCoupledOld | None = None
         self.running_mean_solution: NDArray | None = None
 
         self._max_les_steps: int = self.disc_config.n_timesteps
@@ -65,7 +65,7 @@ class EnvironmentForcingDNS:
         self.action_penalty_history_weighted: list[float] = []
 
     def reset_solver(self):
-        self.solver = SolverCoupled(
+        self.solver = SolverCoupledOld(
             problem=self.problem,
             disc_config=dataclasses.replace(
                 self.disc_config, suppress_file_logging=True
